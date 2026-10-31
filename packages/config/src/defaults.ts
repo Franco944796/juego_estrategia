@@ -41,8 +41,8 @@ export const defaultConfig: GameConfig = {
     garrisonCap: [45, 80, 125, 180, 250],
     upgradeCost: [100, 240, 520, 1000],
     respecCostPerTier: 40,
-    fortPerTier: 0.15,
-    capitalFort: 1.25,
+    fortPerTier: 0.25,
+    capitalFort: 1.75,
     capitalProdMult: 1.5,
   },
   neutral: {
@@ -55,10 +55,10 @@ export const defaultConfig: GameConfig = {
   beacon: { prodBonus: 0.25, dominionPerMin: 3, visionHops: 1 },
   throne: {
     tier: 5,
-    garrison: 320,
+    garrison: 300,
     unsealAtFraction: 0.3,
     dominionPerMin: 25,
-    fortMult: 1.5,
+    fortMult: 1,
   },
   glory: { troopsPerPoint: 10, perCaptureTier: 3 },
   edicts: {
@@ -79,7 +79,7 @@ export const defaultConfig: GameConfig = {
     },
   },
   march: {
-    landSpeed: 45,
+    landSpeed: 35,
     skySpeed: 45,
     minDurationMin: 0.5,
     minTroops: 1,

@@ -102,7 +102,10 @@ export function setOwner(
   recomputeBeacon(state, town.isleId, at, events);
 }
 
-/** A lord with no towns and no marches in flight restarts on a free outer town, or is eliminated. */
+/**
+ * A lord with no towns and no marches in flight restarts on a free neutral town (outermost ring
+ * first, lowest tier), or is eliminated when none is left.
+ */
 export function checkExile(state: GameState, lordId: string, at: number, events: DomainEvent[]): void {
   const lord = getLord(state, lordId);
   if (!lord || !lord.alive) return;
@@ -110,11 +113,11 @@ export function checkExile(state: GameState, lordId: string, at: number, events:
   if (state.marches.some((march) => march.owner === lordId)) return;
 
   if (state.config.exile.enabled) {
-    const outerRing = state.config.map.rings.length;
-    const free = state.towns.filter(
-      (town) => town.owner === null && !town.isThrone && state.isles[town.isleId]?.ring === outerRing,
-    );
-    if (free.length > 0) {
+    const ringOf = (town: Town): number => state.isles[town.isleId]?.ring ?? 0;
+    const neutral = state.towns.filter((town) => town.owner === null && !town.isThrone);
+    if (neutral.length > 0) {
+      const outermost = Math.max(...neutral.map(ringOf));
+      const free = neutral.filter((town) => ringOf(town) === outermost);
       const minTier = Math.min(...free.map((town) => town.tier));
       const town = pick(
         state.rng,

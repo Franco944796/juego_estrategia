@@ -66,7 +66,7 @@ A march moves at the speed of its slowest type.
 - **Upgrade**: instant, costs `towns.upgradeCost[tier]` gold. Raises production, cap, fortification and
   Dominion.
 - **Respecialize**: instant, costs `towns.respecCostPerTier × tier`; the garrison is unchanged.
-- **Fortification** multiplies defending power: `1 + towns.fortPerTier · (tier − 1)` (+15% per tier),
+- **Fortification** multiplies defending power: `1 + towns.fortPerTier · (tier − 1)` (+25% per tier),
   ×`towns.capitalFort` for capitals, ×`throne.fortMult` for the Throne, edicts.
 - **Neutral towns** start with a mixed garrison (`neutral.garrison[tier]`, 60% of their specialization,
   20% of each other type) and regenerate their specialization at ×`neutral.regenMult` of the normal rate
@@ -130,9 +130,9 @@ A march moves at the speed of its slowest type.
 
 ## 10. Exile and season end
 
-- A lord with no towns and no marches in flight is **exiled**: it restarts on a free tier-1 neutral town
-  of the outer ring with `exile.troops`, keeping gold, Dominion, glory and edicts. With no free town it
-  is eliminated.
+- A lord with no towns and no marches in flight is **exiled**: it restarts on a free neutral town (the
+  outermost ring that still has one, lowest tier) with `exile.troops`, keeping gold, Dominion, glory and
+  edicts. With no neutral town left it is eliminated.
 - At the season end every command is rejected and the final ranking is frozen.
 
 ## 11. Rule register

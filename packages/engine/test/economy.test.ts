@@ -142,12 +142,12 @@ describe('costs and fortification', () => {
   it('stacks tier, capital, Throne and Bulwarks', () => {
     const state = game();
     const capital = capitalOf(state, 'h1');
-    expect(fortification(state, capital)).toBeCloseTo(1.15 * 1.25, 12);
+    expect(fortification(state, capital)).toBeCloseTo(1.25 * 1.75, 12);
     lord(state, 'h1').edicts = ['BULWARKS'];
-    expect(fortification(state, capital)).toBeCloseTo(1.15 * 1.25 * 1.1, 12);
+    expect(fortification(state, capital)).toBeCloseTo(1.25 * 1.75 * 1.1, 12);
     const throne = state.towns[state.throneTownId];
     if (!throne) throw new Error('no throne');
-    expect(fortification(state, throne)).toBeCloseTo(1.6 * 1.5, 12);
+    expect(fortification(state, throne)).toBeCloseTo(2, 12);
   });
 
   it('combines every edict effect', () => {

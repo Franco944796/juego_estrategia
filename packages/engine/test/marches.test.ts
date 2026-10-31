@@ -1,3 +1,4 @@
+import { defaultConfig } from '@si/config';
 import { EDICT_IDS } from '@si/config/constants';
 import { describe, expect, it } from 'vitest';
 import { advanceTo, computeStandings, execute } from '../src/game';
@@ -40,13 +41,16 @@ function firstNeutral(state: GameState, town: Town): Town {
   return n;
 }
 
+const LAND = defaultConfig.march.landSpeed;
+const SKY = defaultConfig.march.skySpeed;
+
 describe('travel', () => {
   it('walks inside an isle at land speed, ignoring the wind', () => {
     const state = game();
     const capital = capitalOf(state, 'h1');
     const target = firstNeutral(state, capital);
     const march = send(state, 'h1', capital, target, troops(10));
-    const minutes = Math.max(0.5, distance(capital.pos, target.pos) / 45);
+    const minutes = Math.max(0.5, distance(capital.pos, target.pos) / LAND);
     expect(march.arriveAt - march.departAt).toBe(Math.round(minutes * MIN));
     expect(march.sky).toBe(false);
     expect(march.windFactor).toBe(1);
@@ -60,8 +64,8 @@ describe('travel', () => {
     const griffins = travelInfo(state, 'h1', capital, target, troops(0, 0, 8), T0);
     const mixed = travelInfo(state, 'h1', capital, target, troops(1, 0, 8), T0);
     const dist = distance(capital.pos, target.pos);
-    expect(griffins.durationMs).toBe(Math.round(Math.max(0.5, dist / (45 * 1.3)) * MIN));
-    expect(mixed.durationMs).toBe(Math.round(Math.max(0.5, dist / 45) * MIN));
+    expect(griffins.durationMs).toBe(Math.round(Math.max(0.5, dist / (LAND * 1.3)) * MIN));
+    expect(mixed.durationMs).toBe(Math.round(Math.max(0.5, dist / LAND) * MIN));
     lord(state, 'h1').edicts = ['SWIFT_WINGS'];
     const swift = travelInfo(state, 'h1', capital, target, troops(0, 0, 8), T0);
     expect(swift.durationMs).toBeLessThanOrEqual(griffins.durationMs);
@@ -78,7 +82,7 @@ describe('travel', () => {
       expect(info.sky).toBe(true);
       expect(info.windFactor).toBe(factor);
       expect(info.durationMs).toBe(
-        Math.round(Math.max(0.5, distance(capital.pos, target.pos) / (45 * factor)) * MIN),
+        Math.round(Math.max(0.5, distance(capital.pos, target.pos) / (SKY * factor)) * MIN),
       );
     }
     expect(windDirAt(state, later)).toBe(state.windDirs[1]);
@@ -244,6 +248,25 @@ describe('exile and elimination', () => {
     expect(town?.garrison).toEqual(state.config.exile.troops);
     expect(state.isles[town?.isleId ?? -1]?.ring).toBe(state.config.map.rings.length);
     expect(lord(state, 'h1')).toMatchObject({ alive: true, exiles: 1, capitalId: exiled.townId });
+  });
+
+  it('falls back to an inner ring when the outer ring is full', () => {
+    const state = game({ config: NO_PRODUCTION });
+    const outer = state.config.map.rings.length;
+    for (const town of state.towns) {
+      if (town.owner === null && state.isles[town.isleId]?.ring === outer) give(state, town, 'h2', troops(1));
+    }
+    const capital = capitalOf(state, 'h1');
+    const base = townsOnIsle(state, capital.isleId).find((t) => t.owner === 'h2');
+    if (!base) throw new Error('no base');
+    base.garrison = troops(300);
+    capital.garrison = troops(0);
+    const march = send(state, 'h2', base, capital, troops(100));
+    const exiled = advanceTo(state, march.arriveAt).find((e) => e.type === 'LORD_EXILED');
+    if (!exiled || exiled.type !== 'LORD_EXILED') throw new Error('not exiled');
+    const town = state.towns[exiled.townId];
+    expect(state.isles[town?.isleId ?? -1]?.ring).toBe(outer - 1);
+    expect(town?.isThrone).toBe(false);
   });
 
   it('waits for marches in flight before exiling', () => {

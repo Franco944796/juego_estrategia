@@ -1,0 +1,237 @@
+import type { GameConfig } from '@si/config';
+import { MINUTE_MS } from '@si/config/constants';
+import { advanceTo, createGame, type DomainEvent, type GameState, type LordInit } from '@si/engine';
+
+export interface SeasonMetrics {
+  seed: number;
+  lords: number;
+  battles: number;
+  pvpBattles: number;
+  /** PvP battles whose stronger side had at most 1.5× the weaker side's power. */
+  tensionShare: number;
+  captures: number;
+  pvpCaptures: number;
+  medianLandMin: number;
+  medianSkyMin: number;
+  /** Sky marches launched with a tailwind (factor above 1). */
+  tailwindShare: number;
+  medianFirstCaptureMin: number;
+  medianFirstBeaconMin: number | null;
+  beaconLordShare: number;
+  throneFirstMin: number | null;
+  throneChanges: number;
+  midSeasonMedianTowns: number;
+  edictsPerLord: number;
+  upgradesPerLord: number;
+  exiles: number;
+  eliminations: number;
+  /** Winner's Dominion over everyone's Dominion. */
+  winnerShare: number;
+  runtimeMs: number;
+}
+
+const TENSION_RATIO = 1.5;
+
+export function median(values: number[]): number {
+  if (values.length === 0) return Number.NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? (sorted[mid] as number)
+    : ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
+}
+
+function botLords(count: number): LordInit[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `b${i + 1}`,
+    name: `Bot ${i + 1}`,
+    color: '#888888',
+    isBot: true,
+  }));
+}
+
+function townsPerLord(state: GameState): number[] {
+  return state.lordOrder.map((id) => state.towns.filter((t) => t.owner === id).length);
+}
+
+export function simulateSeason(config: GameConfig, seed: number, bots: number): SeasonMetrics {
+  const started = performance.now();
+  const state = createGame({ seed, config, startsAt: 0, lords: botLords(bots) });
+  const minutes = (t: number): number => (t - state.startsAt) / MINUTE_MS;
+  const firstHalf = advanceTo(state, state.startsAt + (state.endsAt - state.startsAt) / 2);
+  const midTowns = townsPerLord(state);
+  const events: DomainEvent[] = [...firstHalf, ...advanceTo(state, state.endsAt)];
+
+  let battles = 0;
+  let pvpBattles = 0;
+  let tense = 0;
+  let captures = 0;
+  let pvpCaptures = 0;
+  let throneChanges = 0;
+  let throneFirst: number | null = null;
+  let edicts = 0;
+  let upgrades = 0;
+  let exiles = 0;
+  let eliminations = 0;
+  let sky = 0;
+  let tailwind = 0;
+  const land: number[] = [];
+  const skyMinutes: number[] = [];
+  const firstCapture = new Map<string, number>();
+  const firstBeacon = new Map<string, number>();
+
+  for (const e of events) {
+    switch (e.type) {
+      case 'BATTLE': {
+        battles++;
+        if (e.report.defender === null) break;
+        pvpBattles++;
+        const strong = Math.max(e.report.attackerPower, e.report.defenderPower);
+        const weak = Math.min(e.report.attackerPower, e.report.defenderPower);
+        if (weak > 0 && strong / weak <= TENSION_RATIO) tense++;
+        break;
+      }
+      case 'TOWN_CAPTURED':
+        captures++;
+        if (e.from !== null) pvpCaptures++;
+        if (!firstCapture.has(e.to)) firstCapture.set(e.to, minutes(e.at));
+        if (e.townId === state.throneTownId) {
+          throneChanges++;
+          throneFirst ??= minutes(e.at);
+        }
+        break;
+      case 'MARCH_LAUNCHED': {
+        const duration = (e.march.arriveAt - e.march.departAt) / MINUTE_MS;
+        if (e.march.sky) {
+          sky++;
+          skyMinutes.push(duration);
+          if (e.march.windFactor > 1) tailwind++;
+        } else {
+          land.push(duration);
+        }
+        break;
+      }
+      case 'BEACON_CHANGED':
+        if (e.owner !== null && !firstBeacon.has(e.owner)) firstBeacon.set(e.owner, minutes(e.at));
+        break;
+      case 'EDICT_CHOSEN':
+        edicts++;
+        break;
+      case 'TOWN_UPGRADED':
+        upgrades++;
+        break;
+      case 'LORD_EXILED':
+        exiles++;
+        break;
+      case 'LORD_ELIMINATED':
+        eliminations++;
+        break;
+      default:
+        break;
+    }
+  }
+
+  const standings = state.standings ?? [];
+  const total = standings.reduce((sum, s) => sum + s.dominion, 0);
+  return {
+    seed,
+    lords: bots,
+    battles,
+    pvpBattles,
+    tensionShare: pvpBattles > 0 ? tense / pvpBattles : 0,
+    captures,
+    pvpCaptures,
+    medianLandMin: median(land),
+    medianSkyMin: median(skyMinutes),
+    tailwindShare: sky > 0 ? tailwind / sky : 0,
+    medianFirstCaptureMin: median([...firstCapture.values()]),
+    medianFirstBeaconMin: firstBeacon.size > 0 ? median([...firstBeacon.values()]) : null,
+    beaconLordShare: firstBeacon.size / bots,
+    throneFirstMin: throneFirst,
+    throneChanges,
+    midSeasonMedianTowns: median(midTowns),
+    edictsPerLord: edicts / bots,
+    upgradesPerLord: upgrades / bots,
+    exiles,
+    eliminations,
+    winnerShare: total > 0 ? (standings[0]?.dominion ?? 0) / total : 0,
+    runtimeMs: performance.now() - started,
+  };
+}
+
+type NumericKey = {
+  [K in keyof SeasonMetrics]: SeasonMetrics[K] extends number | null ? K : never;
+}[keyof SeasonMetrics];
+
+/** Mean over the runs, skipping seasons where the metric did not happen (null). */
+export function mean(runs: SeasonMetrics[], key: NumericKey): number | null {
+  const values = runs.map((r) => r[key]).filter((v): v is number => v !== null && !Number.isNaN(v));
+  return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
+}
+
+export interface Target {
+  key: NumericKey;
+  label: string;
+  min?: number;
+  max?: number;
+  digits: number;
+}
+
+// Pacing targets of the demo preset; docs/BALANCE.md explains them.
+export const TARGETS: Target[] = [
+  { key: 'medianFirstCaptureMin', label: 'First capture per lord (game min, median)', max: 10, digits: 1 },
+  { key: 'medianLandMin', label: 'Land march (game min, median)', min: 1, max: 3, digits: 2 },
+  { key: 'medianSkyMin', label: 'Sky march (game min, median)', min: 4, max: 12, digits: 2 },
+  { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
+  { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
+  { key: 'medianFirstBeaconMin', label: 'First beacon (game min, median)', max: 90, digits: 0 },
+  { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
+  { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
+  { key: 'throneChanges', label: 'Throne captures per season', min: 2, max: 6, digits: 1 },
+  { key: 'edictsPerLord', label: 'Edicts per lord', min: 3, digits: 1 },
+  { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
+];
+
+export function meets(target: Target, value: number | null): boolean {
+  if (value === null) return false;
+  return (
+    (target.min === undefined || value >= target.min) && (target.max === undefined || value <= target.max)
+  );
+}
+
+function range(target: Target): string {
+  if (target.min !== undefined && target.max !== undefined) return `${target.min}–${target.max}`;
+  if (target.min !== undefined) return `≥ ${target.min}`;
+  return `≤ ${target.max ?? ''}`;
+}
+
+export function renderReport(runs: SeasonMetrics[], header: string): string {
+  const fmt = (v: number | null, digits: number): string => (v === null ? '—' : v.toFixed(digits));
+  const rows = TARGETS.map((t) => {
+    const value = mean(runs, t.key);
+    return `| ${t.label} | ${range(t)} | ${fmt(value, t.digits)} | ${meets(t, value) ? 'ok' : 'off'} |`;
+  });
+  const extra: [string, NumericKey, number][] = [
+    ['Battles per season', 'battles', 0],
+    ['PvP battles per season', 'pvpBattles', 0],
+    ['Captures per season', 'captures', 0],
+    ['PvP captures per season', 'pvpCaptures', 0],
+    ['Upgrades per lord', 'upgradesPerLord', 1],
+    ['Throne first taken (game min)', 'throneFirstMin', 0],
+    ['Exiles per season', 'exiles', 1],
+    ['Eliminations per season', 'eliminations', 1],
+    ['Runtime per season (ms)', 'runtimeMs', 0],
+  ];
+  return [
+    header,
+    '',
+    '| Metric | Target | Result | Status |',
+    '| --- | --- | --- | --- |',
+    ...rows,
+    '',
+    '| Other metric | Mean |',
+    '| --- | --- |',
+    ...extra.map(([label, key, digits]) => `| ${label} | ${fmt(mean(runs, key), digits)} |`),
+    '',
+  ].join('\n');
+}

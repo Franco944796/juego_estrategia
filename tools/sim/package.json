@@ -1,0 +1,14 @@
+{
+  "name": "@si/sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@si/config": "workspace:*",
+    "@si/engine": "workspace:*"
+  }
+}
