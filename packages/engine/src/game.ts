@@ -1,0 +1,199 @@
+import { MINUTE_MS, PERSONALITIES, WIND_DIRECTIONS } from '@si/config/constants';
+import { botTurn } from './bots';
+import { applyCommand } from './commands';
+import { accrueTo, projectedDominion } from './economy';
+import { generateWorld } from './mapgen';
+import { arriveMarch, windShiftMs } from './marches';
+import { heapPeek, heapPop, schedule } from './queue';
+import { nextFloat, nextInt, seedRng } from './rng';
+import { cloneTroops } from './troops';
+import type {
+  CreateGameParams,
+  DomainEvent,
+  ExecResult,
+  GameState,
+  Personality,
+  QueueItem,
+  Standing,
+} from './types';
+import { recomputeBeacon } from './world';
+
+export function createGame(params: CreateGameParams): GameState {
+  const cfg = params.config;
+  if (new Set(params.lords.map((l) => l.id)).size !== params.lords.length) {
+    throw new Error('lord ids must be unique');
+  }
+  const rng = seedRng(params.seed);
+  const world = generateWorld(cfg, rng, params.lords.length);
+  const durationMs = Math.round(cfg.season.durationMin * MINUTE_MS);
+  const startsAt = params.startsAt;
+
+  const state: GameState = {
+    version: 1,
+    seed: params.seed >>> 0,
+    rng,
+    config: cfg,
+    startsAt,
+    endsAt: startsAt + durationMs,
+    throneUnsealAt: startsAt + Math.round(durationMs * cfg.throne.unsealAtFraction),
+    throneUnsealed: false,
+    throneTownId: world.throneTownId,
+    status: 'RUNNING',
+    accruedAt: startsAt,
+    isles: world.isles,
+    lanes: world.lanes,
+    towns: world.towns,
+    lords: {},
+    lordOrder: [],
+    windDirs: [],
+    marches: [],
+    nextMarchId: 1,
+    queue: [],
+    seq: 0,
+    reports: [],
+    nextReportId: 1,
+    standings: null,
+  };
+
+  let botIndex = 0;
+  params.lords.forEach((init, i) => {
+    const isle = state.isles[world.lordIsles[i] ?? -1];
+    const town = isle ? state.towns[isle.townIds[0] ?? -1] : undefined;
+    if (!town) throw new Error('no starting town for a lord');
+    let personality: Personality | null = null;
+    if (init.isBot) {
+      personality = init.personality ?? PERSONALITIES[botIndex % PERSONALITIES.length] ?? 'RAIDER';
+      botIndex++;
+    }
+    town.owner = init.id;
+    town.tier = cfg.lords.capitalTier;
+    town.isCapital = true;
+    town.neutralCap = 0;
+    town.carry = 0;
+    town.spec = init.spec ?? (personality ? cfg.bots.personalities[personality].preferredSpec : town.spec);
+    town.garrison = cloneTroops(cfg.lords.startTroops);
+    state.lords[init.id] = {
+      id: init.id,
+      name: init.name,
+      color: init.color,
+      isBot: init.isBot,
+      personality,
+      gold: cfg.lords.startGold,
+      dominion: 0,
+      glory: 0,
+      edicts: [],
+      draft: null,
+      draftsOpened: 0,
+      capitalId: town.id,
+      alive: true,
+      exiles: 0,
+      stats: { captures: 0, townsLost: 0, battlesWon: 0, battlesLost: 0, troopsKilled: 0, troopsLost: 0 },
+    };
+    state.lordOrder.push(init.id);
+  });
+
+  const shiftMs = windShiftMs(state);
+  const windows = Math.max(1, Math.ceil(durationMs / shiftMs));
+  let dir = nextInt(rng, 0, WIND_DIRECTIONS - 1);
+  state.windDirs.push(dir);
+  for (let k = 1; k < windows; k++) {
+    const step = nextInt(rng, 1, cfg.wind.maxStep) * (nextFloat(rng) < 0.5 ? -1 : 1);
+    dir = (dir + step + WIND_DIRECTIONS) % WIND_DIRECTIONS;
+    state.windDirs.push(dir);
+    schedule(state, startsAt + k * shiftMs, { kind: 'WIND_SHIFT', index: k });
+  }
+  schedule(state, state.throneUnsealAt, { kind: 'THRONE_UNSEAL' });
+  schedule(state, state.endsAt, { kind: 'SEASON_END' });
+  const thinkMs = cfg.bots.thinkEveryMin * MINUTE_MS;
+  for (const id of state.lordOrder) {
+    if (state.lords[id]?.isBot) {
+      schedule(state, startsAt + Math.round(nextFloat(rng) * thinkMs), { kind: 'BOT_TURN', lordId: id });
+    }
+  }
+  for (const isle of state.isles) recomputeBeacon(state, isle.id, startsAt, []);
+  return state;
+}
+
+/** Runs every scheduled event due up to `now`, in (dueAt, seq) order. */
+export function advanceTo(state: GameState, now: number): DomainEvent[] {
+  const events: DomainEvent[] = [];
+  while (state.status === 'RUNNING') {
+    const top = heapPeek(state.queue);
+    if (!top || top.dueAt > now) break;
+    heapPop(state.queue);
+    accrueTo(state, top.dueAt);
+    processEvent(state, top, events);
+  }
+  return events;
+}
+
+function processEvent(state: GameState, item: QueueItem, events: DomainEvent[]): void {
+  const at = item.dueAt;
+  const ev = item.ev;
+  switch (ev.kind) {
+    case 'MARCH_ARRIVAL':
+      arriveMarch(state, ev.marchId, at, events);
+      return;
+    case 'WIND_SHIFT':
+      events.push({ type: 'WIND_SHIFTED', at, dir: state.windDirs[ev.index] ?? 0 });
+      return;
+    case 'THRONE_UNSEAL':
+      state.throneUnsealed = true;
+      events.push({ type: 'THRONE_UNSEALED', at });
+      return;
+    case 'SEASON_END':
+      state.status = 'ENDED';
+      state.queue = [];
+      state.marches = [];
+      state.standings = computeStandings(state, at);
+      events.push({ type: 'SEASON_ENDED', at, standings: state.standings });
+      return;
+    case 'BOT_TURN': {
+      const lord = state.lords[ev.lordId];
+      if (!lord || !lord.alive) return;
+      botTurn(state, ev.lordId, at, events);
+      const cfg = state.config;
+      const delayMin = cfg.bots.thinkEveryMin + (nextFloat(state.rng) * 2 - 1) * cfg.bots.jitterMin;
+      const next = Math.max(at + 1, at + Math.round(delayMin * MINUTE_MS));
+      if (next < state.endsAt) schedule(state, next, { kind: 'BOT_TURN', lordId: ev.lordId });
+      return;
+    }
+  }
+}
+
+/**
+ * Advances to `now`, then validates and applies one command. Times must not go backwards: an
+ * earlier `now` is treated as the last settled instant (before the season start it stays as is,
+ * so R02 rejects it).
+ */
+export function execute(state: GameState, lordId: string, command: unknown, now: number): ExecResult {
+  const events = advanceTo(state, now);
+  const at = now < state.startsAt ? now : Math.max(now, state.accruedAt);
+  const error = applyCommand(state, lordId, command, at, events);
+  return error ? { ok: false, error, events } : { ok: true, events };
+}
+
+/** Ranking by Dominion, then glory, then lord id. Frozen once the season has ended. */
+export function computeStandings(state: GameState, now: number): Standing[] {
+  if (state.status === 'ENDED' && state.standings) return state.standings;
+  const lords = state.lordOrder.flatMap((id) => {
+    const lord = state.lords[id];
+    return lord ? [lord] : [];
+  });
+  const rows = lords.map((lord) => ({
+    lordId: lord.id,
+    name: lord.name,
+    color: lord.color,
+    dominion: projectedDominion(state, lord.id, now),
+    glory: lord.glory,
+    towns: state.towns.filter((t) => t.owner === lord.id).length,
+    alive: lord.alive,
+  }));
+  rows.sort(
+    (a, b) =>
+      b.dominion - a.dominion ||
+      b.glory - a.glory ||
+      (a.lordId < b.lordId ? -1 : a.lordId > b.lordId ? 1 : 0),
+  );
+  return rows.map((row, i) => ({ rank: i + 1, ...row }));
+}
