@@ -25,46 +25,43 @@
 - Git: commit local al cerrar cada hito, sin push (excepción a la regla general de commits manuales).
 - Al terminar: mandar a la papelera (`gio trash`) el archivo del prompt de la raíz, como pidió Franco.
 
-## Hecho (2026-10-30, sin compilar todavía: no hay Node)
+## Hecho
 
-- `docs/DESIGN.md`: diseño completo con el registro de reglas R01–R14.
-- `packages/config/src`: `constants.ts`, `schema.ts` (zod), `defaults.ts`, `index.ts`
-  (`validateConfig`, `withOverrides`).
-- `packages/engine/src` completo: `types`, `rng` (xoshiro128**), `queue`, `troops`, `geometry`,
-  `mapgen`, `modifiers`, `economy`, `combat`, `world`, `marches`, `commands` (R01–R14), `vision`,
-  `bots`, `game` (`createGame`, `advanceTo`, `execute`, `computeStandings`), `view`, `preview`,
-  `hash`, `index`.
-- Andamiaje M0 escrito: `package.json` raíz y de `config`/`engine` (sin dependencias todavía),
-  `pnpm-workspace.yaml`, `tsconfig.base.json`, `.prettierrc.json`, `vitest.config.ts`, CI.
-- Tests escritos (sin correr): `packages/engine/test/` (helpers, rng, queue, geometry, combat,
-  mapgen, economy, rules, marches, bots, view, preview, hash, properties) y
-  `packages/config/test/config.test.ts`.
-- `tools/sim`: `src/simulate.ts` (métricas y objetivos de ritmo), `src/cli.ts`
-  (`pnpm sim --bots 8 --seed 1 --runs 5 --write` → `docs/BALANCE.md`), `test/sim.test.ts`.
-
-- `apps/client` escrito (sin compilar): Vite + React + Zustand, `src/game/` (protocolo, worker con
-  el motor y reloj acelerado, `LocalGameClient`, sesión con guardado en localStorage y pausa al
-  ocultar la pestaña), `src/map/` (cámara, render Canvas 2D, gestos), `src/ui/` (HUD, hojas de pueblo
-  y envío, paneles, tutorial, toasts, fin de temporada, pantalla de título), `styles.css`, i18n es/en,
-  tests unitarios (`test/`) y Playwright (`e2e/smoke.spec.ts`, 390×844 es-AR y 1280×800 en-US).
-  `pnpm build:demo` deja la demo en `demo/shattered-isles.html`.
+- 2026-10-31 · Entorno: Node 26.13, pnpm 12.16. TypeScript 6.0 (no 7.0: typescript-eslint exige
+  < 6.1). pnpm 12 pide aprobar scripts de build: `allowBuilds: esbuild` en `pnpm-workspace.yaml`.
+  Chromium de Playwright en `~/.cache/ms-playwright`.
+- Commit `M0+M1`: andamiaje, `packages/config`, `packages/engine` (reglas R01–R14, bots, vistas).
+- Commit `M2`: `tools/sim` + `docs/BALANCE.md` (eliminaciones 5,2 → 3,0 por temporada de 8 señores;
+  exilio a cualquier pueblo neutral libre).
+- Commit `M3`: cliente web + `demo/shattered-isles.html` (507 KB, 152 KB gzip, funciona offline).
+- Verificado: lint, typecheck, 116 tests unitarios, cobertura del motor 99,8 % de líneas, 4 tests de
+  Playwright (390×844 es-AR y 1280×800 en-US) y revisión visual de las capturas.
+- `prueba_ML` agregado a `proyectos_vscode.code-workspace`.
+- Prompt original de la raíz enviado a la papelera (recuperable desde la papelera del sistema).
 
 ## En curso
 
-- Esperando Node para compilar y probar todo (nada se ejecutó todavía).
-- Al retomar: comprobar `node -v`; si falta, pedir `sudo pacman -S --needed nodejs npm pnpm`.
+- Nada. Etapa «motor + demo offline» terminada.
 
-## Pendiente
+## Pendiente (próximas etapas, si Franco las pide)
 
-1. Con Node, en la raíz: `pnpm add -w -D typescript vitest @vitest/coverage-v8 fast-check eslint
-@eslint/js typescript-eslint eslint-config-prettier eslint-plugin-react-hooks prettier tsx
-@types/node`; `pnpm --filter @si/config add zod`; en `apps/client`: `react react-dom zustand` y dev
-   `vite @vitejs/plugin-react vite-plugin-singlefile @types/react @types/react-dom @playwright/test`.
-   `packageManager` en `package.json` (lo usa la CI), `eslint.config.js`.
-2. Typecheck, lint, tests, cobertura ≥ 90 % del motor; corregir. `git init`, commit M0+M1.
-3. `pnpm sim --write`, ajustar valores, registrar en `docs/BALANCE.md`. Commit.
-4. Build de la demo, Playwright, revisión visual de capturas. Commit.
-5. README, ESTADO final y papelera del prompt de la raíz.
+1. Balance: parte del ganador (0,37 vs ≤ 0,35) y capturas del Trono (1,6 vs 2–6); próximo ajuste
+   probable: `attackMargin` de los bots.
+2. Servidor multijugador (REST + WebSocket, actor por temporada, log de comandos con replay) y
+   `RemoteGameClient`.
+3. Cuentas, clanes, chat, ligas entre temporadas.
+4. Remoto de git (GitHub) para hacer push: no configurado.
+
+## Comandos
+
+- `pnpm install` · `pnpm check` (lint + typecheck + tests) · `pnpm coverage`
+- `pnpm sim --bots 8 --seed 1 --runs 5 [--write]`
+- `pnpm build:demo` → `demo/shattered-isles.html` · `pnpm e2e` · `pnpm dev`
+
+## Problemas conocidos
+
+- Balance: parte del ganador 0,37 (objetivo ≤ 0,35), capturas del Trono 1,6 (objetivo 2–6), tensión
+  PvP 0,40 (borde). Detalle en `docs/BALANCE.md`.
 
 ## Notas del motor (no obvias en el código)
 
