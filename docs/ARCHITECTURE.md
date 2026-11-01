@@ -3,15 +3,17 @@
 ## Layout
 
 ```text
-packages/config   GameConfig zod schema, defaults (demo preset), constants, withOverrides()
+packages/config   GameConfig zod schema, defaults (demo preset), liveConfig, constants, withOverrides()
 packages/engine   pure rules: map generation, wind, economy, combat, marches, commands, bots, views
-apps/client       React + Vite web client; engine and bots run in a Web Worker
+packages/protocol REST and WebSocket message types shared by server and client
+apps/client       React + Vite web client; engine and bots in a Web Worker, or the online world
+apps/server       Fastify + WebSocket server for the online world, node:sqlite storage
 tools/sim         headless balance simulator, writes docs/BALANCE.md
 demo/             single-file build of the client (shattered-isles.html), works offline
 ```
 
 The engine depends only on `@si/config/constants` at runtime (types come from `@si/config`, which
-holds zod). The client and the simulator call the engine; they never re-implement a rule.
+holds zod). The client, the server and the simulator call the engine; they never re-implement a rule.
 
 ## Engine API
 
@@ -63,8 +65,28 @@ bots) is a pure function of the seed and the human commands. A bot reads only wh
 - Saving: the worker posts the full state every 5 s and when the page hides; the main thread keeps it
   in `localStorage` (inside try/catch). The game pauses while the tab is hidden.
 
+## Server (online world)
+
+- `apps/server` is a Fastify app. `WorldService` owns the one `GameState` of the running season and
+  applies every change through the engine (`joinLord`, `execute`, `setStyle`) at a logged time.
+- Storage (`node:sqlite`, `apps/server/data/shattered-isles.db`): `accounts`, `seasons`,
+  `season_log` (every accepted join, command and style change with its time) and `snapshots` (the
+  whole state every 5 minutes and at season close). On start the server loads the last snapshot and
+  replays the log after it; determinism makes the rebuilt state identical (tested, including a
+  restart in the middle of a march).
+- A timer wakes the world at the next scheduled engine event (at most once a second). When the season
+  ends, `rollover` pays Legacy by rank band (`rewards.ts`), archives the standings, opens the next
+  season at the old end time and creates a fresh map; players rejoin when they connect.
+- Accounts are guests: `POST /api/session` returns a random token (stored as a SHA-256 hash) that the
+  browser keeps and that doubles as the recovery code.
+- REST: `/api/health`, `/api/session`, `/api/me`, `/api/join`, `/api/styles/unlock`,
+  `/api/styles/equip`, `/api/hall`. WebSocket `/ws?token=…`: the client sends `command` and `preview`
+  messages; the server pushes `view` (after events and every 2 s), filtered `events` and `season`
+  news. Message types live in `packages/protocol`; inputs are validated with zod and limited to 20
+  messages per second per socket.
+- `TIME_SCALE` (environment) speeds up the server clock for the end-to-end tests only.
+
 ## Not built yet
 
-A multiplayer server (REST + WebSocket, shard actors, persistence with replay) would wrap the same
-engine: one actor per season applying commands serially, logging accepted commands, and pushing
-`view()` projections. A `RemoteGameClient` would implement `GameClient` over that protocol.
+Several leagues and shards, clans, chat, and a store. One world per server process: scaling out would
+put one world actor per process and route sockets to it.
