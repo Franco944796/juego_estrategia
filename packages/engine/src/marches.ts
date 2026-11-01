@@ -99,6 +99,13 @@ export function arriveMarch(state: GameState, marchId: number, at: number, event
     events.push({ type: 'MARCH_REINFORCED', at, march });
     return;
   }
+  // A neutral town can become someone's capital while a march is on its way.
+  if (state.config.rules.capitalImmune && town.isCapital) {
+    const origin = state.towns[march.from];
+    if (origin?.owner === march.owner) origin.garrison = addTroops(origin.garrison, march.troops);
+    events.push({ type: 'MARCH_REPELLED', at, march });
+    return;
+  }
   fight(state, march, town, at, events);
 }
 

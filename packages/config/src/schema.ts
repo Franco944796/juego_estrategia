@@ -70,6 +70,7 @@ export const gameConfigSchema = z
       maxLaneLength: positive,
       shapePoints: z.number().int().min(3),
       shapeJitter: fraction,
+      growth: z.object({ ringSpacing: positive, isleSpacing: positive, tiers: intRange }),
     }),
     wind: z.object({
       shiftEveryMin: positive,
@@ -90,6 +91,8 @@ export const gameConfigSchema = z
       fortPerTier: nonNegative,
       capitalFort: z.number().min(1),
       capitalProdMult: positive,
+      homeIsleFort: z.number().min(1),
+      sprawl: z.object({ freeTowns: intNonNegative, penaltyPerTown: nonNegative }),
     }),
     neutral: z.object({
       garrison: z.array(intNonNegative),
@@ -158,7 +161,17 @@ export const gameConfigSchema = z
       bots: count,
       speeds: z.array(positive).min(1),
     }),
-    display: z.object({ suffixes: z.array(z.string()).min(1) }),
+    display: z.object({
+      suffixes: z.array(z.string()).min(1),
+      lordColors: z.array(z.string().regex(/^#[0-9a-f]{6}$/i)).min(1),
+    }),
+    rules: z.object({ capitalImmune: z.boolean() }),
+    rewards: z.object({
+      tiers: z.array(z.object({ topShare: z.number().gt(0).max(1), legacy: intNonNegative })).min(1),
+    }),
+    cosmetics: z.object({
+      styles: z.array(z.object({ id: z.string().min(1), cost: intNonNegative })).min(1),
+    }),
   })
   .superRefine((c, ctx) => {
     const tiers = c.towns.maxTier;
@@ -185,6 +198,16 @@ export const gameConfigSchema = z
     }
     if (c.throne.tier > tiers || c.lords.capitalTier > tiers) {
       ctx.addIssue({ code: 'custom', message: 'throne or capital tier exceeds towns.maxTier' });
+    }
+    const shares = c.rewards.tiers.map((tier) => tier.topShare);
+    if (shares.some((s, i) => i > 0 && s <= (shares[i - 1] ?? 0)) || shares.at(-1) !== 1) {
+      ctx.addIssue({ code: 'custom', message: 'rewards.tiers must ascend and end at topShare 1' });
+    }
+    if (c.cosmetics.styles[0]?.cost !== 0) {
+      ctx.addIssue({ code: 'custom', message: 'the first cosmetic style is the free default' });
+    }
+    if (c.map.growth.tiers[1] > tiers) {
+      ctx.addIssue({ code: 'custom', message: 'map.growth tiers exceed towns.maxTier' });
     }
     const thresholds = c.edicts.gloryThresholds;
     if (thresholds.some((t, i) => i > 0 && t <= (thresholds[i - 1] ?? 0))) {

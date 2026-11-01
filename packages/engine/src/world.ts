@@ -1,7 +1,45 @@
 import { EDICT_IDS } from '@si/config/constants';
 import { pick, shuffle } from './rng';
 import { cloneTroops } from './troops';
-import type { DomainEvent, EdictId, GameState, Lord, Town } from './types';
+import type { DomainEvent, EdictId, GameState, Lord, LordInit, Personality, Town } from './types';
+
+/** Turns `town` into the capital of a new lord and registers the lord. */
+export function foundLord(
+  state: GameState,
+  init: LordInit,
+  town: Town,
+  personality: Personality | null,
+): Lord {
+  const cfg = state.config;
+  town.owner = init.id;
+  town.tier = cfg.lords.capitalTier;
+  town.isCapital = true;
+  town.neutralCap = 0;
+  town.carry = 0;
+  town.spec = init.spec ?? (personality ? cfg.bots.personalities[personality].preferredSpec : town.spec);
+  town.garrison = cloneTroops(cfg.lords.startTroops);
+  const lord: Lord = {
+    id: init.id,
+    name: init.name,
+    color: init.color,
+    isBot: init.isBot,
+    personality,
+    gold: cfg.lords.startGold,
+    dominion: 0,
+    glory: 0,
+    edicts: [],
+    draft: null,
+    draftsOpened: 0,
+    capitalId: town.id,
+    alive: true,
+    exiles: 0,
+    stats: { captures: 0, townsLost: 0, battlesWon: 0, battlesLost: 0, troopsKilled: 0, troopsLost: 0 },
+    style: init.style ?? cfg.cosmetics.styles[0]?.id ?? '',
+  };
+  state.lords[init.id] = lord;
+  state.lordOrder.push(init.id);
+  return lord;
+}
 
 export function getLord(state: GameState, lordId: string): Lord | undefined {
   return Object.prototype.hasOwnProperty.call(state.lords, lordId) ? state.lords[lordId] : undefined;

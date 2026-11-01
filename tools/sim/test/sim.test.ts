@@ -16,9 +16,9 @@ describe('balance simulator', () => {
   });
 
   it('summarizes and renders the targets', () => {
-    const report = renderReport([run, simulateSeason(short, 4, 6)], '## Test');
+    const report = renderReport([run, simulateSeason(short, 4, 6)], '## Test', TARGETS.demo);
     expect(report).toContain('| Metric | Target | Result | Status |');
-    for (const t of TARGETS) expect(report).toContain(t.label);
+    for (const t of TARGETS.demo) expect(report).toContain(t.label);
   });
 
   it('computes medians, means and target checks', () => {

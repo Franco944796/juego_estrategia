@@ -135,7 +135,29 @@ A march moves at the speed of its slowest type.
   edicts. With no neutral town left it is eliminated.
 - At the season end every command is rejected and the final ranking is frozen.
 
-## 11. Rule register
+## 11. Online world
+
+The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same rules, in real time.
+
+- **One public world, one league.** A season lasts 30 days. At the end the ranking is frozen, rewards
+  are paid and a new season starts with a fresh map. Players join whenever they connect and start
+  with a tier-1 capital on a free outer isle.
+- **The map grows.** When no outer isle is free, a new ring of neutral isles is added outside; lanes
+  are only ever added, never removed.
+- **Capitals cannot be attacked** (`rules.capitalImmune`); there are no shields. A march whose target
+  became a capital on the way returns home (`MARCH_REPELLED`).
+- **Snowball brakes:** the other towns on your capital's isle get ×`towns.homeIsleFort` (3)
+  fortification, and owning more than `towns.sprawl.freeTowns` (6) towns divides the production of all
+  your towns by `1 + towns.sprawl.penaltyPerTown (0.1) × extra towns`. The demo uses the same brakes,
+  milder: ×1.5, and −5% per town beyond 8.
+- **Economy:** production ÷20 and costs ×5 versus the demo, so towns grow over weeks; marches still
+  take minutes and the wind shifts every 3 hours.
+- **Rewards by final rank:** top 5% → 100 Legacy, top 25% → 50, top 50% → 25, everyone else who
+  played → 10 (`rewards.tiers`; each cut-off rounds up and holds at least one player). Legacy is
+  permanent and only buys town styles (`cosmetics.styles`); it never changes the rules of a season.
+- No bots in the online world.
+
+## 12. Rule register
 
 Every command is validated by the engine; each rule has a passing and a violating test.
 
@@ -155,8 +177,9 @@ Every command is validated by the engine; each rule has a passing and a violatin
 | R12 | Active marches per lord stay below `march.maxActivePerLord`.                      |
 | R13 | An edict can be chosen only from the pending draft.                               |
 | R14 | Command payloads have the right shape (unknown ids and types are rejected).       |
+| R15 | With `rules.capitalImmune`, another lord's capital cannot be targeted.            |
 
-## 12. Bots
+## 13. Bots
 
 Each bot thinks every `bots.thinkEveryMin` game minutes (with seeded jitter) through the same command
 API as players, and reads only what its vision allows (unseen garrisons are estimated from tier).
@@ -172,7 +195,7 @@ Turn order: choose a pending edict → reinforce threatened towns → spend gold
 best attack (value ÷ travel time, predicted power ratio above the personality margin) → move surplus
 troops toward the frontier.
 
-## 13. Demo (single player)
+## 14. Demo (single player)
 
 - One human lord against `demo.bots` bots on a seeded map, accelerated time (`demo.timeScale` 20),
   season of `season.durationMin` (360) game minutes ≈ 18 real minutes. Pause and ×2 / ×4 speeds.

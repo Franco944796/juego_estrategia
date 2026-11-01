@@ -6,7 +6,6 @@ import { generateWorld } from './mapgen';
 import { arriveMarch, windShiftMs } from './marches';
 import { heapPeek, heapPop, schedule } from './queue';
 import { nextFloat, nextInt, seedRng } from './rng';
-import { cloneTroops } from './troops';
 import type {
   CreateGameParams,
   DomainEvent,
@@ -16,7 +15,7 @@ import type {
   QueueItem,
   Standing,
 } from './types';
-import { recomputeBeacon } from './world';
+import { foundLord, recomputeBeacon } from './world';
 
 export function createGame(params: CreateGameParams): GameState {
   const cfg = params.config;
@@ -65,31 +64,7 @@ export function createGame(params: CreateGameParams): GameState {
       personality = init.personality ?? PERSONALITIES[botIndex % PERSONALITIES.length] ?? 'RAIDER';
       botIndex++;
     }
-    town.owner = init.id;
-    town.tier = cfg.lords.capitalTier;
-    town.isCapital = true;
-    town.neutralCap = 0;
-    town.carry = 0;
-    town.spec = init.spec ?? (personality ? cfg.bots.personalities[personality].preferredSpec : town.spec);
-    town.garrison = cloneTroops(cfg.lords.startTroops);
-    state.lords[init.id] = {
-      id: init.id,
-      name: init.name,
-      color: init.color,
-      isBot: init.isBot,
-      personality,
-      gold: cfg.lords.startGold,
-      dominion: 0,
-      glory: 0,
-      edicts: [],
-      draft: null,
-      draftsOpened: 0,
-      capitalId: town.id,
-      alive: true,
-      exiles: 0,
-      stats: { captures: 0, townsLost: 0, battlesWon: 0, battlesLost: 0, troopsKilled: 0, troopsLost: 0 },
-    };
-    state.lordOrder.push(init.id);
+    foundLord(state, init, town, personality);
   });
 
   const shiftMs = windShiftMs(state);
@@ -104,14 +79,17 @@ export function createGame(params: CreateGameParams): GameState {
   }
   schedule(state, state.throneUnsealAt, { kind: 'THRONE_UNSEAL' });
   schedule(state, state.endsAt, { kind: 'SEASON_END' });
-  const thinkMs = cfg.bots.thinkEveryMin * MINUTE_MS;
   for (const id of state.lordOrder) {
-    if (state.lords[id]?.isBot) {
-      schedule(state, startsAt + Math.round(nextFloat(rng) * thinkMs), { kind: 'BOT_TURN', lordId: id });
-    }
+    if (state.lords[id]?.isBot) scheduleFirstBotTurn(state, id, startsAt);
   }
   for (const isle of state.isles) recomputeBeacon(state, isle.id, startsAt, []);
   return state;
+}
+
+/** A bot's first turn lands somewhere in its first thinking interval, so bots do not act in lockstep. */
+export function scheduleFirstBotTurn(state: GameState, lordId: string, at: number): void {
+  const thinkMs = state.config.bots.thinkEveryMin * MINUTE_MS;
+  schedule(state, at + Math.round(nextFloat(state.rng) * thinkMs), { kind: 'BOT_TURN', lordId });
 }
 
 /** Runs every scheduled event due up to `now`, in (dueAt, seq) order. */

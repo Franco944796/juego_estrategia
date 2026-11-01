@@ -1,5 +1,6 @@
 export * from './types';
 export { advanceTo, computeStandings, createGame, execute } from './game';
+export { expandMap, joinLord, outerRing, setStyle, type JoinResult } from './join';
 export { validateCommand, type Validation } from './commands';
 export { view } from './view';
 export type {

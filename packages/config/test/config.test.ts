@@ -33,3 +33,22 @@ describe('config', () => {
     expect(() => withOverrides(defaultConfig, patch)).toThrow();
   });
 });
+
+describe('live preset', () => {
+  it('runs a month in real time with immune capitals and a slower economy', async () => {
+    const { liveConfig } = await import('../src/index');
+    expect(liveConfig.season.durationMin).toBe(30 * 24 * 60);
+    expect(liveConfig.rules.capitalImmune).toBe(true);
+    expect(liveConfig.lords.capitalTier).toBe(1);
+    expect(liveConfig.towns.goldPerMin[0]).toBeCloseTo(defaultConfig.towns.goldPerMin[0]! / 20, 12);
+    expect(liveConfig.towns.upgradeCost[0]).toBe(defaultConfig.towns.upgradeCost[0]! * 5);
+    expect(liveConfig.march).toEqual(defaultConfig.march);
+  });
+
+  it('rejects rewards that do not end at the whole field and paid default styles', () => {
+    expect(() =>
+      withOverrides(defaultConfig, { rewards: { tiers: [{ topShare: 0.5, legacy: 1 }] } }),
+    ).toThrow();
+    expect(() => withOverrides(defaultConfig, { cosmetics: { styles: [{ id: 'x', cost: 5 }] } })).toThrow();
+  });
+});

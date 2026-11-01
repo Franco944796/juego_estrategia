@@ -80,7 +80,40 @@ function placeTowns(
   });
 }
 
-function buildLanes(cfg: GameConfig, isles: Isle[]): Lane[] {
+/** Appends a ring of isles (with their towns) at `radius` around the Throne; returns the new isles. */
+export function addRing(
+  cfg: GameConfig,
+  rng: RngState,
+  isles: Isle[],
+  towns: Town[],
+  ring: number,
+  radius: number,
+  count: number,
+  tiers: [number, number],
+): Isle[] {
+  const added: Isle[] = [];
+  const offset = (nextFloat(rng) * TAU) / count;
+  for (let k = 0; k < count; k++) {
+    const angle = offset + (k * TAU) / count + jitter(rng, cfg.map.angleJitter);
+    const r = radius + jitter(rng, cfg.map.radiusJitter);
+    const isle: Isle = {
+      id: isles.length,
+      ring,
+      pos: { x: Math.cos(angle) * r, y: Math.sin(angle) * r },
+      radius: nextRange(rng, cfg.map.isleRadius[0], cfg.map.isleRadius[1]),
+      shape: isleShape(rng, cfg),
+      townIds: [],
+      hasBeacon: true,
+      beaconOwner: null,
+    };
+    isles.push(isle);
+    added.push(isle);
+    placeTowns(rng, cfg, isle, tiers, towns);
+  }
+  return added;
+}
+
+export function buildLanes(cfg: GameConfig, isles: Isle[]): Lane[] {
   const n = isles.length;
   const key = (a: number, b: number): number => (a < b ? a * n + b : b * n + a);
   const lanes = new Map<number, Lane>();
@@ -153,23 +186,7 @@ export function generateWorld(cfg: GameConfig, rng: RngState, lordCount: number)
   throneIsle.townIds.push(throne.id);
 
   cfg.map.rings.forEach((ring, ringIndex) => {
-    const offset = (nextFloat(rng) * TAU) / ring.isles;
-    for (let k = 0; k < ring.isles; k++) {
-      const angle = offset + (k * TAU) / ring.isles + jitter(rng, cfg.map.angleJitter);
-      const r = ring.radius + jitter(rng, cfg.map.radiusJitter);
-      const isle: Isle = {
-        id: isles.length,
-        ring: ringIndex + 1,
-        pos: { x: Math.cos(angle) * r, y: Math.sin(angle) * r },
-        radius: nextRange(rng, cfg.map.isleRadius[0], cfg.map.isleRadius[1]),
-        shape: isleShape(rng, cfg),
-        townIds: [],
-        hasBeacon: true,
-        beaconOwner: null,
-      };
-      isles.push(isle);
-      placeTowns(rng, cfg, isle, ring.tiers, towns);
-    }
+    addRing(cfg, rng, isles, towns, ringIndex + 1, ring.radius, ring.isles, ring.tiers);
   });
 
   const outerRing = cfg.map.rings.length;

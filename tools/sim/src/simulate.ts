@@ -177,20 +177,35 @@ export interface Target {
   digits: number;
 }
 
-// Pacing targets of the demo preset; docs/BALANCE.md explains them.
-export const TARGETS: Target[] = [
-  { key: 'medianFirstCaptureMin', label: 'First capture per lord (game min, median)', max: 10, digits: 1 },
-  { key: 'medianLandMin', label: 'Land march (game min, median)', min: 1, max: 3, digits: 2 },
-  { key: 'medianSkyMin', label: 'Sky march (game min, median)', min: 4, max: 12, digits: 2 },
-  { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
-  { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
-  { key: 'medianFirstBeaconMin', label: 'First beacon (game min, median)', max: 90, digits: 0 },
-  { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
-  { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
-  { key: 'throneChanges', label: 'Throne captures per season', min: 2, max: 6, digits: 1 },
-  { key: 'edictsPerLord', label: 'Edicts per lord', min: 3, digits: 1 },
-  { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
-];
+// Pacing targets per preset; docs/BALANCE.md explains them.
+export const TARGETS: Record<'demo' | 'live', Target[]> = {
+  demo: [
+    { key: 'medianFirstCaptureMin', label: 'First capture per lord (game min, median)', max: 10, digits: 1 },
+    { key: 'medianLandMin', label: 'Land march (game min, median)', min: 1, max: 3, digits: 2 },
+    { key: 'medianSkyMin', label: 'Sky march (game min, median)', min: 4, max: 12, digits: 2 },
+    { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
+    { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
+    { key: 'medianFirstBeaconMin', label: 'First beacon (game min, median)', max: 90, digits: 0 },
+    { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
+    { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
+    { key: 'throneChanges', label: 'Throne captures per season', min: 2, max: 6, digits: 1 },
+    { key: 'edictsPerLord', label: 'Edicts per lord', min: 3, digits: 1 },
+    { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
+  ],
+  live: [
+    { key: 'medianFirstCaptureMin', label: 'First capture per lord (min, median)', max: 60, digits: 1 },
+    { key: 'medianLandMin', label: 'Land march (min, median)', min: 1, max: 3, digits: 2 },
+    { key: 'medianSkyMin', label: 'Sky march (min, median)', min: 4, max: 12, digits: 2 },
+    { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
+    { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
+    { key: 'medianFirstBeaconMin', label: 'First beacon (min, median)', max: 1440, digits: 0 },
+    { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
+    { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
+    { key: 'throneChanges', label: 'Throne captures per season', min: 4, max: 30, digits: 1 },
+    { key: 'edictsPerLord', label: 'Edicts per lord', min: 3, digits: 1 },
+    { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
+  ],
+};
 
 export function meets(target: Target, value: number | null): boolean {
   if (value === null) return false;
@@ -205,9 +220,9 @@ function range(target: Target): string {
   return `≤ ${target.max ?? ''}`;
 }
 
-export function renderReport(runs: SeasonMetrics[], header: string): string {
+export function renderReport(runs: SeasonMetrics[], header: string, targets: Target[]): string {
   const fmt = (v: number | null, digits: number): string => (v === null ? '—' : v.toFixed(digits));
-  const rows = TARGETS.map((t) => {
+  const rows = targets.map((t) => {
     const value = mean(runs, t.key);
     return `| ${t.label} | ${range(t)} | ${fmt(value, t.digits)} | ${meets(t, value) ? 'ok' : 'off'} |`;
   });

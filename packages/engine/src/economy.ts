@@ -27,8 +27,8 @@ export function townRates(state: GameState, town: Town, mods?: LordMods): TownRa
   if (town.isCapital) mult *= cfg.towns.capitalProdMult;
   if (beaconLitFor(state, town)) mult *= 1 + cfg.beacon.prodBonus;
   return {
-    gold: (cfg.towns.goldPerMin[i] ?? 0) * mult * m.goldProd,
-    troops: base * mult * m.troopProd,
+    gold: (cfg.towns.goldPerMin[i] ?? 0) * mult * m.goldProd * m.sprawl,
+    troops: base * mult * m.troopProd * m.sprawl,
     cap: cfg.towns.garrisonCap[i] ?? 0,
   };
 }
@@ -161,5 +161,10 @@ export function fortification(state: GameState, town: Town): number {
   let fort = 1 + cfg.towns.fortPerTier * (town.tier - 1);
   if (town.isCapital) fort *= cfg.towns.capitalFort;
   if (town.isThrone) fort *= cfg.throne.fortMult;
+  if (town.owner !== null && !town.isCapital) {
+    const capitalId = state.lords[town.owner]?.capitalId;
+    const capital = capitalId === null || capitalId === undefined ? undefined : state.towns[capitalId];
+    if (capital?.isleId === town.isleId) fort *= cfg.towns.homeIsleFort;
+  }
   return fort * lordMods(state, town.owner).fort;
 }

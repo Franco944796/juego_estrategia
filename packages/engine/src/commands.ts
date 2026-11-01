@@ -108,6 +108,9 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
         return fail('R10', 'UNREACHABLE', 'target isle has no lane to the source isle');
       }
       if (to.isThrone && !state.throneUnsealed) return fail('R11', 'THRONE_SEALED', 'the Throne is sealed');
+      if (cfg.rules.capitalImmune && to.isCapital && to.owner !== lordId) {
+        return fail('R15', 'CAPITAL_IMMUNE', 'capitals cannot be attacked');
+      }
       const active = state.marches.filter((m) => m.owner === lordId).length;
       if (active >= cfg.march.maxActivePerLord) {
         return fail('R12', 'TOO_MANY_MARCHES', 'too many marches in flight');

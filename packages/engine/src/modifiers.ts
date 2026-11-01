@@ -14,6 +14,8 @@ export interface LordMods {
   plunder: number;
   dominion: number;
   winnerLosses: number;
+  /** Production multiplier from owning many towns (1 when sprawl is off). */
+  sprawl: number;
 }
 
 function ones(): Troops {
@@ -33,6 +35,7 @@ export function neutralMods(): LordMods {
     plunder: 1,
     dominion: 1,
     winnerLosses: 1,
+    sprawl: 1,
   };
 }
 
@@ -58,6 +61,12 @@ export function lordMods(state: GameState, lordId: string | null): LordMods {
     mods.plunder *= e.plunder ?? 1;
     mods.dominion *= e.dominion ?? 1;
     mods.winnerLosses *= e.winnerLosses ?? 1;
+  }
+  const { freeTowns, penaltyPerTown } = state.config.towns.sprawl;
+  if (penaltyPerTown > 0) {
+    let owned = 0;
+    for (const town of state.towns) if (town.owner === lordId) owned++;
+    mods.sprawl = 1 / (1 + Math.max(0, owned - freeTowns) * penaltyPerTown);
   }
   return mods;
 }

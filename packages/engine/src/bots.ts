@@ -174,6 +174,7 @@ function attack(turn: Turn): void {
     for (const to of reachableTowns(state, from)) {
       if (to.owner === lord.id || turn.targeted.has(to.id)) continue;
       if (to.isThrone && !state.throneUnsealed) continue;
+      if (to.isCapital && state.config.rules.capitalImmune) continue;
       const value = targetValue(turn, to);
       if (value <= 0) continue;
       const outcome = predictAttack(turn, troops, to, knownGarrison(turn, to));

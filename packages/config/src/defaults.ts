@@ -20,6 +20,7 @@ export const defaultConfig: GameConfig = {
     maxLaneLength: 360,
     shapePoints: 14,
     shapeJitter: 0.14,
+    growth: { ringSpacing: 270, isleSpacing: 283, tiers: [1, 1] },
   },
   wind: {
     shiftEveryMin: 30,
@@ -44,6 +45,8 @@ export const defaultConfig: GameConfig = {
     fortPerTier: 0.25,
     capitalFort: 1.75,
     capitalProdMult: 1.5,
+    homeIsleFort: 1.5,
+    sprawl: { freeTowns: 8, penaltyPerTown: 0.05 },
   },
   neutral: {
     garrison: [14, 32, 60, 100, 150],
@@ -55,7 +58,7 @@ export const defaultConfig: GameConfig = {
   beacon: { prodBonus: 0.25, dominionPerMin: 3, visionHops: 1 },
   throne: {
     tier: 5,
-    garrison: 300,
+    garrison: 240,
     unsealAtFraction: 0.3,
     dominionPerMin: 25,
     fortMult: 1,
@@ -156,5 +159,40 @@ export const defaultConfig: GameConfig = {
   },
   limits: { reportsKept: 150 },
   demo: { timeScale: 20, bots: 7, speeds: [1, 2, 4] },
-  display: { suffixes: ['', 'K', 'M', 'G', 'T', 'P', 'E'] },
+  display: {
+    suffixes: ['', 'K', 'M', 'G', 'T', 'P', 'E'],
+    lordColors: [
+      '#ffd166',
+      '#ef476f',
+      '#06d6a0',
+      '#4cc9f0',
+      '#f78c6b',
+      '#b388ff',
+      '#f15bb5',
+      '#8ac926',
+      '#ff924c',
+      '#00bbf9',
+      '#e9c46a',
+      '#c77dff',
+    ],
+  },
+  rules: { capitalImmune: false },
+  rewards: {
+    tiers: [
+      { topShare: 0.05, legacy: 100 },
+      { topShare: 0.25, legacy: 50 },
+      { topShare: 0.5, legacy: 25 },
+      { topShare: 1, legacy: 10 },
+    ],
+  },
+  cosmetics: {
+    styles: [
+      { id: 'classic', cost: 0 },
+      { id: 'tower', cost: 30 },
+      { id: 'hex', cost: 60 },
+      { id: 'diamond', cost: 100 },
+      { id: 'star', cost: 160 },
+      { id: 'crystal', cost: 250 },
+    ],
+  },
 };

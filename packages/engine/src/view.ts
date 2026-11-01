@@ -96,6 +96,7 @@ export interface LordSummary {
   color: string;
   isBot: boolean;
   alive: boolean;
+  style: string;
 }
 
 export interface SeasonView {
@@ -105,6 +106,7 @@ export interface SeasonView {
   throneUnsealed: boolean;
   throneTownId: number;
   status: SeasonStatus;
+  capitalImmune: boolean;
 }
 
 export interface LordView {
@@ -217,7 +219,9 @@ export function view(state: GameState, lordId: string, now: number): LordView {
     },
     lords: state.lordOrder.flatMap((id) => {
       const l = state.lords[id];
-      return l ? [{ id: l.id, name: l.name, color: l.color, isBot: l.isBot, alive: l.alive }] : [];
+      return l
+        ? [{ id: l.id, name: l.name, color: l.color, isBot: l.isBot, alive: l.alive, style: l.style }]
+        : [];
     }),
     isles: state.isles.map((isle) => ({
       ...isle,
@@ -236,6 +240,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       throneUnsealed: state.throneUnsealed,
       throneTownId: state.throneTownId,
       status: state.status,
+      capitalImmune: cfg.rules.capitalImmune,
     },
     reports: state.reports.filter((r) => r.attacker === lordId || r.defender === lordId).reverse(),
     standings: computeStandings(state, t),

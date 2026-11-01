@@ -173,3 +173,29 @@ describe('costs and fortification', () => {
     expect(lordMods(state, null).fort).toBe(1);
   });
 });
+
+describe('snowball brakes', () => {
+  it('fortifies the other towns of the capital isle', () => {
+    const state = game({ config: { towns: { homeIsleFort: 3 } } });
+    const capital = capitalOf(state, 'h1');
+    const [home] = neutralsBeside(state, capital);
+    if (!home) throw new Error('no neutral');
+    const neutralFort = fortification(state, home);
+    give(state, home, 'h1', troops(1));
+    expect(fortification(state, home)).toBeCloseTo(neutralFort * 3, 12);
+    expect(fortification(state, capital)).toBeCloseTo(1.25 * 1.75, 12);
+    give(state, home, 'h2', troops(1));
+    expect(fortification(state, home)).toBeCloseTo(neutralFort, 12);
+  });
+
+  it('slows the production of lords with many towns', () => {
+    const state = game({ config: { towns: { sprawl: { freeTowns: 2, penaltyPerTown: 0.1 } } } });
+    const capital = capitalOf(state, 'h1');
+    const base = townRates(state, capital).gold;
+    const extra = state.towns.filter((t) => t.owner === null && !t.isThrone).slice(0, 4);
+    for (const town of extra) give(state, town, 'h1', troops(1));
+    expect(lordMods(state, 'h1').sprawl).toBeCloseTo(1 / (1 + 3 * 0.1), 12);
+    expect(townRates(state, capital).gold).toBeCloseTo(base / 1.3, 12);
+    expect(lordMods(state, 'h2').sprawl).toBe(1);
+  });
+});
