@@ -51,9 +51,65 @@ export interface ClockInfo {
   timeScale: number;
 }
 
+export type ChatChannel = 'global' | 'clan';
+
+export interface ChatMessage {
+  id: number;
+  channel: ChatChannel;
+  accountId: string;
+  name: string;
+  text: string;
+  at: number;
+}
+
+export type ClanRole = 'leader' | 'officer' | 'member';
+
+export interface ClanMedal {
+  season: number;
+  dominion: number;
+}
+
+export interface ClanSummary {
+  id: string;
+  name: string;
+  tag: string;
+  members: number;
+  medals: ClanMedal[];
+}
+
+export interface ClanMember {
+  accountId: string;
+  name: string;
+  role: ClanRole;
+  joinedAt: number;
+}
+
+export interface ClanDetail extends ClanSummary {
+  memberList: ClanMember[];
+  /** Pending join requests; only shown to the leader and officers. */
+  requests: { accountId: string; name: string; at: number }[];
+}
+
+export interface ClanRankingRow {
+  rank: number;
+  clanId: string;
+  name: string;
+  tag: string;
+  dominion: number;
+  members: number;
+}
+
+export interface MyClan {
+  id: string;
+  name: string;
+  tag: string;
+  role: ClanRole;
+}
+
 export type ClientMessage =
   | { type: 'command'; id: number; command: Command }
-  | { type: 'preview'; id: number; from: number; to: number; troops: Troops };
+  | { type: 'preview'; id: number; from: number; to: number; troops: Troops }
+  | { type: 'chat'; channel: ChatChannel; text: string };
 
 export type ServerMessage =
   | { type: 'view'; view: LordView; clock: ClockInfo }
@@ -66,7 +122,11 @@ export type ServerMessage =
       next: SeasonSummary;
       reward: Reward | null;
       top: StandingRow[];
-    };
+    }
+  | { type: 'chat'; message: ChatMessage }
+  | { type: 'chatHistory'; channel: ChatChannel; messages: ChatMessage[] }
+  /** Something about the receiver's clan changed (members, roles, requests): refetch it. */
+  | { type: 'clanChanged' };
 
 export interface SessionResponse {
   token: string;
@@ -77,11 +137,12 @@ export interface MeResponse {
   account: PublicAccount;
   joined: boolean;
   season: SeasonSummary;
+  clan: MyClan | null;
 }
 
 export interface HallResponse {
   current: SeasonSummary;
-  seasons: { id: number; startsAt: number; endsAt: number; top: StandingRow[] }[];
+  seasons: { id: number; startsAt: number; endsAt: number; top: StandingRow[]; clans: ClanRankingRow[] }[];
 }
 
 export interface ErrorResponse {

@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { Medal } from '@si/protocol';
+import type { ChatMessage, ClanMedal, ClanMember, ClanRole, ClanSummary, Medal } from '@si/protocol';
 
 export interface Account {
   id: string;
@@ -25,7 +25,7 @@ export interface FinishedSeason extends SeasonRow {
   results: unknown;
 }
 
-export type LogKind = 'join' | 'command' | 'style';
+export type LogKind = 'join' | 'command' | 'style' | 'clan';
 
 export interface LogEntry {
   seq: number;
@@ -81,6 +81,34 @@ CREATE TABLE IF NOT EXISTS snapshots (
   at INTEGER NOT NULL,
   state TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS clans (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  tag TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  medals TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS clan_members (
+  account_id TEXT PRIMARY KEY,
+  clan_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  joined_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS clan_requests (
+  clan_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (clan_id, account_id)
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  text TEXT NOT NULL,
+  at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS chat_by_channel ON chat_messages (channel, id);
 `;
 
 function toAccount(r: AccountRecord): Account {
@@ -233,5 +261,145 @@ export class Store {
     const row = this.db.prepare('SELECT seq, at, state FROM snapshots WHERE season_id = ?').get(seasonId) as
       { seq: number; at: number; state: string } | undefined;
     return row ? { seq: row.seq, at: row.at, state: JSON.parse(row.state) as unknown } : null;
+  }
+
+  createClan(id: string, name: string, tag: string, now: number): void {
+    this.db
+      .prepare('INSERT INTO clans (id, name, tag, created_at) VALUES (?, ?, ?, ?)')
+      .run(id, name, tag, now);
+  }
+
+  clanNameTaken(name: string, tag: string): boolean {
+    return this.db.prepare('SELECT 1 FROM clans WHERE name = ? OR tag = ?').get(name, tag) !== undefined;
+  }
+
+  deleteClan(id: string): void {
+    this.db.prepare('DELETE FROM clan_requests WHERE clan_id = ?').run(id);
+    this.db.prepare('DELETE FROM clan_members WHERE clan_id = ?').run(id);
+    this.db.prepare('DELETE FROM clans WHERE id = ?').run(id);
+  }
+
+  clan(id: string): ClanSummary | null {
+    const row = this.db
+      .prepare(
+        'SELECT c.id, c.name, c.tag, c.medals, (SELECT COUNT(*) FROM clan_members m WHERE m.clan_id = c.id) AS members FROM clans c WHERE c.id = ?',
+      )
+      .get(id) as { id: string; name: string; tag: string; medals: string; members: number } | undefined;
+    return row ? { ...row, medals: JSON.parse(row.medals) as ClanMedal[] } : null;
+  }
+
+  clans(search: string, limit: number): ClanSummary[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id, c.name, c.tag, c.medals, (SELECT COUNT(*) FROM clan_members m WHERE m.clan_id = c.id) AS members
+         FROM clans c WHERE c.name LIKE ? OR c.tag LIKE ? ORDER BY members DESC, c.name LIMIT ?`,
+      )
+      .all(`%${search}%`, `%${search}%`, limit) as {
+      id: string;
+      name: string;
+      tag: string;
+      medals: string;
+      members: number;
+    }[];
+    return rows.map((r) => ({ ...r, medals: JSON.parse(r.medals) as ClanMedal[] }));
+  }
+
+  addClanMedal(id: string, medal: ClanMedal): void {
+    const clan = this.clan(id);
+    if (!clan) return;
+    this.db
+      .prepare('UPDATE clans SET medals = ? WHERE id = ?')
+      .run(JSON.stringify([...clan.medals, medal]), id);
+  }
+
+  membership(accountId: string): { clanId: string; role: ClanRole } | null {
+    const row = this.db
+      .prepare('SELECT clan_id, role FROM clan_members WHERE account_id = ?')
+      .get(accountId) as { clan_id: string; role: ClanRole } | undefined;
+    return row ? { clanId: row.clan_id, role: row.role } : null;
+  }
+
+  members(clanId: string): ClanMember[] {
+    const rows = this.db
+      .prepare(
+        `SELECT m.account_id, a.name, m.role, m.joined_at FROM clan_members m JOIN accounts a ON a.id = m.account_id
+         WHERE m.clan_id = ? ORDER BY m.joined_at, m.account_id`,
+      )
+      .all(clanId) as { account_id: string; name: string; role: ClanRole; joined_at: number }[];
+    return rows.map((r) => ({ accountId: r.account_id, name: r.name, role: r.role, joinedAt: r.joined_at }));
+  }
+
+  addMember(clanId: string, accountId: string, role: ClanRole, now: number): void {
+    this.db
+      .prepare('INSERT INTO clan_members (account_id, clan_id, role, joined_at) VALUES (?, ?, ?, ?)')
+      .run(accountId, clanId, role, now);
+    this.db.prepare('DELETE FROM clan_requests WHERE account_id = ?').run(accountId);
+  }
+
+  removeMember(accountId: string): void {
+    this.db.prepare('DELETE FROM clan_members WHERE account_id = ?').run(accountId);
+  }
+
+  setRole(accountId: string, role: ClanRole): void {
+    this.db.prepare('UPDATE clan_members SET role = ? WHERE account_id = ?').run(role, accountId);
+  }
+
+  requests(clanId: string): { accountId: string; name: string; at: number }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT r.account_id, a.name, r.at FROM clan_requests r JOIN accounts a ON a.id = r.account_id
+         WHERE r.clan_id = ? ORDER BY r.at`,
+      )
+      .all(clanId) as { account_id: string; name: string; at: number }[];
+    return rows.map((r) => ({ accountId: r.account_id, name: r.name, at: r.at }));
+  }
+
+  addRequest(clanId: string, accountId: string, now: number): void {
+    this.db
+      .prepare('INSERT OR IGNORE INTO clan_requests (clan_id, account_id, at) VALUES (?, ?, ?)')
+      .run(clanId, accountId, now);
+  }
+
+  hasRequest(clanId: string, accountId: string): boolean {
+    return (
+      this.db
+        .prepare('SELECT 1 FROM clan_requests WHERE clan_id = ? AND account_id = ?')
+        .get(clanId, accountId) !== undefined
+    );
+  }
+
+  removeRequest(clanId: string, accountId: string): void {
+    this.db.prepare('DELETE FROM clan_requests WHERE clan_id = ? AND account_id = ?').run(clanId, accountId);
+  }
+
+  /** Stores a message and keeps only the newest `keep` of its channel. */
+  addMessage(
+    channel: string,
+    accountId: string,
+    name: string,
+    text: string,
+    at: number,
+    keep: number,
+  ): number {
+    const info = this.db
+      .prepare('INSERT INTO chat_messages (channel, account_id, name, text, at) VALUES (?, ?, ?, ?, ?)')
+      .run(channel, accountId, name, text, at);
+    this.db
+      .prepare(
+        'DELETE FROM chat_messages WHERE channel = ? AND id NOT IN (SELECT id FROM chat_messages WHERE channel = ? ORDER BY id DESC LIMIT ?)',
+      )
+      .run(channel, channel, keep);
+    return Number(info.lastInsertRowid);
+  }
+
+  messages(channel: string, limit: number): Omit<ChatMessage, 'channel'>[] {
+    const rows = this.db
+      .prepare(
+        'SELECT id, account_id, name, text, at FROM chat_messages WHERE channel = ? ORDER BY id DESC LIMIT ?',
+      )
+      .all(channel, limit) as { id: number; account_id: string; name: string; text: string; at: number }[];
+    return rows
+      .reverse()
+      .map((r) => ({ id: r.id, accountId: r.account_id, name: r.name, text: r.text, at: r.at }));
   }
 }

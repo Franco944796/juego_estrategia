@@ -6,9 +6,10 @@ import type { GameConfig } from '@si/config';
 import { EDICT_IDS, TROOP_TYPES } from '@si/config/constants';
 import type { Command, DomainEvent, GameState } from '@si/engine';
 import type { PublicAccount, ServerMessage } from '@si/protocol';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { WebSocket } from 'ws';
 import { z } from 'zod';
+import { ClanService, type ClanResult } from './clans';
 import type { Account, Store } from './store';
 import type { WorldService } from './world';
 
@@ -33,6 +34,13 @@ const HALL_TOP = 10;
 const DEFAULT_VIEW_EVERY_MS = 2000;
 /** Commands and previews a socket may send per second before being throttled. */
 const RATE_PER_SECOND = 20;
+const CHAT_MAX_LENGTH = 200;
+const CHAT_KEPT = 100;
+const CHAT_HISTORY = 50;
+/** Chat flood guard: at most this many messages per account in the window. */
+const CHAT_BURST = 5;
+const CHAT_WINDOW_MS = 10_000;
+const CLAN_SEARCH_LIMIT = 30;
 
 const troopsSchema = z.object({
   LANCER: z.number().int().min(0),
@@ -55,7 +63,10 @@ const socketMessage = z.discriminatedUnion('type', [
     to: z.number().int(),
     troops: troopsSchema,
   }),
+  z.object({ type: z.literal('chat'), channel: z.enum(['global', 'clan']), text: z.string() }),
 ]);
+const clanBody = z.object({ name: z.string(), tag: z.string() });
+const roleBody = z.object({ role: z.enum(['officer', 'member']) });
 const sessionBody = z.object({
   name: z
     .string()
@@ -89,7 +100,11 @@ export function eventsFor(lordId: string, events: DomainEvent[], state: GameStat
       case 'MARCH_REPELLED':
         return e.march.owner === lordId || state.towns[e.march.to]?.owner === lordId;
       case 'BATTLE':
-        return e.report.attacker === lordId || e.report.defender === lordId;
+        return (
+          e.report.attacker === lordId ||
+          e.report.defender === lordId ||
+          e.report.allies.some((a) => a.lordId === lordId)
+        );
       case 'TOWN_UPGRADED':
       case 'TOWN_RESPECIALIZED':
       case 'EDICT_DRAFT':
@@ -115,6 +130,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return authenticate(header.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined);
   };
 
+  const sockets = new Map<WebSocket, string>();
+  const clans = new ClanService(store, world, opts.now, (accountIds) => {
+    for (const [socket, id] of sockets) {
+      if (!accountIds.includes(id)) continue;
+      send(socket, { type: 'clanChanged' });
+      sendHistory(socket, id);
+    }
+  });
+
   app.get('/api/health', async () => ({ ok: true, season: world.currentSeason }));
 
   app.post('/api/session', async (req, reply) => {
@@ -133,6 +157,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       account: publicAccount(account),
       joined: world.hasJoined(account.id),
       season: world.currentSeason,
+      clan: clans.myClan(account.id),
     };
   });
 
@@ -174,20 +199,33 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   app.get('/api/hall', async () => ({
     current: world.currentSeason,
     seasons: store.finishedSeasons(HALL_SEASONS).map((s) => {
-      const results = s.results as { standings?: unknown[] } | null;
+      const results = s.results as { standings?: unknown[]; clans?: unknown[] } | null;
       return {
         id: s.id,
         startsAt: s.startsAt,
         endsAt: s.endsAt,
         top: (results?.standings ?? []).slice(0, HALL_TOP),
+        clans: (results?.clans ?? []).slice(0, HALL_TOP),
       };
     }),
   }));
 
-  const sockets = new Map<WebSocket, string>();
   const send = (socket: WebSocket, message: ServerMessage): void => {
     if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
   };
+  const chatChannel = (accountId: string, channel: 'global' | 'clan'): string | null => {
+    if (channel === 'global') return 'global';
+    const clanId = store.membership(accountId)?.clanId;
+    return clanId ? `clan:${clanId}` : null;
+  };
+  const sendHistory = (socket: WebSocket, accountId: string): void => {
+    for (const channel of ['global', 'clan'] as const) {
+      const key = chatChannel(accountId, channel);
+      const messages = key ? store.messages(key, CHAT_HISTORY).map((m) => ({ ...m, channel })) : [];
+      send(socket, { type: 'chatHistory', channel, messages });
+    }
+  };
+  const recentChat = new Map<string, number[]>();
   const rate = opts.rate ?? 1;
   const clock = () => ({ gameNow: opts.now(), rate, speed: 1, timeScale: rate });
   const pushView = (socket: WebSocket, lordId: string): void => {
@@ -203,6 +241,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     }
     sockets.set(socket, account.id);
     pushView(socket, account.id);
+    sendHistory(socket, account.id);
     let windowStart = opts.now();
     let used = 0;
     socket.on('message', (raw: Buffer) => {
@@ -224,12 +263,95 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         const result = world.command(account.id, msg.data.command as Command);
         send(socket, { type: 'result', id: msg.data.id, error: result.ok ? null : result.error });
         pushView(socket, account.id);
-      } else {
+      } else if (msg.data.type === 'preview') {
         const { id, from, to, troops } = msg.data;
         send(socket, { type: 'preview', id, preview: world.preview(account.id, from, to, troops) });
+      } else {
+        postChat(account.id, msg.data.channel, msg.data.text);
       }
     });
     socket.on('close', () => sockets.delete(socket));
+  });
+
+  /** Stores and fans out a chat line: global to everyone online, clan lines to that clan only. */
+  const postChat = (accountId: string, channel: 'global' | 'clan', raw: string): void => {
+    const text = raw
+      .replace(/[\p{C}]/gu, '')
+      .trim()
+      .slice(0, CHAT_MAX_LENGTH);
+    const key = chatChannel(accountId, channel);
+    const account = store.account(accountId);
+    if (!text || !key || !account) return;
+    const now = opts.now();
+    const recent = (recentChat.get(accountId) ?? []).filter((at) => now - at < CHAT_WINDOW_MS);
+    if (recent.length >= CHAT_BURST) return;
+    recentChat.set(accountId, [...recent, now]);
+    const id = store.addMessage(key, accountId, account.name, text, now, CHAT_KEPT);
+    const message = { id, channel, accountId, name: account.name, text, at: now };
+    for (const [socket, readerId] of sockets) {
+      if (chatChannel(readerId, channel) === key) send(socket, { type: 'chat', message });
+    }
+  };
+
+  const reply = <T>(res: FastifyReply, result: ClanResult<T>) =>
+    result.ok ? { ok: true, value: result.value } : res.code(result.status).send({ error: result.error });
+
+  app.post('/api/clans', async (req, res) => {
+    const account = bearer(req);
+    if (!account) return res.code(401).send({ error: 'UNAUTHORIZED' });
+    const body = clanBody.safeParse(req.body);
+    if (!body.success) return res.code(400).send({ error: 'BAD_CLAN_NAME' });
+    return reply(res, clans.create(account, body.data.name, body.data.tag));
+  });
+
+  app.get('/api/clans', async (req) => {
+    const q = String((req.query as { q?: string }).q ?? '').slice(0, 24);
+    return { clans: store.clans(q, CLAN_SEARCH_LIMIT) };
+  });
+
+  app.get('/api/clans/ranking', async () => ({ ranking: world.clanRanking().slice(0, HALL_TOP) }));
+
+  app.get('/api/clans/:id', async (req, res) => {
+    const account = bearer(req);
+    if (!account) return res.code(401).send({ error: 'UNAUTHORIZED' });
+    return reply(res, clans.detail((req.params as { id: string }).id, account.id));
+  });
+
+  app.post('/api/clans/:id/requests', async (req, res) => {
+    const account = bearer(req);
+    if (!account) return res.code(401).send({ error: 'UNAUTHORIZED' });
+    return reply(res, clans.request(account, (req.params as { id: string }).id));
+  });
+
+  app.post('/api/clans/:id/requests/:accountId/:decision', async (req, res) => {
+    const account = bearer(req);
+    if (!account) return res.code(401).send({ error: 'UNAUTHORIZED' });
+    const { id, accountId, decision } = req.params as { id: string; accountId: string; decision: string };
+    if (decision !== 'accept' && decision !== 'reject') return res.code(404).send({ error: 'NOT_FOUND' });
+    return reply(res, clans.decide(account, id, accountId, decision === 'accept'));
+  });
+
+  app.post('/api/clan/leave', async (req, res) => {
+    const account = bearer(req);
+    if (!account) return res.code(401).send({ error: 'UNAUTHORIZED' });
+    return reply(res, clans.leave(account));
+  });
+
+  app.post('/api/clan/members/:accountId/kick', async (req, res) => {
+    const account = bearer(req);
+    if (!account) return res.code(401).send({ error: 'UNAUTHORIZED' });
+    return reply(res, clans.kick(account, (req.params as { accountId: string }).accountId));
+  });
+
+  app.post('/api/clan/members/:accountId/role', async (req, res) => {
+    const account = bearer(req);
+    if (!account) return res.code(401).send({ error: 'UNAUTHORIZED' });
+    const body = roleBody.safeParse(req.body);
+    if (!body.success) return res.code(400).send({ error: 'BAD_ROLE' });
+    return reply(
+      res,
+      clans.setRole(account, (req.params as { accountId: string }).accountId, body.data.role),
+    );
   });
 
   const offEvents = world.onEvents((events) => {
