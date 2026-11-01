@@ -116,9 +116,8 @@
 1. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
    `sudo firewall-cmd --add-port=8787/tcp` (con `--permanent` para que quede).
 2. Subir el repo a GitHub (acción de Franco): `git remote add origin
-https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main`. Repo público:
-   falta decidir la licencia (todos los derechos reservados o PolyForm Noncommercial) y el nombre para
-   el copyright.
+https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main`. Repo público con
+   licencia PolyForm Noncommercial 1.0.0 (`LICENSE.md`, copyright Franco944796).
 3. Varias ligas con ascensos y descensos entre temporadas.
 
 ## Comandos

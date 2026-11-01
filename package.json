@@ -2,6 +2,7 @@
   "name": "shattered-isles",
   "private": true,
   "type": "module",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "packageManager": "pnpm@12.16.1",
   "engines": {
     "node": ">=20"

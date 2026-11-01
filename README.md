@@ -69,3 +69,8 @@ Built: the rules engine with bots, the balance simulator, the offline single-pla
 world (server with persistence and replay, guest accounts with a recovery code, monthly seasons,
 Legacy rewards and town styles, clans with allied reinforcements, chat). Not built yet: several leagues
 and any store.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md): free to read, study and use for noncommercial purposes.
+Any commercial use needs written permission from the copyright holder (Franco944796).
