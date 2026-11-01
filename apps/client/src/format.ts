@@ -24,9 +24,14 @@ export function formatDecimal(value: number, lang: 'es' | 'en', digits = 1): str
   return lang === 'es' ? text.replace('.', ',') : text;
 }
 
-/** m:ss, or h:mm:ss from one hour up. Negative durations show as 0:00. */
+const SECONDS_PER_DAY = 86_400;
+
+/** m:ss, h:mm:ss from one hour up, «Nd Hh» from one day up. Negative durations show as 0:00. */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
+  if (total >= SECONDS_PER_DAY) {
+    return `${Math.floor(total / SECONDS_PER_DAY)}d ${Math.floor((total % SECONDS_PER_DAY) / 3600)}h`;
+  }
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;

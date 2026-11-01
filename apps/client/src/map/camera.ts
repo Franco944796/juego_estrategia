@@ -69,8 +69,9 @@ export function startCamera(size: Size, center: Vec, extent: number): Camera {
   };
 }
 
-/** Screen point where a focused town should sit so the drawer does not cover it. */
-export function focusSpot(size: Size): Vec {
+/** Screen point where a focused town should sit so the drawer (when open) does not cover it. */
+export function focusSpot(size: Size, drawerOpen = true): Vec {
+  if (!drawerOpen) return { x: size.width / 2, y: size.height / 2 };
   if (size.width >= WIDE_SCREEN) return { x: (size.width - DRAWER_WIDTH) / 2, y: size.height / 2 };
   return { x: size.width / 2, y: size.height * FOCUS_HEIGHT_NARROW };
 }

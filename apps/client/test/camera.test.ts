@@ -49,6 +49,7 @@ describe('camera', () => {
 describe('focus', () => {
   it('puts the focused point above the drawer on phones and left of it on desktop', () => {
     expect(focusSpot(size)).toEqual({ x: 195, y: 844 * 0.28 });
+    expect(focusSpot(size, false)).toEqual({ x: 195, y: 422 });
     const wide = { width: 1280, height: 800 };
     expect(focusSpot(wide)).toEqual({ x: (1280 - 404) / 2, y: 400 });
     const cam = { x: 0, y: 0, zoom: 2 };

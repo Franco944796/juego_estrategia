@@ -8,7 +8,6 @@ import {
   type TroopType,
 } from '@si/engine';
 import { formatNumber } from '../format';
-import { HUMAN_ID } from '../game/protocol';
 import { linkedIsles, NEUTRAL_COLOR, ownerColor } from '../ui/labels';
 import { worldToScreen, type Camera, type Size, type Vec } from './camera';
 
@@ -315,38 +314,92 @@ function lock(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number):
   ctx.fillRect(cx - s * 0.7, cy - s * 0.3, s * 1.4, s * 1.05);
 }
 
+function polygon(ctx: CanvasRenderingContext2D, p: Vec, radii: number[], turn: number): void {
+  ctx.beginPath();
+  radii.forEach((radius, i) => {
+    const a = turn + (i / radii.length) * Math.PI * 2;
+    const x = p.x + Math.cos(a) * radius;
+    const y = p.y + Math.sin(a) * radius;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.closePath();
+}
+
+/** Town body by the owner's cosmetic style; ids match `cosmetics.styles` in the config. */
+export function townShape(ctx: CanvasRenderingContext2D, style: string, p: Vec, r: number): void {
+  const up = -Math.PI / 2;
+  switch (style) {
+    case 'tower':
+      ctx.beginPath();
+      ctx.roundRect(p.x - r * 0.9, p.y - r * 0.9, r * 1.8, r * 1.8, r * 0.3);
+      return;
+    case 'hex':
+      polygon(ctx, p, Array<number>(6).fill(r * 1.05), up);
+      return;
+    case 'diamond':
+      polygon(ctx, p, Array<number>(4).fill(r * 1.2), up);
+      return;
+    case 'star':
+      polygon(
+        ctx,
+        p,
+        Array.from({ length: 10 }, (_, i) => (i % 2 === 0 ? r * 1.25 : r * 0.8)),
+        up,
+      );
+      return;
+    case 'crystal':
+      polygon(
+        ctx,
+        p,
+        Array.from({ length: 8 }, (_, i) => (i % 2 === 0 ? r * 1.15 : r * 0.95)),
+        up,
+      );
+      return;
+    default:
+      circle(ctx, p, r);
+  }
+}
+
 function towns(ctx: CanvasRenderingContext2D, input: SceneInput, targets: Set<number> | null): void {
   const { view, cam, size, time } = input;
   const r = townRadiusPx(cam);
-  for (const town of view.towns) {
-    const p = worldToScreen(cam, size, town.pos);
-    if (p.x < -40 || p.y < -40 || p.x > size.width + 40 || p.y > size.height + 40) continue;
-    const rr = town.isThrone ? r * 1.35 : r;
-    circle(ctx, { x: p.x + 1.5, y: p.y + 2.5 }, rr);
+  const styles = new Map(view.lords.map((l) => [l.id, l.style]));
+  const shown = view.towns
+    .map((town) => ({ town, p: worldToScreen(cam, size, town.pos), rr: town.isThrone ? r * 1.35 : r }))
+    .filter(({ p }) => p.x >= -40 && p.y >= -40 && p.x <= size.width + 40 && p.y <= size.height + 40);
+
+  for (const { town, p, rr } of shown) {
+    const style = (town.owner && styles.get(town.owner)) || 'classic';
+    townShape(ctx, style, { x: p.x + 1.5, y: p.y + 2.5 }, rr);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
     ctx.fill();
-    circle(ctx, p, rr);
+    townShape(ctx, style, p, rr);
     ctx.fillStyle = town.owner === null ? NEUTRAL_COLOR : ownerColor(view, town.owner);
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = INK;
     ctx.stroke();
-    if (town.owner === HUMAN_ID) {
+    if (town.owner === view.me.id) {
       circle(ctx, p, rr + 3);
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = '#ffffff';
       ctx.stroke();
     }
     glyph(ctx, town.spec, p, rr * 0.55);
-    for (let i = 0; i < town.tier; i++) {
-      circle(ctx, { x: p.x + (i - (town.tier - 1) / 2) * 5.5, y: p.y + rr + 5 }, 1.9);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-    }
     if (town.isCapital) crown(ctx, p.x, p.y - rr - 6, rr * 0.5, GOLD);
     if (town.isThrone) {
       crown(ctx, p.x, p.y - rr - 8, rr * 0.6, '#f4e3ff');
       if (!view.season.throneUnsealed) lock(ctx, p.x + rr * 0.9, p.y + rr * 0.55, rr * 0.4);
+    }
+  }
+
+  // Second pass, so a town drawn later never hides a neighbor's tier pips or garrison label.
+  for (const { town, p, rr } of shown) {
+    for (let i = 0; i < town.tier; i++) {
+      circle(ctx, { x: p.x + (i - (town.tier - 1) / 2) * 5.5, y: p.y + rr + 5 }, 1.9);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
     }
     if (r >= LABEL_MIN_PX) {
       const text = town.garrison ? formatNumber(totalTroops(town.garrison)) : '?';

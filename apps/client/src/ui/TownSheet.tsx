@@ -2,7 +2,6 @@ import { TROOP_TYPES } from '@si/config/constants';
 import { totalTroops, type LordView, type TownView } from '@si/engine';
 import { formatDecimal, formatNumber } from '../format';
 import { command } from '../game/session';
-import { HUMAN_ID } from '../game/protocol';
 import { t, TROOP_NAMES } from '../i18n';
 import { useGame } from '../store';
 import { CloseIcon, CrownIcon, ShieldIcon, TroopIcon } from './icons';
@@ -12,7 +11,7 @@ import { linkedIsles, ownerColor, ownerName, townLabel } from './labels';
 export function bestSource(view: LordView, target: TownView): TownView | null {
   let best: TownView | null = null;
   for (const town of view.towns) {
-    if (town.owner !== HUMAN_ID || town.id === target.id || !town.garrison) continue;
+    if (town.owner !== view.me.id || town.id === target.id || !town.garrison) continue;
     if (!linkedIsles(view, town.isleId).has(target.isleId)) continue;
     if (!best || totalTroops(town.garrison) > totalTroops(best.garrison ?? town.garrison)) best = town;
   }
@@ -27,7 +26,7 @@ export function TownSheet({ townId }: { townId: number }) {
   const openSend = useGame((s) => s.openSend);
   const town = view?.towns[townId];
   if (!view || !town) return null;
-  const mine = town.owner === HUMAN_ID;
+  const mine = town.owner === view.me.id;
   const isle = view.isles[town.isleId];
   const source = mine ? null : bestSource(view, town);
   const gold = view.me.gold;
@@ -134,6 +133,10 @@ export function TownSheet({ townId }: { townId: number }) {
               </div>
             </div>
           </>
+        ) : view.season.capitalImmune && town.isCapital ? (
+          <p className="muted" data-testid="capital-immune">
+            {t(lang, 'capitalImmune')}
+          </p>
         ) : source ? (
           <button
             type="button"

@@ -25,6 +25,7 @@ describe('formatting', () => {
     expect(formatDuration(61_000)).toBe('1:01');
     expect(formatDuration(59_100)).toBe('1:00');
     expect(formatDuration(3_725_000)).toBe('1:02:05');
+    expect(formatDuration(86_400_000 * 29 + 3_600_000 * 23)).toBe('29d 23h');
   });
 
   it('names towns uniquely', () => {

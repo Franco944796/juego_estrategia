@@ -51,6 +51,8 @@ test('plays the opening, wins a battle and fits the screen', async ({ page }, te
 
   await page.getByTestId('send-button').click();
   await expect(page.getByTestId('pick-banner')).toBeVisible();
+  await page.waitForFunction(() => window.__shatteredIsles?.cameraSettled() ?? false);
+  await page.screenshot({ path: testInfo.outputPath('pick.png') });
   await tapTown(page, target.id, touch);
   await expect(page.getByTestId('send-sheet')).toBeVisible();
   await page.getByTestId('send-all').click();

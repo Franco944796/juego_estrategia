@@ -1,15 +1,19 @@
 import { defaultConfig } from '@si/config';
 import type { Command, DomainEvent, LordView, SendPreview, Troops } from '@si/engine';
 import { formatDuration } from '../format';
-import { BOT_NAMES, RULE_TEXT, t, WIND_NAMES } from '../i18n';
-import { toRealMs, useGame } from '../store';
+import { BOT_NAMES, RULE_TEXT, SERVER_TEXT, t, WIND_NAMES } from '../i18n';
+import { toRealMs, useGame, type SeasonNews } from '../store';
 import { townLabel } from '../ui/labels';
 import { LocalGameClient, type GameClient } from './client';
-import { HUMAN_ID, type Save } from './protocol';
+import type { HallResponse } from '@si/protocol';
+import { api, ApiError } from './api';
+import type { Save } from './protocol';
+import { RemoteGameClient } from './remote';
 
 const SAVE_KEY = 'shattered-isles:save:v1';
 const LANG_KEY = 'shattered-isles:lang';
 const TUTORIAL_KEY = 'shattered-isles:tutorial-done';
+const TOKEN_KEY = 'shattered-isles:token';
 
 let client: GameClient | null = null;
 let speedBeforeHide: number | null = null;
@@ -59,8 +63,10 @@ export function rememberLang(lang: 'es' | 'en'): void {
   write(LANG_KEY, lang);
 }
 
-function ensureClient(): GameClient {
-  client ??= new LocalGameClient({
+function localClient(): GameClient {
+  if (client instanceof LocalGameClient) return client;
+  client?.dispose();
+  client = new LocalGameClient({
     onView: (view, clock) => useGame.getState().receiveView(view, clock),
     onEvents: (events) => notify(events),
     onSave: (save) => write(SAVE_KEY, JSON.stringify(save)),
@@ -71,21 +77,21 @@ function ensureClient(): GameClient {
 export function startNewGame(bots: number): void {
   const { lang } = useGame.getState();
   useGame.getState().reset();
-  ensureClient().start({
+  localClient().start({
     // The engine is seeded; picking the seed itself may use real randomness.
     seed: Math.floor(Math.random() * 2 ** 31),
     humanName: t(lang, 'defaultName'),
     botNames: BOT_NAMES[lang].slice(0, bots),
   });
-  useGame.setState({ screen: 'game', tutorial: read(TUTORIAL_KEY) ? null : 0 });
+  useGame.setState({ screen: 'game', mode: 'offline', tutorial: read(TUTORIAL_KEY) ? null : 0 });
 }
 
 export function continueGame(): boolean {
   const save = readSave();
   if (!save) return false;
   useGame.getState().reset();
-  ensureClient().load(save);
-  useGame.setState({ screen: 'game', tutorial: null });
+  localClient().load(save);
+  useGame.setState({ screen: 'game', mode: 'offline', tutorial: null });
   return true;
 }
 
@@ -101,7 +107,8 @@ export function finishTutorial(): void {
 }
 
 export async function command(cmd: Command): Promise<boolean> {
-  const error = await ensureClient().command(cmd);
+  if (!client) return false;
+  const error = await client.command(cmd);
   if (error) {
     const { lang, pushToast } = useGame.getState();
     pushToast(RULE_TEXT[lang][error.code] ?? error.message, 'bad');
@@ -111,11 +118,127 @@ export async function command(cmd: Command): Promise<boolean> {
 }
 
 export function preview(from: number, to: number, troops: Troops): Promise<SendPreview> {
-  return ensureClient().preview(from, to, troops);
+  return client ? client.preview(from, to, troops) : new Promise<SendPreview>(() => undefined);
+}
+
+function serverText(code: string): string {
+  const { lang } = useGame.getState();
+  return SERVER_TEXT[lang][code] ?? code;
+}
+
+function failure(error: unknown): string {
+  return serverText(error instanceof ApiError ? error.code : 'NETWORK');
+}
+
+function socketUrl(token: string): string {
+  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${scheme}//${location.host}/ws?token=${encodeURIComponent(token)}`;
+}
+
+/** Offers the online world only when the page comes from the game server. */
+export async function checkOnline(): Promise<void> {
+  if (typeof location === 'undefined' || !location.protocol.startsWith('http')) return;
+  try {
+    await api.health();
+  } catch {
+    return;
+  }
+  useGame.setState({ onlineAvailable: true });
+  const token = read(TOKEN_KEY);
+  if (!token) return;
+  try {
+    const me = await api.me(token);
+    useGame.setState({ token, profile: me.account });
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'UNAUTHORIZED') write(TOKEN_KEY, null);
+  }
+}
+
+/** Creates the account on first use, joins the current season and connects. Returns an error text. */
+export async function enterOnline(name?: string): Promise<string | null> {
+  let { token } = useGame.getState();
+  try {
+    if (!token) {
+      const created = await api.session(name ?? '');
+      token = created.token;
+      write(TOKEN_KEY, token);
+      useGame.setState({ token, profile: created.account });
+    }
+    await api.join(token);
+  } catch (error) {
+    return failure(error);
+  }
+  client?.dispose();
+  useGame.getState().reset();
+  client = new RemoteGameClient(socketUrl(token), {
+    onView: (view, clock) => useGame.getState().receiveView(view, clock),
+    onEvents: (events) => notify(events),
+    onSeason: (news) => void startNextSeason(news),
+    onConnection: (connected) => useGame.setState({ connected }),
+  });
+  useGame.setState({ screen: 'game', mode: 'online', tutorial: read(TUTORIAL_KEY) ? null : 0 });
+  return null;
+}
+
+/** The server closed the season: show the result and come back in the new one. */
+async function startNextSeason(news: SeasonNews): Promise<void> {
+  useGame.setState({ seasonNews: news, selected: null, send: null, picking: false, panel: null });
+  const { token } = useGame.getState();
+  if (!token) return;
+  try {
+    await api.join(token);
+    await refreshProfile();
+  } catch {
+    // The next reconnect or menu action retries.
+  }
+}
+
+export async function applyRecoveryCode(code: string): Promise<string | null> {
+  const token = code.trim();
+  try {
+    const me = await api.me(token);
+    write(TOKEN_KEY, token);
+    useGame.setState({ token, profile: me.account });
+    return null;
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function refreshProfile(): Promise<void> {
+  const { token } = useGame.getState();
+  if (!token) return;
+  const me = await api.me(token);
+  useGame.setState({ profile: me.account });
+}
+
+async function styleAction(action: typeof api.unlock, style: string): Promise<void> {
+  const { token, pushToast } = useGame.getState();
+  if (!token) return;
+  try {
+    const result = await action(token, style);
+    useGame.setState({ profile: result.account });
+  } catch (error) {
+    pushToast(failure(error), 'bad');
+  }
+}
+
+export const unlockStyle = (style: string): Promise<void> => styleAction(api.unlock, style);
+export const equipStyle = (style: string): Promise<void> => styleAction(api.equip, style);
+
+export function loadHall(): Promise<HallResponse> {
+  return api.hall();
+}
+
+export function leaveOnline(): void {
+  client?.dispose();
+  client = null;
+  useGame.getState().reset();
+  useGame.setState({ screen: 'title', mode: 'offline', seasonNews: null, connected: true });
 }
 
 export function setSpeed(speed: number): void {
-  ensureClient().setSpeed(speed);
+  client?.setSpeed(speed);
 }
 
 /** Pauses while the page is hidden, so a background tab does not lose the season. */
@@ -152,13 +275,14 @@ function notify(events: DomainEvent[]): void {
   const { lang, view, pushToast } = store;
   if (!view) return;
   const town = (id: number): string => townLabel(lang, view, id);
+  const me = view.me.id;
   for (const e of events) {
     switch (e.type) {
       case 'MARCH_LAUNCHED': {
         const target = view.towns.find((x) => x.id === e.march.to);
-        if (e.march.owner === HUMAN_ID) {
+        if (e.march.owner === me) {
           if (store.tutorial === 2) store.setTutorial(3);
-        } else if (target?.owner === HUMAN_ID) {
+        } else if (target?.owner === me) {
           const eta = formatDuration(toRealMs(store.clock, e.march.arriveAt - e.at));
           pushToast(
             t(lang, 'toastIncoming', { name: lordName(view, e.march.owner), town: town(e.march.to), t: eta }),
@@ -169,11 +293,11 @@ function notify(events: DomainEvent[]): void {
       }
       case 'BATTLE': {
         const r = e.report;
-        if (r.attacker === HUMAN_ID) {
+        if (r.attacker === me) {
           if (r.captured) pushToast(t(lang, 'toastTook', { town: town(r.townId) }), 'good');
           else if (r.winner === 'DEFENDER')
             pushToast(t(lang, 'toastFailed', { town: town(r.townId) }), 'bad');
-        } else if (r.defender === HUMAN_ID) {
+        } else if (r.defender === me) {
           if (r.captured) pushToast(t(lang, 'toastLost', { town: town(r.townId) }), 'bad');
           else if (r.winner === 'DEFENDER')
             pushToast(t(lang, 'toastDefended', { town: town(r.townId) }), 'good');
@@ -182,8 +306,8 @@ function notify(events: DomainEvent[]): void {
       }
       case 'BEACON_CHANGED': {
         const before = view.isles.find((i) => i.id === e.isleId)?.beaconOwner;
-        if (e.owner === HUMAN_ID) pushToast(t(lang, 'toastBeacon'), 'good');
-        else if (before === HUMAN_ID) pushToast(t(lang, 'toastBeaconLost'), 'bad');
+        if (e.owner === me) pushToast(t(lang, 'toastBeacon'), 'good');
+        else if (before === me) pushToast(t(lang, 'toastBeaconLost'), 'bad');
         break;
       }
       case 'WIND_SHIFTED':
@@ -197,13 +321,13 @@ function notify(events: DomainEvent[]): void {
           pushToast(t(lang, 'toastThroneTaken', { name: lordName(view, e.to) }));
         break;
       case 'EDICT_DRAFT':
-        if (e.lordId === HUMAN_ID) pushToast(t(lang, 'toastDraft'), 'good');
+        if (e.lordId === me) pushToast(t(lang, 'toastDraft'), 'good');
         break;
       case 'LORD_EXILED':
-        if (e.lordId === HUMAN_ID) pushToast(t(lang, 'toastExiled'), 'bad');
+        if (e.lordId === me) pushToast(t(lang, 'toastExiled'), 'bad');
         break;
       case 'LORD_ELIMINATED':
-        if (e.lordId === HUMAN_ID) pushToast(t(lang, 'toastEliminated'), 'bad');
+        if (e.lordId === me) pushToast(t(lang, 'toastEliminated'), 'bad');
         break;
       default:
         break;

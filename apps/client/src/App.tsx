@@ -4,7 +4,7 @@ import { MapCanvas } from './map/MapCanvas';
 import { useGame } from './store';
 import { BottomNav } from './ui/BottomNav';
 import { Hud } from './ui/Hud';
-import { EndScreen, PickBanner, TopStack } from './ui/Overlays';
+import { ConnectionBanner, EndScreen, PickBanner, SeasonNews, TopStack } from './ui/Overlays';
 import { PanelView } from './ui/Panels';
 import { SendSheet } from './ui/SendSheet';
 import { TitleScreen } from './ui/TitleScreen';
@@ -37,6 +37,8 @@ function GameScreen() {
           <Drawer />
           <BottomNav />
           <EndScreen />
+          <SeasonNews />
+          <ConnectionBanner />
         </>
       )}
     </div>

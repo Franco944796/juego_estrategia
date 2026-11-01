@@ -2,12 +2,12 @@ import { EDICT_IDS } from '@si/config/constants';
 import { totalTroops, type BattleReport, type LordView } from '@si/engine';
 import { useState, type ReactNode } from 'react';
 import { formatDuration, formatNumber } from '../format';
-import { HUMAN_ID } from '../game/protocol';
 import { abandonGame, command, rememberLang, setSpeed, SPEEDS } from '../game/session';
 import { EDICT_TEXT, LANGS, t, type Lang, type MessageKey } from '../i18n';
 import { toRealMs, useGame, type Panel } from '../store';
 import { useGameNow } from './hooks';
 import { CloseIcon } from './icons';
+import { Profile } from './Profile';
 import { ownerName, townLabel } from './labels';
 
 function PanelFrame({ title, children, testid }: { title: string; children: ReactNode; testid: string }) {
@@ -72,8 +72,8 @@ function MarchesPanel({ view, lang }: { view: LordView; lang: Lang }) {
   );
 }
 
-function reportTitle(r: BattleReport): { key: MessageKey; tone: string } {
-  if (r.attacker === HUMAN_ID) {
+function reportTitle(me: string, r: BattleReport): { key: MessageKey; tone: string } {
+  if (r.attacker === me) {
     if (r.captured) return { key: 'took', tone: 'good' };
     return r.winner === 'ATTACKER' ? { key: 'wonAt', tone: 'muted' } : { key: 'failedAt', tone: 'bad' };
   }
@@ -85,10 +85,10 @@ function ReportsPanel({ view, lang }: { view: LordView; lang: Lang }) {
   return (
     <ul className="list">
       {view.reports.map((r) => {
-        const attacking = r.attacker === HUMAN_ID;
+        const attacking = r.attacker === view.me.id;
         const lost = totalTroops(attacking ? r.attackerLost : r.defenderLost);
         const killed = totalTroops(attacking ? r.defenderLost : r.attackerLost);
-        const head = reportTitle(r);
+        const head = reportTitle(view.me.id, r);
         const enemy = attacking ? r.defender : r.attacker;
         return (
           <li key={r.id} className="report" data-testid="report-item">
@@ -122,7 +122,7 @@ function RankingPanel({ view, lang }: { view: LordView; lang: Lang }) {
       </thead>
       <tbody>
         {view.standings.map((s) => (
-          <tr key={s.lordId} data-testid="ranking-row" className={s.lordId === HUMAN_ID ? 'me' : undefined}>
+          <tr key={s.lordId} data-testid="ranking-row" className={s.lordId === view.me.id ? 'me' : undefined}>
             <td>{s.rank}</td>
             <td>
               <span className="owner-dot small" style={{ background: s.color }} /> {s.name}
@@ -187,32 +187,36 @@ function EdictsPanel({ view, lang }: { view: LordView; lang: Lang }) {
 function MenuPanel({ lang }: { lang: Lang }) {
   const clock = useGame((s) => s.clock);
   const setLang = useGame((s) => s.setLang);
+  const online = useGame((s) => s.mode === 'online');
   const [confirming, setConfirming] = useState(false);
   const help: MessageKey[] = ['help1', 'help2', 'help3', 'help4', 'help5', 'help6'];
   return (
     <div className="menu">
-      <h3>{t(lang, 'speed')}</h3>
-      <div className="segmented" role="group" aria-label={t(lang, 'speed')}>
-        <button
-          type="button"
-          aria-pressed={clock.speed === 0}
-          data-testid="speed-0"
-          onClick={() => setSpeed(0)}
-        >
-          {t(lang, 'pause')}
-        </button>
-        {SPEEDS.map((s) => (
+      {online && <Profile />}
+      {!online && <h3>{t(lang, 'speed')}</h3>}
+      {!online && (
+        <div className="segmented" role="group" aria-label={t(lang, 'speed')}>
           <button
-            key={s}
             type="button"
-            aria-pressed={clock.speed === s}
-            data-testid={`speed-${s}`}
-            onClick={() => setSpeed(s)}
+            aria-pressed={clock.speed === 0}
+            data-testid="speed-0"
+            onClick={() => setSpeed(0)}
           >
-            ×{s}
+            {t(lang, 'pause')}
           </button>
-        ))}
-      </div>
+          {SPEEDS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={clock.speed === s}
+              data-testid={`speed-${s}`}
+              onClick={() => setSpeed(s)}
+            >
+              ×{s}
+            </button>
+          ))}
+        </div>
+      )}
       <h3>{t(lang, 'language')}</h3>
       <div className="segmented" role="group" aria-label={t(lang, 'language')}>
         {LANGS.map((l) => (
@@ -235,7 +239,7 @@ function MenuPanel({ lang }: { lang: Lang }) {
           <li key={key}>{t(lang, key)}</li>
         ))}
       </ul>
-      {confirming ? (
+      {online ? null : confirming ? (
         <div className="actions">
           <p className="tone-bad">{t(lang, 'confirmAbandon')}</p>
           <button type="button" className="danger" onClick={abandonGame}>

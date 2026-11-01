@@ -60,7 +60,9 @@ function hitTown(view: LordView, cam: Camera, size: Size, p: Vec): number | null
 /** What the drawer is about: the send route or the selected town. */
 function focusKey(s: GameStore): string | null {
   if (s.send) return `send:${s.send.from}:${s.send.to}`;
-  return s.selected !== null && !s.picking ? `town:${s.selected}` : null;
+  if (s.selected === null) return null;
+  // While picking a target the drawer is closed, so the source goes to the middle of the screen.
+  return s.picking ? `pick:${s.selected}` : `town:${s.selected}`;
 }
 
 function focusPoint(s: GameStore): Vec | null {
@@ -99,7 +101,9 @@ export function MapCanvas() {
     let cam: Camera = { x: 0, y: 0, zoom: 1 };
     let size: Size = { width: 1, height: 1 };
     let extent = 1000;
-    let placed = false;
+    // The camera is placed once per season; the map extent follows the map as it grows.
+    let placedFor: number | null = null;
+    let isleCount = 0;
     let raf = 0;
     let focus: Vec | null = null;
 
@@ -118,11 +122,15 @@ export function MapCanvas() {
       const st = useGame.getState();
       const view = st.view;
       if (view) {
-        if (!placed) {
+        if (placedFor !== view.season.startsAt) {
           extent = mapExtent(view);
           const capital = view.me.capitalId === null ? undefined : view.towns[view.me.capitalId];
           cam = startCamera(size, capital ? capital.pos : { x: 0, y: 0 }, extent);
-          placed = true;
+          placedFor = view.season.startsAt;
+          isleCount = view.isles.length;
+        } else if (view.isles.length !== isleCount) {
+          extent = mapExtent(view);
+          isleCount = view.isles.length;
         }
         if (focus) {
           cam = {
@@ -153,7 +161,10 @@ export function MapCanvas() {
       const key = focusKey(s);
       if (key === null || key === focusKey(prev)) return;
       const point = focusPoint(s);
-      if (point) focus = clampCenter({ ...cam, ...centerFor(cam, size, point, focusSpot(size)) }, extent);
+      if (point) {
+        const spot = focusSpot(size, !s.picking);
+        focus = clampCenter({ ...cam, ...centerFor(cam, size, point, spot) }, extent);
+      }
     });
 
     const pointers = new Map<number, Vec>();

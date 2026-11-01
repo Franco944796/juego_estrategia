@@ -1,4 +1,5 @@
 import type { LordView } from '@si/engine';
+import type { PublicAccount, ServerMessage } from '@si/protocol';
 import { create } from 'zustand';
 import type { ClockInfo } from './game/protocol';
 import { detectLang, type Lang } from './i18n';
@@ -17,8 +18,17 @@ export interface Clock extends ClockInfo {
   receivedAt: number;
 }
 
+export type SeasonNews = Extract<ServerMessage, { type: 'season' }>;
+
 export interface GameStore {
   lang: Lang;
+  mode: 'offline' | 'online';
+  /** The page is served by the game server, so the online world can be offered. */
+  onlineAvailable: boolean;
+  token: string | null;
+  profile: PublicAccount | null;
+  connected: boolean;
+  seasonNews: SeasonNews | null;
   screen: 'title' | 'game';
   view: LordView | null;
   clock: Clock;
@@ -51,6 +61,12 @@ const idleClock: Clock = { gameNow: 0, rate: 0, speed: 1, timeScale: 1, received
 
 export const useGame = create<GameStore>()((set, get) => ({
   lang: detectLang(),
+  mode: 'offline',
+  onlineAvailable: false,
+  token: null,
+  profile: null,
+  connected: true,
+  seasonNews: null,
   screen: 'title',
   view: null,
   clock: idleClock,

@@ -338,9 +338,11 @@ button[aria-pressed='true'] {
 
 .pick-banner {
   position: absolute;
-  left: 50%;
+  left: 8px;
+  right: 8px;
+  margin: 0 auto;
+  width: fit-content;
   bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px);
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -810,6 +812,106 @@ button[aria-pressed='true'] {
   gap: 10px;
 }
 
+.card-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.card-block h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.card-block p {
+  margin: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.text-input {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-solid);
+  color: var(--text);
+  font: inherit;
+  padding: 8px 12px;
+}
+
+button.link {
+  min-height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  padding: 4px 0;
+  align-self: flex-start;
+  text-decoration: underline;
+}
+
+.profile p {
+  margin: 4px 0;
+}
+
+.styles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.style-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 14px;
+}
+
+.style-card.in-use {
+  border-color: var(--gold);
+}
+
+.code-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  user-select: all;
+}
+
+.connection-banner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--panel-solid);
+  border: 1px solid var(--bad);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
 @media (min-width: 900px) {
   .overlay-top {
     padding: 12px 12px 0;
@@ -832,10 +934,6 @@ button[aria-pressed='true'] {
 
   .top-stack {
     align-items: flex-start;
-  }
-
-  .pick-banner {
-    left: 50%;
   }
 
   .nav {

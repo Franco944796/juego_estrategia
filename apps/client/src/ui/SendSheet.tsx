@@ -2,7 +2,6 @@ import { TROOP_TYPES } from '@si/config/constants';
 import { totalTroops, zeroTroops, type SendPreview, type Troops } from '@si/engine';
 import { useEffect, useMemo, useState } from 'react';
 import { formatDecimal, formatDuration, formatNumber } from '../format';
-import { HUMAN_ID } from '../game/protocol';
 import { command, preview as requestPreview } from '../game/session';
 import { RULE_TEXT, t, TROOP_NAMES, type Lang } from '../i18n';
 import { toRealMs, useGame, type Clock } from '../store';
@@ -31,8 +30,10 @@ function outcomeText(lang: Lang, p: SendPreview): { text: string; tone: string }
 }
 
 function waitHint(lang: Lang, p: SendPreview, clock: Clock, now: number): string | null {
-  const current = p.travel?.windFactor ?? 1;
-  const better = p.later.find((l) => l.windFactor > current + 0.15);
+  const arrival = p.arriveAt;
+  if (arrival === null) return null;
+  // Waiting only helps when the better wind gets the march there sooner.
+  const better = p.later.find((l) => l.departAt + l.durationMs < arrival);
   if (!better) return null;
   const wait = formatDuration(toRealMs(clock, better.departAt - now));
   const arrive = formatDuration(toRealMs(clock, better.departAt + better.durationMs - now));
@@ -85,7 +86,7 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
   if (!view || !source || !target) return null;
   const sources = view.towns.filter(
     (town) =>
-      town.owner === HUMAN_ID &&
+      town.owner === view.me.id &&
       town.id !== to &&
       town.garrison !== null &&
       totalTroops(town.garrison) > 0 &&

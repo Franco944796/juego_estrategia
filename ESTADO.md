@@ -1,4 +1,4 @@
-# ESTADO — prueba_ML (Shattered Isles)
+# ESTADO — juego_estrategia (Shattered Isles; antes prueba_ML)
 
 ## Objetivo
 
@@ -22,7 +22,20 @@
   idioma del dispositivo, código y docs en inglés, comunicación en español.
 - `ESTADO.md` reemplaza a PLAN.md y PROGRESS.md del prompt.
 - Node: lo instala Franco con pacman (`sudo pacman -S --needed nodejs npm pnpm`).
-- Git: commit local al cerrar cada hito, sin push (excepción a la regla general de commits manuales).
+- Git: Claude hace commits locales por hito; el push lo hace Franco (decidido 2026-11-01).
+- Servidor multijugador (decidido 2026-10-31):
+  - un único mundo público siempre abierto; temporada de 30 días en tiempo real (×1); al terminar se
+    reinicia y cada jugador vuelve a empezar con una ciudad de nivel 1 al conectarse;
+  - una sola liga; el mapa crece (anillo nuevo de islas) cuando no quedan islas de inicio libres;
+  - sin bots en el mundo en línea (el simulador sí usa bots para medir el ritmo);
+  - la capital nunca puede ser atacada; no hay escudos;
+  - recompensas por puesto: 5 % superior, 25 %, 50 % y el resto → puntos de Legado (más arriba, más
+    puntos), canjeables solo por estilos de ciudad (cosméticos);
+  - corre en la PC de Franco y su red local (`pnpm serve`, puerto 8787); SQLite nativo de Node
+    (`node:sqlite`), log de órdenes aceptadas + foto del estado cada 5 min, replay al reiniciar;
+  - stack: Fastify + @fastify/websocket + @fastify/static, identidad por token en el navegador con
+    código de recuperación;
+  - la demo offline queda igual (capitales atacables, ×20, bots).
 - Al terminar: mandar a la papelera (`gio trash`) el archivo del prompt de la raíz, como pidió Franco.
 
 ## Hecho
@@ -41,27 +54,63 @@
 
 ## En curso
 
-- Nada. Etapa «motor + demo offline» terminada.
+- Nada. Etapa «servidor multijugador» terminada el 2026-10-31, sin commitear (los commits los hace
+  Franco).
 
-## Pendiente (próximas etapas, si Franco las pide)
+## Hecho en la etapa del servidor (2026-10-31)
 
-1. Balance: parte del ganador (0,37 vs ≤ 0,35) y capturas del Trono (1,6 vs 2–6); próximo ajuste
-   probable: `attackMargin` de los bots.
-2. Servidor multijugador (REST + WebSocket, actor por temporada, log de comandos con replay) y
-   `RemoteGameClient`.
-3. Cuentas, clanes, chat, ligas entre temporadas.
-4. Remoto de git (GitHub) para hacer push: no configurado.
+- Config: `rules.capitalImmune`, `map.growth`, `rewards.tiers`, `cosmetics.styles`,
+  `display.lordColors`, `towns.homeIsleFort`, `towns.sprawl`; preset `liveConfig`
+  (`packages/config/src/presets.ts`).
+- Motor: `joinLord`, `expandMap`, `setStyle` (`packages/engine/src/join.ts`), R15 capital inmune,
+  `MARCH_REPELLED`, frenos de bola de nieve, `season.capitalImmune` en la vista.
+- `tools/sim --preset live`: 11/11 objetivos del mundo mensual (`docs/BALANCE.md`).
+- `packages/protocol`: tipos compartidos de REST y WebSocket.
+- `apps/server`: Fastify + WebSocket + node:sqlite, replay al reiniciar, cierre mensual con Legado,
+  cuentas invitadas con código de recuperación, estilos, salón de la fama; `TIME_SCALE` solo para
+  tests.
+- Cliente: modo «Mundo en línea» (`RemoteGameClient`, título, perfil con estilos/medallas/código,
+  aviso de fin de temporada, aviso de conexión), formas de ciudad por estilo, duraciones en días.
+- Verificado: 144 tests unitarios, cobertura del motor 99,8 %, 5 tests de Playwright (incluido uno con
+  dos jugadores en línea contra el servidor real), revisión visual de título y perfil en línea.
+
+## Revisión visual (2026-11-01)
+
+- `apps/client/e2e/tour.spec.ts` arma partidas guardadas con el motor (edicto pendiente, ataque
+  entrante, pueblo enemigo y vuelo entre islas, fin de temporada) y saca capturas en celular y
+  escritorio, con control de desbordes y texto cortado. 13 tests de Playwright en verde.
+- Corregido: etiquetas de guarnición tapadas por pueblos vecinos (dibujo en dos pasadas); la pista
+  «si esperás el viento» solo aparece si así llegás antes; el cierre dice «X gana la temporada».
+
+## Balance de la demo (2026-11-01)
+
+- Demo con los mismos frenos que el mundo en línea, más suaves (isla de la capital ×1,5; −5 % por pueblo
+  pasados 8) y guarnición del Trono 240 (el mundo en línea mantiene 300). 11/11 objetivos en 12
+  temporadas; `pnpm sim` usa 12 corridas por defecto en la demo. Registro en `docs/BALANCE.md`.
+- Corregido: al elegir destino la cámara centra el pueblo de origen (antes algunos destinos quedaban
+  debajo de la burbuja del tutorial y el toque no llegaba; el test fallaba a veces); cartel de
+  «elegí destino» en una línea; el test en línea ya no supone un mundo vacío.
+- La carpeta se renombró a `juego_estrategia`; el workspace de VS Code apunta a la ruta nueva.
+
+## Pendiente
+
+1. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
+   `sudo firewall-cmd --add-port=8787/tcp` (con `--permanent` para que quede).
+2. Clanes y chat en el mundo en línea.
+3. Varias ligas con ascensos y descensos entre temporadas.
 
 ## Comandos
 
 - `pnpm install` · `pnpm check` (lint + typecheck + tests) · `pnpm coverage`
 - `pnpm sim --bots 8 --seed 1 --runs 5 [--write]`
 - `pnpm build:demo` → `demo/shattered-isles.html` · `pnpm e2e` · `pnpm dev`
+- `pnpm serve` → mundo en línea en `http://localhost:8787` (datos en
+  `apps/server/data/shattered-isles.db`; borrarlo reinicia el mundo)
 
 ## Problemas conocidos
 
-- Balance: parte del ganador 0,37 (objetivo ≤ 0,35), capturas del Trono 1,6 (objetivo 2–6), tensión
-  PvP 0,40 (borde). Detalle en `docs/BALANCE.md`.
+- Balance de la demo: tensión PvP 0,40, justo en el borde del objetivo (0,2–0,4). Detalle en
+  `docs/BALANCE.md`.
 
 ## Notas del motor (no obvias en el código)
 

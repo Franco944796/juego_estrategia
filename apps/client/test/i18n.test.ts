@@ -1,3 +1,4 @@
+import { defaultConfig } from '@si/config';
 import { EDICT_IDS, TROOP_TYPES } from '@si/config/constants';
 import { describe, expect, it } from 'vitest';
 import {
@@ -5,6 +6,8 @@ import {
   EDICT_TEXT,
   messageKeys,
   RULE_TEXT,
+  SERVER_TEXT,
+  STYLE_NAMES,
   t,
   TROOP_NAMES,
   WIND_NAMES,
@@ -29,7 +32,9 @@ describe('i18n', () => {
     for (const lang of ['es', 'en'] as const) {
       for (const type of TROOP_TYPES) expect(TROOP_NAMES[lang][type]).toBeTruthy();
       for (const id of EDICT_IDS) expect(EDICT_TEXT[lang][id].name).toBeTruthy();
-      expect(Object.keys(RULE_TEXT[lang])).toHaveLength(14);
+      expect(Object.keys(RULE_TEXT[lang])).toHaveLength(15);
+      for (const style of defaultConfig.cosmetics.styles) expect(STYLE_NAMES[lang][style.id]).toBeTruthy();
+      expect(Object.keys(SERVER_TEXT[lang]).sort()).toEqual(Object.keys(SERVER_TEXT.es).sort());
       expect(WIND_NAMES[lang]).toHaveLength(8);
       expect(BOT_NAMES[lang]).toHaveLength(11);
     }

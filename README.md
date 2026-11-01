@@ -13,6 +13,19 @@ troop types that counter each other, beacons for whole isles and a Sky Throne wo
 Open `demo/shattered-isles.html` in a browser. It works offline: one human lord against bots, with
 accelerated time (a season lasts about 18 real minutes at ×1).
 
+## Online world
+
+One public world for everyone, in real time; each season lasts 30 days and closes with Legacy rewards
+by final rank (see [docs/DESIGN.md](docs/DESIGN.md), section 11).
+
+```sh
+pnpm serve            # builds the client and starts the game server on port 8787
+```
+
+Open `http://localhost:8787`, or `http://<this computer's IP>:8787` from another device on the same
+network. The world is stored in `apps/server/data/shattered-isles.db`; delete that file to start over.
+If a firewall blocks the port, open TCP 8787 (with firewalld: `sudo firewall-cmd --add-port=8787/tcp`).
+
 ## Develop
 
 Requirements: Node.js 20 or newer and pnpm.
@@ -25,14 +38,16 @@ pnpm dev              # client with hot reload at http://localhost:5173
 
 Other commands:
 
-| Command                      | What it does                                                    |
-| ---------------------------- | --------------------------------------------------------------- |
-| `pnpm coverage`              | Unit tests with engine coverage (fails under 90% of lines)      |
-| `pnpm build:demo`            | Builds the single-file demo into `demo/shattered-isles.html`    |
-| `pnpm e2e`                   | Playwright smoke tests on the built demo (390×844 and 1280×800) |
-| `pnpm sim --bots 8 --runs 5` | Simulates seasons played by bots and prints the pacing table    |
-| `pnpm sim --write`           | Same, and rewrites `docs/BALANCE.md` (keeping its tuning log)   |
-| `pnpm format`                | Formats everything with Prettier                                |
+| Command                  | What it does                                                      |
+| ------------------------ | ----------------------------------------------------------------- |
+| `pnpm coverage`          | Unit tests with engine coverage (fails under 90% of lines)        |
+| `pnpm build:demo`        | Builds the single-file demo into `demo/shattered-isles.html`      |
+| `pnpm e2e`               | Playwright smoke tests on the built demo (390×844 and 1280×800)   |
+| `pnpm sim`               | Simulates demo seasons played by bots and prints the pacing table |
+| `pnpm sim --preset live` | Same for the 30-day online world                                  |
+| `pnpm sim --write`       | Also rewrites that preset's section of `docs/BALANCE.md`          |
+| `pnpm format`            | Formats everything with Prettier                                  |
+| `pnpm serve`             | Builds the client and starts the online server (port 8787)        |
 
 Playwright needs its browser once: `pnpm --filter @si/client exec playwright install chromium`.
 
@@ -41,12 +56,15 @@ Playwright needs its browser once: `pnpm --filter @si/client exec playwright ins
 ```text
 packages/config   game configuration: zod schema and defaults
 packages/engine   deterministic rules engine and bots
-apps/client       React web client (engine in a Web Worker)
+apps/client       React web client (engine in a Web Worker, or the online world)
+apps/server       Fastify server for the online world (node:sqlite)
+packages/protocol messages shared by the server and the client
 tools/sim         balance simulator
 docs/             design, architecture, balance
 ```
 
 ## Status
 
-Built: the rules engine with bots, the balance simulator and the offline single-player demo. Not
-built yet: the multiplayer server, accounts, clans, chat and any store.
+Built: the rules engine with bots, the balance simulator, the offline single-player demo and the online
+world (server with persistence and replay, guest accounts with a recovery code, monthly seasons,
+Legacy rewards and town styles). Not built yet: several leagues, clans, chat and any store.

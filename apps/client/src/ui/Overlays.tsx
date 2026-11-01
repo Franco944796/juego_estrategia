@@ -1,8 +1,8 @@
 import { formatNumber } from '../format';
-import { HUMAN_ID } from '../game/protocol';
 import { abandonGame, finishTutorial, startNewGame } from '../game/session';
 import { t, type MessageKey } from '../i18n';
 import { useGame } from '../store';
+import { bandLabel } from './Profile';
 
 const TUTORIAL: MessageKey[] = ['tut1', 'tut2', 'tut3', 'tut4', 'tut5'];
 /** Steps that advance by themselves when the player does what they ask. */
@@ -84,8 +84,9 @@ export function PickBanner() {
 export function EndScreen() {
   const view = useGame((s) => s.view);
   const lang = useGame((s) => s.lang);
-  if (!view || view.season.status !== 'ENDED') return null;
-  const mine = view.standings.find((s) => s.lordId === HUMAN_ID);
+  const online = useGame((s) => s.mode === 'online');
+  if (!view || online || view.season.status !== 'ENDED') return null;
+  const mine = view.standings.find((s) => s.lordId === view.me.id);
   const champion = view.standings[0];
   const stats: [MessageKey, number][] = [
     ['statCaptures', view.me.stats.captures],
@@ -112,7 +113,7 @@ export function EndScreen() {
         </dl>
         <ol className="end-ranking">
           {view.standings.map((s) => (
-            <li key={s.lordId} className={s.lordId === HUMAN_ID ? 'me' : undefined}>
+            <li key={s.lordId} className={s.lordId === view.me.id ? 'me' : undefined}>
               <span className="owner-dot small" style={{ background: s.color }} /> {s.name} ·{' '}
               {formatNumber(s.dominion, lang)}
             </li>
@@ -122,6 +123,52 @@ export function EndScreen() {
           {t(lang, 'playAgain')}
         </button>
       </div>
+    </div>
+  );
+}
+
+export function SeasonNews() {
+  const news = useGame((s) => s.seasonNews);
+  const lang = useGame((s) => s.lang);
+  if (!news) return null;
+  const close = (): void => useGame.setState({ seasonNews: null });
+  return (
+    <div className="modal" role="dialog" aria-modal="true" data-testid="season-news">
+      <div className="modal-card">
+        <h2>{t(lang, 'seasonEndedTitle', { n: news.finished.id })}</h2>
+        <p className={news.reward ? 'tone-good' : 'muted'}>
+          {news.reward
+            ? t(lang, 'seasonReward', {
+                rank: news.reward.rank,
+                band: bandLabel(lang, news.reward.tier),
+                legacy: news.reward.legacy,
+              })
+            : t(lang, 'seasonNoReward')}
+        </p>
+        <ol className="end-ranking">
+          {news.top.slice(0, 5).map((row) => (
+            <li key={row.lordId}>
+              <span className="owner-dot small" style={{ background: row.color }} /> {row.name} ·{' '}
+              {formatNumber(row.dominion, lang)}
+            </li>
+          ))}
+        </ol>
+        <p>{t(lang, 'newSeasonStarted')}</p>
+        <button type="button" className="primary" onClick={close}>
+          {t(lang, 'next')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ConnectionBanner() {
+  const lang = useGame((s) => s.lang);
+  const lost = useGame((s) => s.mode === 'online' && !s.connected);
+  if (!lost) return null;
+  return (
+    <div className="connection-banner" role="status">
+      {t(lang, 'connectionLost')}
     </div>
   );
 }
