@@ -1,4 +1,5 @@
-import type { LordView, TownView } from '@si/engine';
+import { GEAR_EFFECTS } from '@si/config/constants';
+import type { Item, LordView, TownView } from '@si/engine';
 import { townName } from '../format';
 import { t, type Lang } from '../i18n';
 
@@ -45,4 +46,15 @@ export function isAlly(view: LordView, ownerId: string | null): boolean {
   const mine = view.me.clanId;
   if (ownerId === null || ownerId === view.me.id || mine === null) return false;
   return view.lords.find((l) => l.id === ownerId)?.clanId === mine;
+}
+
+/** «Casco · Épico». */
+export function itemName(lang: Lang, item: Item): string {
+  return `${t(lang, `slot${item.slot}`)} · ${t(lang, `rarity${item.rarity}`)}`;
+}
+
+/** «+10 % muros», with the bonus the view reports for the item's rarity. */
+export function itemEffect(lang: Lang, view: LordView, item: Item): string {
+  const p = Math.round(view.me.gearBonus[item.rarity] * 100);
+  return t(lang, `effect${GEAR_EFFECTS[item.slot]}`, { p });
 }

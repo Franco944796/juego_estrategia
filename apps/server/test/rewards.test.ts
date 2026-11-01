@@ -10,7 +10,7 @@ function field(n: number): Standing[] {
     name: `P${i + 1}`,
     color: '#fff',
     dominion: 100 - i,
-    glory: 0,
+    level: 1,
     towns: 1,
     alive: true,
   }));

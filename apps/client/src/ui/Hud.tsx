@@ -1,12 +1,14 @@
-import { formatDecimal, formatDuration, formatNumber } from '../format';
+import { formatDuration, formatNumber, formatRate } from '../format';
 import { t, WIND_NAMES } from '../i18n';
 import { toRealMs, useGame } from '../store';
 import { useGameNow } from './hooks';
-import { CoinIcon, CrownIcon, LevelIcon, WindArrow } from './icons';
+import { CoinIcon, CrownIcon, HelmetIcon, WindArrow } from './icons';
 import { ownerName, townById } from './labels';
 
 export function Hud() {
   const view = useGame((s) => s.view);
+  const panel = useGame((s) => s.panel);
+  const setPanel = useGame((s) => s.setPanel);
   const clock = useGame((s) => s.clock);
   const lang = useGame((s) => s.lang);
   const now = useGameNow();
@@ -33,9 +35,7 @@ export function Hud() {
             <CoinIcon className="stat-icon gold" />
             <span className="stat-text">
               <span className="stat-value">{formatNumber(me.gold, lang)}</span>
-              <span className="stat-sub">
-                +{t(lang, 'perMin', { n: formatDecimal(me.goldPerMin, lang) })}
-              </span>
+              <span className="stat-sub">+{t(lang, 'perMin', { n: formatRate(me.goldPerMin, lang) })}</span>
             </span>
           </div>
           <div className="stat" data-testid="hud-dominion" title={t(lang, 'dominion')}>
@@ -43,19 +43,34 @@ export function Hud() {
             <span className="stat-text">
               <span className="stat-value">{formatNumber(me.dominion, lang)}</span>
               <span className="stat-sub">
-                +{t(lang, 'perMin', { n: formatDecimal(me.dominionPerMin, lang) })}
+                +{t(lang, 'perMin', { n: formatRate(me.dominionPerMin, lang) })}
               </span>
             </span>
           </div>
-          <div className="stat" data-testid="hud-level" title={t(lang, 'levelTitle')}>
-            <LevelIcon className="stat-icon level" />
+          <button
+            type="button"
+            className={`stat portrait${panel === 'profile' ? ' active' : ''}`}
+            data-testid="portrait"
+            aria-label={t(lang, 'openProfile')}
+            aria-pressed={panel === 'profile'}
+            title={t(lang, 'levelTitle')}
+            onClick={() => setPanel(panel === 'profile' ? null : 'profile')}
+          >
+            <span className="avatar" style={{ borderColor: me.color }}>
+              <HelmetIcon size={18} />
+            </span>
             <span className="stat-text">
               <span className="stat-value">{t(lang, 'levelShort', { n: me.level })}</span>
               <span className="meter" aria-hidden="true">
                 <span className="meter-fill level" style={{ width: `${levelShare * 100}%` }} />
               </span>
             </span>
-          </div>
+            {me.skillPoints > 0 && (
+              <span className="inline-badge" data-testid="portrait-points">
+                {me.skillPoints}
+              </span>
+            )}
+          </button>
         </div>
         <div className="hud-chips">
           <span className="chip" data-testid="hud-time">

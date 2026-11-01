@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { advanceTo, execute } from '../src/game';
 import { hashState } from '../src/hash';
+import { upgradePlan } from '../src/economy';
 import { view } from '../src/view';
 import { visibleIsles } from '../src/vision';
 import type { Town } from '../src/types';
 import { recomputeZone } from '../src/world';
-import { capitalOf, game, give, growTo, MIN, neutralsBeside, T0, townOutOfReach, troops } from './helpers';
+import { capitalOf, game, give, growTo, MIN, neutralsBeside, T0, townOutOfReach } from './helpers';
 
 describe('view', () => {
   it('shows the lord, its towns and what it can see', () => {
@@ -17,14 +18,15 @@ describe('view', () => {
     expect(v.me).toMatchObject({
       id: 'h1',
       gold: 120,
-      glory: 0,
-      nextGlory: 10,
-      draft: null,
+      skills: { GOLD: 0, TROOPS: 0, ATTACK: 0 },
+      skillPoints: 0,
       activeMarches: 0,
     });
     const own = v.towns.find((t) => t.id === capital.id);
-    expect(own?.own).toMatchObject({ upgradeCost: 240, respecCost: 80, cap: 80 });
-    expect(own?.garrison).toEqual(troops(18, 14, 8));
+    expect(own?.own?.upgradeCost).toBeCloseTo(20, 9);
+    expect(own?.own?.upgradeMax).toEqual(upgradePlan(state.config, 2, 120, 100));
+    expect(own?.own?.upgradeMax.levels).toBe(3);
+    expect(own).toMatchObject({ garrison: 40, walls: 50 });
     const neighbor = neutralsBeside(state, capital)[0];
     expect(v.towns.find((t) => t.id === neighbor?.id)?.garrison).not.toBeNull();
     const farView = v.towns.find((t) => t.id === far.id);
@@ -52,9 +54,9 @@ describe('view', () => {
     const state = game();
     const before = hashState(state);
     const v = view(state, 'h1', T0 + 10 * MIN);
-    expect(v.me.gold).toBeCloseTo(120 + 5.25 * 10, 9);
+    expect(v.me.gold).toBeCloseTo(120 + 7.5 * 10, 9);
     expect(v.me.dominion).toBeCloseTo(20, 9);
-    expect(v.me.goldPerMin).toBeCloseTo(5.25, 12);
+    expect(v.me.goldPerMin).toBeCloseTo(7.5, 12);
     expect(hashState(state)).toBe(before);
     expect(() => view(state, 'ghost', T0)).toThrow();
   });
@@ -64,22 +66,22 @@ describe('view', () => {
     const capital = capitalOf(state, 'h1');
     const [a, b] = neutralsBeside(state, capital);
     if (!a || !b) throw new Error('need two neutrals');
-    give(state, a, 'h2', troops(40));
-    give(state, b, 'h2', troops(0));
-    const attack = execute(state, 'h1', { type: 'SEND', from: capital.id, to: a.id, troops: troops(10) }, T0);
-    const move = execute(state, 'h2', { type: 'SEND', from: a.id, to: b.id, troops: troops(5) }, T0);
+    give(state, a, 'h2', 40);
+    give(state, b, 'h2', 0);
+    const attack = execute(state, 'h1', { type: 'SEND', from: capital.id, to: a.id, troops: 10 }, T0);
+    const move = execute(state, 'h2', { type: 'SEND', from: a.id, to: b.id, troops: 5 }, T0);
     expect(attack.ok && move.ok).toBe(true);
 
     const mine = view(state, 'h1', T0);
     const ownMarch = mine.marches.find((m) => m.owner === 'h1');
-    expect(ownMarch).toMatchObject({ mine: true, incoming: false, troops: troops(10) });
+    expect(ownMarch).toMatchObject({ mine: true, incoming: false, troops: 10 });
     expect(ownMarch?.windFactor).toBe(1);
     const stranger = mine.marches.find((m) => m.owner === 'h2');
     expect(stranger).toMatchObject({ mine: false, incoming: false, troops: null, windFactor: null });
 
     const theirs = view(state, 'h2', T0);
     const incoming = theirs.marches.find((m) => m.owner === 'h1');
-    expect(incoming).toMatchObject({ incoming: true, troops: troops(10), windFactor: null });
+    expect(incoming).toMatchObject({ incoming: true, troops: 10, windFactor: null });
 
     const events = advanceTo(state, ownMarch?.arriveAt ?? T0);
     expect(events.some((e) => e.type === 'BATTLE')).toBe(true);
@@ -93,7 +95,7 @@ describe('view', () => {
     const capital = capitalOf(state, 'h1');
     expect([...visibleIsles(state, 'h1')]).toEqual([capital.isleId]);
     const zone = state.zones.find((z) => z.isleId === capital.isleId);
-    for (const id of zone?.townIds ?? []) give(state, state.towns[id] as Town, 'h1', troops(1));
+    for (const id of zone?.townIds ?? []) give(state, state.towns[id] as Town, 'h1', 1);
     recomputeZone(state, zone?.id ?? null, T0, []);
     expect([...visibleIsles(state, 'h1')].sort()).toEqual([0, 1]);
   });

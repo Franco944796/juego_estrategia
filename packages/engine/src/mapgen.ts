@@ -1,8 +1,6 @@
-import { TROOP_TYPES } from '@si/config/constants';
 import { distance } from './geometry';
-import { nextFloat, nextInt, type RngState } from './rng';
-import { splitGarrison } from './troops';
-import type { GameConfig, Isle, Lane, Town, TroopType, Vec, Zone } from './types';
+import { nextFloat, type RngState } from './rng';
+import type { GameConfig, Isle, Lane, Town, Vec, Zone } from './types';
 
 const TAU = Math.PI * 2;
 /** Successive towns turn by this angle, which spreads them evenly over the disc (sunflower layout). */
@@ -27,23 +25,15 @@ function isleShape(rng: RngState, cfg: GameConfig): number[] {
   return points;
 }
 
-export function neutralTown(
-  id: number,
-  isleId: number,
-  pos: Vec,
-  tier: number,
-  spec: TroopType,
-  cfg: GameConfig,
-): Town {
+export function neutralTown(id: number, isleId: number, pos: Vec, tier: number, cfg: GameConfig): Town {
   const garrisonSize = cfg.neutral.garrison[tier - 1] ?? 0;
   return {
     id,
     isleId,
     pos,
     tier,
-    spec,
     owner: null,
-    garrison: splitGarrison(garrisonSize, spec, cfg.neutral.mainShare),
+    garrison: garrisonSize,
     carry: 0,
     isCapital: false,
     isThrone: false,
@@ -143,19 +133,17 @@ export function addIsle(cfg: GameConfig, rng: RngState, parts: MapParts, spin: n
     bornAt: at,
   };
   const turn = nextFloat(rng) * TAU;
-  const specOffset = nextInt(rng, 0, TROOP_TYPES.length - 1);
   const created: Town[] = [];
   for (let i = 0; i < n; i++) {
     const r = R * Math.sqrt((i + 0.5) / n);
     const a = turn + i * GOLDEN_ANGLE;
     const band = tierBands.findIndex((b) => r / R < b);
     const tier = tiers[band < 0 ? tiers.length - 1 : band] ?? 1;
-    const spec = TROOP_TYPES[(specOffset + i) % TROOP_TYPES.length] ?? 'LANCER';
     const townPos = {
       x: pos.x + Math.cos(a) * r + jitter(rng, cfg.map.isle.jitter),
       y: pos.y + Math.sin(a) * r + jitter(rng, cfg.map.isle.jitter),
     };
-    const town = neutralTown(parts.towns.length, id, townPos, tier, spec, cfg);
+    const town = neutralTown(parts.towns.length, id, townPos, tier, cfg);
     parts.towns.push(town);
     created.push(town);
     isle.townIds.push(town.id);
@@ -211,7 +199,7 @@ export function generateWorld(
   if (cfg.throne.enabled && center) {
     center.isThrone = true;
     center.tier = cfg.throne.tier;
-    center.garrison = splitGarrison(cfg.throne.garrison, center.spec, cfg.neutral.mainShare);
+    center.garrison = cfg.throne.garrison;
     center.neutralCap = cfg.throne.garrison;
     const zone = parts.zones.find((z) => z.id === center.zoneId);
     if (zone) zone.townIds = zone.townIds.filter((id) => id !== center.id);

@@ -1,15 +1,16 @@
-import { TROOP_TYPES } from '@si/config/constants';
-import { totalTroops, zeroTroops, type SendPreview, type Troops } from '@si/engine';
-import { useEffect, useMemo, useState } from 'react';
+import type { SendPreview } from '@si/engine';
+import { useEffect, useState } from 'react';
 import { formatDecimal, formatDuration, formatNumber } from '../format';
 import { command, preview as requestPreview } from '../game/session';
-import { RULE_TEXT, t, TROOP_NAMES, type Lang } from '../i18n';
+import { RULE_TEXT, t, type Lang } from '../i18n';
 import { toRealMs, useGame, type Clock } from '../store';
 import { useGameNow } from './hooks';
 import { CloseIcon, TroopIcon } from './icons';
 import { linkedIsles, townById, townLabel } from './labels';
 
 const PREVIEW_DEBOUNCE_MS = 120;
+/** Slider steps: the army is chosen as a share, since garrisons run into the billions. */
+const SHARE_STEPS = 100;
 
 function travelText(lang: Lang, p: SendPreview): string {
   if (!p.travel) return '';
@@ -24,7 +25,7 @@ function outcomeText(lang: Lang, p: SendPreview): { text: string; tone: string }
   if (p.reinforce) return { text: t(lang, 'reinforce'), tone: 'good' };
   if (!p.battle) return { text: t(lang, 'unknown'), tone: 'muted' };
   if (p.battle.winner === 'ATTACKER') {
-    return { text: t(lang, 'win', { n: totalTroops(p.battle.attackerLost) }), tone: 'good' };
+    return { text: t(lang, 'win', { n: formatNumber(p.battle.attackerLost, lang) }), tone: 'good' };
   }
   return { text: t(lang, 'lose'), tone: 'bad' };
 }
@@ -52,11 +53,11 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
   const source = view ? townById(view, from) : undefined;
   const target = view ? townById(view, to) : undefined;
   // From a clanmate's town the player can only move the troops it stationed there.
-  const available: Troops =
+  const available =
     (source?.owner === view?.me.id
       ? source?.garrison
-      : source?.stationed?.find((s) => s.lordId === view?.me.id)?.troops) ?? zeroTroops();
-  const [amounts, setAmounts] = useState<Troops>(() => ({ ...available }));
+      : source?.stationed?.find((s) => s.lordId === view?.me.id)?.troops) ?? 0;
+  const [share, setShare] = useState(1);
   const [preview, setPreview] = useState<SendPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const windDir = view?.wind.dir;
@@ -65,19 +66,12 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
     if (tutorial === 1) setTutorial(2);
   }, [tutorial, setTutorial]);
 
-  const clamped = useMemo<Troops>(
-    () => ({
-      LANCER: Math.min(amounts.LANCER, available.LANCER),
-      ARCHER: Math.min(amounts.ARCHER, available.ARCHER),
-      GRIFFIN: Math.min(amounts.GRIFFIN, available.GRIFFIN),
-    }),
-    [amounts, available.LANCER, available.ARCHER, available.GRIFFIN],
-  );
+  const amount = Math.floor(available * share);
 
   useEffect(() => {
     let cancelled = false;
     const id = setTimeout(() => {
-      void requestPreview(from, to, clamped).then((p) => {
+      void requestPreview(from, to, amount).then((p) => {
         if (!cancelled) setPreview(p);
       });
     }, PREVIEW_DEBOUNCE_MS);
@@ -85,7 +79,7 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
       cancelled = true;
       clearTimeout(id);
     };
-  }, [from, to, clamped, windDir]);
+  }, [from, to, amount, windDir]);
 
   if (!view || !source || !target) return null;
   const sources = view.towns.filter(
@@ -93,26 +87,19 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
       town.owner === view.me.id &&
       town.id !== to &&
       town.garrison !== null &&
-      totalTroops(town.garrison) > 0 &&
+      town.garrison > 0 &&
       linkedIsles(view, town.isleId).has(target.isleId),
   );
-  const total = totalTroops(clamped);
+  const total = amount;
   const outcome = preview ? outcomeText(lang, preview) : null;
   const hint = preview ? waitHint(lang, preview, clock, now) : null;
   const error =
     preview?.error && total > 0 ? (RULE_TEXT[lang][preview.error.code] ?? preview.error.message) : null;
   const eta = preview?.travel ? formatDuration(toRealMs(clock, preview.travel.durationMs)) : '—';
 
-  const setAll = (share: number): void =>
-    setAmounts({
-      LANCER: Math.floor(available.LANCER * share),
-      ARCHER: Math.floor(available.ARCHER * share),
-      GRIFFIN: Math.floor(available.GRIFFIN * share),
-    });
-
   const send = async (): Promise<void> => {
     setBusy(true);
-    const ok = await command({ type: 'SEND', from, to, troops: clamped });
+    const ok = await command({ type: 'SEND', from, to, troops: amount });
     setBusy(false);
     if (ok) closeSheet();
   };
@@ -140,43 +127,41 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
               aria-pressed={town.id === from}
               onClick={() => openSend(town.id, to)}
             >
-              {townLabel(lang, view, town.id)} ·{' '}
-              {formatNumber(totalTroops(town.garrison ?? zeroTroops()), lang)}
+              {townLabel(lang, view, town.id)} · {formatNumber(town.garrison ?? 0, lang)}
             </button>
           ))}
         </div>
       )}
 
       <div className="sliders">
-        {TROOP_TYPES.map((type) => (
-          <label key={type} className="slider-row">
-            <span className="troop">
-              <TroopIcon type={type} size={16} />
-              {TROOP_NAMES[lang][type]}
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={available[type]}
-              step={1}
-              value={clamped[type]}
-              disabled={available[type] === 0}
-              onChange={(e) => setAmounts({ ...clamped, [type]: Number(e.target.value) })}
-            />
-            <span className="slider-value">
-              {formatNumber(clamped[type], lang)}/{formatNumber(available[type], lang)}
-            </span>
-          </label>
-        ))}
+        <label className="slider-row">
+          <span className="troop">
+            <TroopIcon size={16} />
+            {t(lang, 'troops')}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={SHARE_STEPS}
+            step={1}
+            value={Math.round(share * SHARE_STEPS)}
+            disabled={available === 0}
+            data-testid="troop-slider"
+            onChange={(e) => setShare(Number(e.target.value) / SHARE_STEPS)}
+          />
+          <span className="slider-value">
+            {formatNumber(amount, lang)}/{formatNumber(available, lang)}
+          </span>
+        </label>
       </div>
       <div className="quick">
-        <button type="button" className="small" data-testid="send-all" onClick={() => setAll(1)}>
+        <button type="button" className="small" data-testid="send-all" onClick={() => setShare(1)}>
           {t(lang, 'all')}
         </button>
-        <button type="button" className="small" onClick={() => setAll(0.5)}>
+        <button type="button" className="small" onClick={() => setShare(0.5)}>
           {t(lang, 'half')}
         </button>
-        <button type="button" className="small" onClick={() => setAll(0)}>
+        <button type="button" className="small" onClick={() => setShare(0)}>
           {t(lang, 'none')}
         </button>
       </div>

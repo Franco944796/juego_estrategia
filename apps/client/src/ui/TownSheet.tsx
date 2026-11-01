@@ -1,8 +1,7 @@
-import { TROOP_TYPES } from '@si/config/constants';
-import { totalTroops, type LordView, type TownView } from '@si/engine';
-import { formatDecimal, formatNumber } from '../format';
+import type { LordView, TownView } from '@si/engine';
+import { formatDecimal, formatNumber, formatRate } from '../format';
 import { command } from '../game/session';
-import { t, TROOP_NAMES } from '../i18n';
+import { t } from '../i18n';
 import { useGame } from '../store';
 import { CloseIcon, CrownIcon, ShieldIcon, TroopIcon } from './icons';
 import { isAlly, linkedIsles, ownerColor, ownerName, townById, townLabel } from './labels';
@@ -13,7 +12,7 @@ export function bestSource(view: LordView, target: TownView): TownView | null {
   for (const town of view.towns) {
     if (town.owner !== view.me.id || town.id === target.id || !town.garrison) continue;
     if (!linkedIsles(view, town.isleId).has(target.isleId)) continue;
-    if (!best || totalTroops(town.garrison) > totalTroops(best.garrison ?? town.garrison)) best = town;
+    if (!best || town.garrison > (best.garrison ?? 0)) best = town;
   }
   return best;
 }
@@ -55,40 +54,28 @@ export function TownSheet({ townId }: { townId: number }) {
       <div className="facts">
         <div className="fact">
           <span className="fact-label">{t(lang, 'garrison')}</span>
-          {town.garrison ? (
-            <span className="troops">
-              {TROOP_TYPES.map((type) => (
-                <span key={type} className="troop" title={TROOP_NAMES[lang][type]}>
-                  <TroopIcon type={type} size={15} />
-                  {formatNumber(town.garrison?.[type] ?? 0, lang)}
-                </span>
-              ))}
+          {town.garrison !== null ? (
+            <span className="troop" data-testid="garrison">
+              <TroopIcon size={15} />
+              {formatNumber(town.garrison, lang)}
             </span>
           ) : (
             <span className="muted">{t(lang, 'outOfSight')}</span>
           )}
         </div>
-        <div className="fact">
-          <span className="fact-label">{t(lang, 'specialty')}</span>
-          <span className="troop">
-            <TroopIcon type={town.spec} size={15} />
-            {TROOP_NAMES[lang][town.spec]}
-          </span>
-        </div>
-        <div className="fact">
+        <div className="fact" data-testid="walls">
           <ShieldIcon size={15} />
-          <span>{t(lang, 'defense', { n: formatDecimal(town.fort, lang, 2) })}</span>
+          <span>
+            {t(lang, 'walls', { n: formatNumber(town.walls, lang) })} ·{' '}
+            {t(lang, 'defense', { n: formatDecimal(town.fort, lang, 2) })}
+          </span>
         </div>
         {own && (
           <div className="fact">
             <span className="fact-label">{t(lang, 'production')}</span>
             <span>
-              {t(lang, 'goldRate', { n: formatDecimal(own.goldPerMin, lang) })} ·{' '}
-              {t(lang, 'troopRate', {
-                n: formatDecimal(own.troopsPerMin, lang),
-                type: TROOP_NAMES[lang][town.spec],
-              })}{' '}
-              · {t(lang, 'cap', { n: own.cap })}
+              {t(lang, 'goldRate', { n: formatRate(own.goldPerMin, lang) })} ·{' '}
+              {t(lang, 'troopRate', { n: formatRate(own.troopsPerMin, lang) })}
             </span>
           </div>
         )}
@@ -97,9 +84,7 @@ export function TownSheet({ townId }: { townId: number }) {
             <span className="fact-label">{t(lang, 'allies')}</span>
             <span>
               {town.stationed
-                .map(
-                  (s) => `${ownerName(lang, view, s.lordId)} · ${formatNumber(totalTroops(s.troops), lang)}`,
-                )
+                .map((s) => `${ownerName(lang, view, s.lordId)} · ${formatNumber(s.troops, lang)}`)
                 .join(' — ')}
             </span>
           </div>
@@ -131,8 +116,7 @@ export function TownSheet({ townId }: { townId: number }) {
               startPicking();
             }}
           >
-            {t(lang, 'yourStationed', { n: formatNumber(totalTroops(myStationed.troops), lang) })} ·{' '}
-            {t(lang, 'withdraw')}
+            {t(lang, 'yourStationed', { n: formatNumber(myStationed.troops, lang) })} · {t(lang, 'withdraw')}
           </button>
         )}
         {mine ? (
@@ -150,26 +134,20 @@ export function TownSheet({ townId }: { townId: number }) {
                 ? t(lang, 'maxTier')
                 : t(lang, 'upgrade', { n: town.tier + 1, cost: formatNumber(own.upgradeCost, lang) })}
             </button>
-            <div className="respec">
-              <span className="fact-label">{t(lang, 'specialty')}</span>
-              <div className="respec-buttons">
-                {TROOP_TYPES.filter((type) => type !== town.spec).map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    className="small"
-                    disabled={!own || gold < own.respecCost}
-                    onClick={() => void command({ type: 'RESPECIALIZE', townId: town.id, spec: type })}
-                  >
-                    <TroopIcon type={type} size={14} />
-                    {t(lang, 'train', {
-                      type: TROOP_NAMES[lang][type],
-                      cost: formatNumber(own?.respecCost ?? 0, lang),
-                    })}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {own && own.upgradeMax.levels > 1 && (
+              <button
+                type="button"
+                data-testid="upgrade-max"
+                onClick={() =>
+                  void command({ type: 'UPGRADE', townId: town.id, levels: own.upgradeMax.levels })
+                }
+              >
+                {t(lang, 'upgradeMax', {
+                  n: town.tier + own.upgradeMax.levels,
+                  cost: formatNumber(own.upgradeMax.cost, lang),
+                })}
+              </button>
+            )}
           </>
         ) : ally ? (
           source ? (

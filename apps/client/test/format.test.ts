@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDecimal, formatDuration, formatNumber, townName } from '../src/format';
+import { formatDecimal, formatDuration, formatNumber, formatRate, townName } from '../src/format';
 
 describe('formatting', () => {
   it('abbreviates large numbers to three significant digits', () => {
@@ -17,6 +17,12 @@ describe('formatting', () => {
   it('formats decimals with the language mark', () => {
     expect(formatDecimal(5.25, 'en')).toBe('5.3');
     expect(formatDecimal(5.25, 'es', 2)).toBe('5,25');
+  });
+
+  it('keeps a decimal on small rates and suffixes on big ones', () => {
+    expect(formatRate(7.5, 'es')).toBe('7,5');
+    expect(formatRate(2_355_162.8, 'es')).toBe('2,35M');
+    expect(formatRate(1e13, 'en')).toBe('10.0T');
   });
 
   it('formats durations as m:ss or h:mm:ss', () => {

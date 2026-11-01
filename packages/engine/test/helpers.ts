@@ -2,7 +2,7 @@ import { defaultConfig, withOverrides, type DeepPartial, type GameConfig } from 
 import { createGame } from '../src/game';
 import { growIsle } from '../src/growth';
 import { isleNeighbors } from '../src/world';
-import type { GameState, LordInit, Town, Troops, TroopType } from '../src/types';
+import type { GameState, LordInit, Town } from '../src/types';
 
 export const T0 = 1_700_000_000_000;
 export const MIN = 60_000;
@@ -11,13 +11,12 @@ export function config(patch: DeepPartial<GameConfig> = {}): GameConfig {
   return withOverrides(defaultConfig, patch);
 }
 
-export function humans(n: number, spec: TroopType = 'LANCER'): LordInit[] {
+export function humans(n: number): LordInit[] {
   return Array.from({ length: n }, (_, i) => ({
     id: `h${i + 1}`,
     name: `Human ${i + 1}`,
     color: '#3366cc',
     isBot: false,
-    spec,
   }));
 }
 
@@ -39,10 +38,6 @@ export function game(
     startsAt: T0,
     lords: opts.lords ?? humans(2),
   });
-}
-
-export function troops(LANCER: number, ARCHER = 0, GRIFFIN = 0): Troops {
-  return { LANCER, ARCHER, GRIFFIN };
 }
 
 export function capitalOf(state: GameState, lordId: string): Town {
@@ -104,7 +99,7 @@ export function publicNeutral(state: GameState, isleId = 0): Town {
   return target;
 }
 
-export function give(_state: GameState, town: Town, owner: string | null, garrison: Troops): void {
+export function give(_state: GameState, town: Town, owner: string | null, garrison: number): void {
   town.owner = owner;
   town.garrison = garrison;
   town.neutralCap = owner === null ? town.neutralCap : 0;
@@ -112,14 +107,17 @@ export function give(_state: GameState, town: Town, owner: string | null, garris
 
 export function allTroops(state: GameState): number {
   let sum = 0;
-  for (const town of state.towns) sum += town.garrison.LANCER + town.garrison.ARCHER + town.garrison.GRIFFIN;
-  for (const town of state.towns) {
-    for (const s of town.stationed) sum += s.troops.LANCER + s.troops.ARCHER + s.troops.GRIFFIN;
-  }
-  for (const m of state.marches) sum += m.troops.LANCER + m.troops.ARCHER + m.troops.GRIFFIN;
+  for (const town of state.towns) sum += town.garrison;
+  for (const town of state.towns) for (const s of town.stationed) sum += s.troops;
+  for (const m of state.marches) sum += m.troops;
   return sum;
 }
 
 export const NO_PRODUCTION: DeepPartial<GameConfig> = {
-  towns: { troopsPerMin: [0, 0, 0, 0, 0], goldPerMin: [0, 0, 0, 0, 0] },
+  towns: { troopsPerMin: 0, goldPerMin: 0 },
+};
+
+/** Dead troops vanish instead of reappearing in the capital, so tests can count losses plainly. */
+export const NO_RECOVERY: DeepPartial<GameConfig> = {
+  league: { attackerRecovery: 0, defenderRecovery: 0 },
 };

@@ -1,15 +1,13 @@
 import { defaultConfig } from '@si/config';
-import { EDICT_IDS, TROOP_TYPES } from '@si/config/constants';
+import { GEAR_EFFECTS, GEAR_SLOTS, RARITIES, SKILL_IDS } from '@si/config/constants';
 import { describe, expect, it } from 'vitest';
 import {
   BOT_NAMES,
-  EDICT_TEXT,
   messageKeys,
   RULE_TEXT,
   SERVER_TEXT,
   STYLE_NAMES,
   t,
-  TROOP_NAMES,
   WIND_NAMES,
   type MessageKey,
 } from '../src/i18n';
@@ -24,15 +22,18 @@ describe('i18n', () => {
   });
 
   it('fills placeholders and leaves unknown ones', () => {
-    expect(t('en', 'tier', { n: 3 })).toBe('Tier 3');
+    expect(t('en', 'tier', { n: 3 })).toBe('Level 3');
     expect(t('es', 'tier')).toBe('Nivel {n}');
   });
 
-  it('covers every troop, edict, rule code, wind direction and bot slot', () => {
+  it('covers every skill, rule code, wind direction and bot slot', () => {
     for (const lang of ['es', 'en'] as const) {
-      for (const type of TROOP_TYPES) expect(TROOP_NAMES[lang][type]).toBeTruthy();
-      for (const id of EDICT_IDS) expect(EDICT_TEXT[lang][id].name).toBeTruthy();
+      for (const id of SKILL_IDS) expect(messageKeys(lang)).toContain(`skill${id}`);
       expect(Object.keys(RULE_TEXT[lang])).toHaveLength(16);
+      for (const slot of GEAR_SLOTS) expect(messageKeys(lang)).toContain(`slot${slot}`);
+      for (const rarity of RARITIES) expect(messageKeys(lang)).toContain(`rarity${rarity}`);
+      for (const effect of Object.values(GEAR_EFFECTS))
+        expect(messageKeys(lang)).toContain(`effect${effect}`);
       for (const style of defaultConfig.cosmetics.styles) expect(STYLE_NAMES[lang][style.id]).toBeTruthy();
       expect(Object.keys(SERVER_TEXT[lang]).sort()).toEqual(Object.keys(SERVER_TEXT.es).sort());
       expect(WIND_NAMES[lang]).toHaveLength(8);

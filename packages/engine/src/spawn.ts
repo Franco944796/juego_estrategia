@@ -1,4 +1,3 @@
-import { TROOP_TYPES } from '@si/config/constants';
 import { isleFull } from './growth';
 import { neutralTown, starterSpots } from './mapgen';
 import type { GameState, Isle, LordInit, Personality, Town } from './types';
@@ -45,23 +44,15 @@ export function spawnLord(
   const slot = isle.slots[index];
   if (!slot) throw new Error('isle without free slots');
   slot.lordId = init.id;
-  const spec = TROOP_TYPES[index % TROOP_TYPES.length] ?? 'LANCER';
-  const capital = neutralTown(state.towns.length, isle.id, { ...slot.pos }, cfg.lords.capitalTier, spec, cfg);
+  const capital = neutralTown(state.towns.length, isle.id, { ...slot.pos }, cfg.lords.capitalTier, cfg);
   state.towns.push(capital);
   isle.townIds.push(capital.id);
   foundLord(state, init, capital, personality);
-  starterSpots(cfg, isle, slot.pos, cfg.map.spawn.privateTowns).forEach((pos, k) => {
-    const town = neutralTown(
-      state.towns.length,
-      isle.id,
-      pos,
-      1,
-      TROOP_TYPES[k % TROOP_TYPES.length] ?? spec,
-      cfg,
-    );
+  for (const pos of starterSpots(cfg, isle, slot.pos, cfg.map.spawn.privateTowns)) {
+    const town = neutralTown(state.towns.length, isle.id, pos, 1, cfg);
     town.privateTo = init.id;
     state.towns.push(town);
     isle.townIds.push(town.id);
-  });
+  }
   return capital;
 }

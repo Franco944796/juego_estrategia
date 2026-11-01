@@ -9,22 +9,36 @@ describe('config', () => {
   it('merges overrides deeply and replaces arrays whole', () => {
     const cfg = withOverrides(defaultConfig, {
       season: { durationMin: 60 },
-      towns: { goldPerMin: [1, 2, 3, 4, 5] },
+      towns: { goldPerMin: 7 },
+      neutral: { garrison: [1, 2, 3, 4, 5] },
     });
     expect(cfg.season.durationMin).toBe(60);
-    expect(cfg.towns.goldPerMin).toEqual([1, 2, 3, 4, 5]);
-    expect(cfg.towns.troopsPerMin).toEqual(defaultConfig.towns.troopsPerMin);
+    expect(cfg.towns.goldPerMin).toBe(7);
+    expect(cfg.neutral.garrison).toEqual([1, 2, 3, 4, 5]);
+    expect(cfg.towns.troopsPerMin).toBe(defaultConfig.towns.troopsPerMin);
     expect(cfg.wind).toEqual(defaultConfig.wind);
     expect(defaultConfig.season.durationMin).toBe(360);
   });
 
   it.each([
-    ['a per-tier table of the wrong length', { towns: { goldPerMin: [1, 2] } }],
-    ['upgrade costs of the wrong length', { towns: { upgradeCost: [1, 2, 3, 4, 5] } }],
-    ['thresholds out of order', { edicts: { gloryThresholds: [10, 5] } }],
+    ['too few neutral garrisons', { neutral: { garrison: [1, 2] } }],
+    ['a level scale that does not grow', { towns: { scale: { second: 3, top: 2 } } }],
+    ['lord levels above the town levels', { levels: { maxLevel: 101 } }],
+    [
+      'drop odds out of order',
+      {
+        gear: {
+          dropOdds: [
+            { minLevel: 5, weights: [1, 0, 0, 0] },
+            { minLevel: 5, weights: [0, 1, 0, 0] },
+          ],
+        },
+      },
+    ],
+    ['drop odds without four weights', { gear: { dropOdds: [{ minLevel: 1, weights: [1, 1] }] } }],
     ['isle tiers that do not match the bands', { map: { isle: { tiers: [3, 2] } } }],
-    ['isle tiers above the maximum', { map: { isle: { tiers: [9, 2, 1] } } }],
-    ['a capital above the maximum tier', { lords: { capitalTier: 9 } }],
+    ['isle tiers above the maximum', { map: { isle: { tiers: [101, 2, 1] } } }],
+    ['a capital above the maximum tier', { lords: { capitalTier: 101 } }],
     ['a negative duration', { season: { durationMin: -1 } }],
   ])('rejects %s', (_label, patch) => {
     expect(() => withOverrides(defaultConfig, patch)).toThrow();
@@ -37,8 +51,8 @@ describe('live preset', () => {
     expect(liveConfig.season.durationMin).toBe(30 * 24 * 60);
     expect(liveConfig.rules.capitalImmune).toBe(true);
     expect(liveConfig.lords.capitalTier).toBe(1);
-    expect(liveConfig.towns.goldPerMin[0]).toBeCloseTo(defaultConfig.towns.goldPerMin[0]! / 5, 12);
-    expect(liveConfig.towns.upgradeCost[0]).toBe(defaultConfig.towns.upgradeCost[0]! * 10);
+    expect(liveConfig.towns.goldPerMin).toBeCloseTo(defaultConfig.towns.goldPerMin / 5, 12);
+    expect(liveConfig.towns.upgradeCost).toBe(defaultConfig.towns.upgradeCost * 40);
     expect(liveConfig.march).toEqual(defaultConfig.march);
   });
 

@@ -1,8 +1,8 @@
-import { EDICT_IDS, TROOP_TYPES } from '@si/config/constants';
+import { levelScale } from './economy';
+import { dropItem } from './gear';
 import { checkGrowth } from './growth';
-import { pick, shuffle } from './rng';
-import { addTroops, cloneTroops, zeroTroops } from './troops';
-import type { DomainEvent, EdictId, GameState, Lord, LordInit, Personality, Town } from './types';
+import { pick } from './rng';
+import type { DomainEvent, GameState, Lord, LordInit, Personality, Town } from './types';
 
 /** Turns `town` into the capital of a new lord and registers the lord. */
 export function foundLord(
@@ -17,8 +17,7 @@ export function foundLord(
   town.isCapital = true;
   town.neutralCap = 0;
   town.carry = 0;
-  town.spec = init.spec ?? (personality ? cfg.bots.personalities[personality].preferredSpec : town.spec);
-  town.garrison = cloneTroops(cfg.lords.startTroops);
+  town.garrison = cfg.lords.startTroops;
   const lord: Lord = {
     id: init.id,
     name: init.name,
@@ -27,10 +26,9 @@ export function foundLord(
     personality,
     gold: cfg.lords.startGold,
     dominion: 0,
-    glory: 0,
-    edicts: [],
-    draft: null,
-    draftsOpened: 0,
+    skills: { GOLD: 0, TROOPS: 0, ATTACK: 0 },
+    items: (init.items ?? []).map((item) => ({ id: item.id, slot: item.slot, rarity: item.rarity })),
+    gear: {},
     capitalId: town.id,
     alive: true,
     exiles: 0,
@@ -40,6 +38,11 @@ export function foundLord(
     level: 1,
     xp: 0,
   };
+  // Only owned items in their own slot can be worn.
+  for (const [slot, id] of Object.entries(init.gear ?? {})) {
+    const item = lord.items.find((owned) => owned.id === id);
+    if (item && item.slot === slot) lord.gear[item.slot] = item.id;
+  }
   state.lords[init.id] = lord;
   state.lordOrder.push(init.id);
   return lord;
@@ -176,7 +179,7 @@ export function checkExile(state: GameState, lordId: string, at: number, events:
         free.filter((t) => t.tier === minTier),
       );
       town.owner = lordId;
-      town.garrison = cloneTroops(state.config.exile.troops);
+      town.garrison = state.config.exile.troops;
       town.carry = 0;
       town.neutralCap = 0;
       town.isCapital = true;
@@ -190,42 +193,7 @@ export function checkExile(state: GameState, lordId: string, at: number, events:
   }
   lord.alive = false;
   lord.capitalId = null;
-  lord.draft = null;
   events.push({ type: 'LORD_ELIMINATED', at, lordId });
-}
-
-export function chooseEdict(
-  state: GameState,
-  lord: Lord,
-  edict: EdictId,
-  at: number,
-  events: DomainEvent[],
-): void {
-  lord.edicts.push(edict);
-  lord.draft = null;
-  events.push({ type: 'EDICT_CHOSEN', at, lordId: lord.id, edict });
-  openDrafts(state, lord, at, events);
-}
-
-/** Opens one draft per glory threshold crossed; bots pick at once by their preference list. */
-export function openDrafts(state: GameState, lord: Lord, at: number, events: DomainEvent[]): void {
-  const { gloryThresholds, draftSize } = state.config.edicts;
-  while (lord.alive && lord.draft === null && lord.draftsOpened < gloryThresholds.length) {
-    const threshold = gloryThresholds[lord.draftsOpened] ?? Infinity;
-    if (lord.glory < threshold) return;
-    lord.draftsOpened++;
-    const pool = EDICT_IDS.filter((id) => !lord.edicts.includes(id));
-    if (pool.length === 0) return;
-    const options = shuffle(state.rng, [...pool]).slice(0, draftSize);
-    lord.draft = options;
-    events.push({ type: 'EDICT_DRAFT', at, lordId: lord.id, options });
-    if (lord.isBot && lord.personality) {
-      const prefs = state.config.bots.personalities[lord.personality].edictPreference;
-      const choice = prefs.find((id) => options.includes(id)) ?? (options[0] as EdictId);
-      chooseEdict(state, lord, choice, at, events);
-      return;
-    }
-  }
 }
 
 /** Two different lords in the same clan. */
@@ -250,34 +218,40 @@ export function migrateState(state: GameState): GameState {
   return state;
 }
 
-/** Experience needed to go from `level` to the next one. */
-export function xpForLevel(state: GameState, level: number): number {
-  const { xpBase, xpGrowth } = state.config.levels;
-  return Math.round(xpBase * xpGrowth ** (level - 1));
+/**
+ * League rule: part of a lord's dead troops reappear at once in its capital, or in its highest-level
+ * town without one. Returns how many were placed (none when the lord holds no town).
+ */
+export function recoverTroops(state: GameState, lordId: string, lost: number, share: number): number {
+  const amount = Math.floor(lost * share);
+  if (amount <= 0) return 0;
+  const lord = getLord(state, lordId);
+  let home =
+    lord?.capitalId === null || lord?.capitalId === undefined ? undefined : state.towns[lord.capitalId];
+  if (!home) {
+    for (const town of state.towns) {
+      if (town.owner === lordId && (!home || town.tier > home.tier)) home = town;
+    }
+  }
+  if (!home) return 0;
+  home.garrison += amount;
+  return amount;
 }
 
-/** Adds conquest experience; every level reached sends troops of all three types to the capital. */
+/** Experience needed to go from `level` to the next one; it grows with the town level scale. */
+export function xpForLevel(state: GameState, level: number): number {
+  return Math.round(state.config.levels.xpBase * levelScale(state.config, level));
+}
+
+/** Adds battle experience; each level reached is a skill point, and every few levels an item. */
 export function gainXp(state: GameState, lord: Lord, xp: number, at: number, events: DomainEvent[]): void {
   const cfg = state.config.levels;
   lord.xp += xp;
   while (lord.level < cfg.maxLevel && lord.xp >= xpForLevel(state, lord.level)) {
     lord.xp -= xpForLevel(state, lord.level);
     lord.level++;
-    const total = cfg.troopsBase + cfg.troopsPerLevel * lord.level;
-    const each = Math.floor(total / TROOP_TYPES.length);
-    const capital = lord.capitalId === null ? undefined : state.towns[lord.capitalId];
-    const troops = { LANCER: each, ARCHER: each, GRIFFIN: each };
-    if (capital) {
-      troops[capital.spec] += total - each * TROOP_TYPES.length;
-      capital.garrison = addTroops(capital.garrison, troops);
-    }
-    events.push({
-      type: 'LEVEL_UP',
-      at,
-      lordId: lord.id,
-      level: lord.level,
-      troops: capital ? troops : zeroTroops(),
-    });
+    events.push({ type: 'LEVEL_UP', at, lordId: lord.id, level: lord.level });
+    if (lord.level % state.config.gear.dropEveryLevels === 0) dropItem(state, lord, lord.level, at, events);
   }
   if (lord.level >= cfg.maxLevel) lord.xp = 0;
 }

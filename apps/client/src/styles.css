@@ -10,7 +10,9 @@
   --bad: #ff6b6b;
   --accent: #4cc9f0;
   --radius: 14px;
-  --nav-h: 62px;
+  /* Five rail buttons must end above a full-height drawer on a 844 px phone (its close button). */
+  --rail-w: 44px;
+  --rail-top: 118px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
   color-scheme: dark;
@@ -202,7 +204,7 @@ button[aria-pressed='true'] {
   background: var(--good);
 }
 
-.stat-icon.glory {
+.stat-icon.points {
   color: var(--accent);
 }
 
@@ -241,12 +243,30 @@ button[aria-pressed='true'] {
   margin-top: 0;
 }
 
-.glory-row {
+.skill-points {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  margin-bottom: 10px;
+  margin: 0 0 10px;
+}
+
+.skill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skill button,
+.small-note {
+  flex-shrink: 0;
+}
+
+.small-note {
+  font-size: 12px;
+  text-align: right;
+  max-width: 40%;
 }
 
 .meter-fill {
@@ -311,6 +331,7 @@ button[aria-pressed='true'] {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  margin-right: calc(var(--rail-w) + 8px);
   pointer-events: none;
 }
 
@@ -364,7 +385,7 @@ button[aria-pressed='true'] {
   right: 8px;
   margin: 0 auto;
   width: fit-content;
-  bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px);
+  bottom: calc(var(--safe-bottom) + 12px);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -380,7 +401,7 @@ button[aria-pressed='true'] {
   position: absolute;
   left: 8px;
   right: 8px;
-  bottom: calc(var(--nav-h) + var(--safe-bottom) + 8px);
+  bottom: calc(var(--safe-bottom) + 8px);
   max-height: 54dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -468,12 +489,6 @@ button[aria-pressed='true'] {
   min-width: 88px;
 }
 
-.troops {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .troop {
   display: inline-flex;
   align-items: center;
@@ -488,24 +503,11 @@ button[aria-pressed='true'] {
   margin-top: 12px;
 }
 
-.respec {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.respec-buttons,
 .quick,
 .sources {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.respec-buttons button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .sources {
@@ -607,20 +609,6 @@ button[aria-pressed='true'] {
   font-weight: 700;
 }
 
-.cards {
-  display: grid;
-  gap: 8px;
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-  border-color: var(--gold);
-}
-
 .segmented {
   display: flex;
   flex-wrap: wrap;
@@ -641,44 +629,149 @@ button[aria-pressed='true'] {
   gap: 6px;
 }
 
-.nav {
+.rail {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: calc(var(--nav-h) + var(--safe-bottom));
-  padding: 4px 4px var(--safe-bottom);
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-  background: var(--panel-solid);
-  border-top: 1px solid var(--line);
+  right: 8px;
+  top: calc(var(--safe-top) + var(--rail-top));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.nav-button {
+.rail-button {
   position: relative;
+  width: var(--rail-w);
+  height: var(--rail-w);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.rail-button.active {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.rail-button .badge {
+  top: -4px;
+  right: -4px;
+}
+
+.portrait {
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.portrait.active {
+  border-color: var(--gold);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.inline-badge {
+  display: inline-block;
+  margin-left: 6px;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--good);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.gear-slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.gear-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 2px;
-  padding: 4px 2px;
-  border: none;
-  background: transparent;
+  padding: 8px 4px;
   min-width: 0;
+  border-width: 2px;
 }
 
-.nav-button.active {
-  color: var(--gold);
-  box-shadow: none;
+.gear-slot.selected {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.nav-label {
+.gear-slot-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gear-slot-item {
   font-size: 11px;
+  color: var(--muted);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rarity-COMMON {
+  --rarity: #c9d3e0;
+}
+
+.rarity-RARE {
+  --rarity: #4cc9f0;
+}
+
+.rarity-EPIC {
+  --rarity: #b388ff;
+}
+
+.rarity-LEGENDARY {
+  --rarity: #ffd166;
+}
+
+.gear-slot[class*='rarity-'],
+.rarity-border {
+  border-color: var(--rarity);
+}
+
+.rarity-text {
+  color: var(--rarity);
+}
+
+.stat-list {
+  margin: 8px 0 0;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.stat-row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .badge {
@@ -995,6 +1088,10 @@ button.link {
 }
 
 @media (min-width: 900px) {
+  :root {
+    --rail-w: 52px;
+  }
+
   .overlay-top {
     padding: 12px 12px 0;
   }
@@ -1007,26 +1104,19 @@ button.link {
 
   .drawer {
     left: auto;
-    right: 12px;
+    right: calc(12px + var(--rail-w) + 12px);
     top: 132px;
     bottom: auto;
     width: 380px;
-    max-height: calc(100% - 132px - var(--nav-h) - 24px);
+    max-height: calc(100% - 132px - 24px);
   }
 
   .top-stack {
     align-items: flex-start;
   }
 
-  .nav {
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
-    width: 560px;
-    bottom: 12px;
-    height: var(--nav-h);
-    padding: 4px;
-    border: 1px solid var(--line);
-    border-radius: 16px;
+  .rail {
+    right: 12px;
+    top: 132px;
   }
 }

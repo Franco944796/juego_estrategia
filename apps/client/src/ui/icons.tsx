@@ -1,4 +1,3 @@
-import type { TroopType } from '@si/engine';
 import type { ReactNode } from 'react';
 
 interface IconProps {
@@ -70,12 +69,6 @@ export const ChatIcon = (p: IconProps) => (
   </Svg>
 );
 
-export const LevelIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M6 14l6-6 6 6M6 19l6-6 6 6" />
-  </Svg>
-);
-
 export const MenuIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 7h16M4 12h16M4 17h16" />
@@ -94,27 +87,48 @@ export const ShieldIcon = (p: IconProps) => (
   </Svg>
 );
 
-export function TroopIcon({ type, ...p }: IconProps & { type: TroopType }) {
-  if (type === 'LANCER') {
-    return (
-      <Svg {...p}>
-        <path d="M12 21V8M12 3l3 6H9z" />
-      </Svg>
-    );
-  }
-  if (type === 'ARCHER') {
-    return (
-      <Svg {...p}>
-        <path d="M8 3a12 12 0 0 1 0 18M8 3v18M4 12h14M15 9l3 3-3 3" />
-      </Svg>
-    );
-  }
-  return (
-    <Svg {...p}>
-      <path d="M2 10c4-4 7-2 10 6 3-8 6-10 10-6" />
-    </Svg>
-  );
-}
+export const TroopIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 21V8M12 3l3 6H9z" />
+  </Svg>
+);
+
+export const SwordIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M14.5 3.5 20.5 3l-.5 6L9.5 19.5l-5-5zM6.5 12.5l5 5M3 21l3.5-3.5" />
+  </Svg>
+);
+
+export const ArmorIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m8 3 4 2 4-2 4 3-2 5v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-8L4 6zM12 5v16" />
+  </Svg>
+);
+
+export const HelmetIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 18v-4a8 8 0 0 1 16 0v4zM9 18v-5h6v5M12 6V3" />
+  </Svg>
+);
+
+export const CloakIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 3h6l1.5 4L20 21H4L7.5 7zM9 3l3 4 3-4M12 7v14" />
+  </Svg>
+);
+
+export const BootsIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 3h6v9l5 3a2 2 0 0 1 1 1.7V20H5l1-7zM5 17h15" />
+  </Svg>
+);
+
+export const RingIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="15" r="6" />
+    <path d="m9 5 3-3 3 3-3 3z" />
+  </Svg>
+);
 
 /** Arrow pointing where the wind blows: direction 0 is north, each step 45° clockwise. */
 export function WindArrow({ dir, size = 18 }: { dir: number; size?: number }) {

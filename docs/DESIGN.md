@@ -10,7 +10,8 @@ logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
 
 1. **Timing over micromanagement.** The wind decides when a raid is fast or slow; reading the forecast
    is the core skill.
-2. **Composition matters.** Three troop types counter each other, so the size of an army is not enough.
+2. **Exponential growth.** Towns climb from level 1 to 100 and their output, walls and costs grow
+   from tens to trillions; numbers read as K, M, G, T.
 3. **Hold ground, score over time.** Dominion accrues every minute from what you hold, so late grabs
    cannot steal a season held well.
 4. **One finger, short sessions.** Every action is tap, tap, confirm.
@@ -19,11 +20,11 @@ logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
 ## 2. World
 
 - A season starts with **one big isle** of `map.isle.towns` (100) neutral towns laid on a spiral, higher
-  tiers toward the middle (`map.isle.tierBands`, `map.isle.tiers`: tier 3 inside, then 2, then 1).
+  levels toward the middle (`map.isle.tierBands`, `map.isle.tiers`: level 3 inside, then 2, then 1).
 - Each isle is split into **zones** of about `map.isle.zoneSize` (10) towns: one in the middle, then
   rings of 3, 6, 9… sectors. Every zone has its own beacon (§7).
 - Each isle has `map.spawn.slots` (10) **shore slots**. A lord appears on a free slot with a new
-  capital and `map.spawn.privateTowns` (3) tier-1 neutral towns beside it that only that lord sees and
+  capital and `map.spawn.privateTowns` (3) level-1 neutral towns beside it that only that lord sees and
   may attack until someone owns them. Lords go to the newest isle with a free slot.
 - **A new isle is born** when the newest isle is full (every slot taken) or fully conquered (every
   public town owned), at most `map.growth.maxPerDay` (3) per 24 game hours, not counting the first. New
@@ -48,55 +49,54 @@ logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
 
 ## 4. Troops
 
-| Type           | Code      | Attack | Defense | Speed | Production |
-| -------------- | --------- | ------ | ------- | ----- | ---------- |
-| Lancers        | `LANCER`  | 1.0    | 1.2     | 1.0   | ×1.0       |
-| Archers        | `ARCHER`  | 1.1    | 1.0     | 1.0   | ×0.9       |
-| Griffin riders | `GRIFFIN` | 1.2    | 0.8     | 1.3   | ×0.7       |
-
-Counter triangle: **Lancers beat Griffins, Griffins beat Archers, Archers beat Lancers.** A unit fighting
-a type it beats is worth ×`combat.counterBonus` (1.5); against the type that beats it, ÷1.5.
-
-A march moves at the speed of its slowest type.
+There is a **single troop type**. A troop is worth 1 in attack and 1 in defense; marches move at
+`march.landSpeed` inside an isle and `march.skySpeed` between isles.
 
 ## 5. Towns
 
-- Fields: owner (lord or neutral), tier 1–5, **specialization** (the troop type it trains), garrison
-  per type, capital flag.
-- **Production per game minute** (owned towns):
-  - gold → owner's treasury: `towns.goldPerMin[tier]`;
-  - troops of its specialization → garrison: `towns.troopsPerMin[tier] × type production`;
-  - multipliers: capital ×`towns.capitalProdMult` (1.5), lit beacon +`beacon.prodBonus` (25%), edicts.
-  - Troop production pauses while the garrison is at or above `towns.garrisonCap[tier]`. Troops sent
-    in as reinforcements may exceed the cap.
-- **Upgrade**: instant, costs `towns.upgradeCost[tier]` gold. Raises production, cap, fortification and
-  Dominion.
-- **Respecialize**: instant, costs `towns.respecCostPerTier × tier`; the garrison is unchanged.
-- **Fortification** multiplies defending power: `1 + towns.fortPerTier · (tier − 1)` (+25% per tier),
-  ×`towns.capitalFort` for capitals, ×`throne.fortMult` for the Throne, edicts.
-- **Neutral towns** start with a mixed garrison (`neutral.garrison[tier]`, 60% of their specialization,
-  20% of each other type) and regenerate their specialization at ×`neutral.regenMult` of the normal rate
-  up to that initial size.
+- Fields: owner (lord or neutral), **level 1–100** (`towns.maxTier`, called `tier` in the code),
+  garrison, capital flag.
+- **Level scale.** Everything that grows with the level is multiplied by `scale(L)`: 1 at level 1,
+  `towns.scale.second` (2.5) at level 2 and `towns.scale.top` (5·10¹¹) at level 100. Its logarithm grows
+  as `(L − 1)^p` with `p < 1`, so early levels jump most (×2.5, ×1.8, ×1.7…) and late ones about ×1.2.
+- **Production per game minute** (owned towns), **with no cap**: troops pile up forever.
+  - gold → owner's treasury: `towns.goldPerMin (2) × scale(L)`;
+  - troops → garrison: `towns.troopsPerMin (1.2) × scale(L)`;
+  - multipliers: capital ×`towns.capitalProdMult` (1.5), lit beacon +`beacon.prodBonus` (25%), skills.
+- **Walls**: every town has `towns.walls (20) × scale(L)` points of defense of its own, rounded to two
+  significant digits: 20 at level 1, 50 at level 2, 92 at 3… 10T at level 100. Walls never fall.
+- **Upgrade**: instant, costs `towns.upgradeCost (8) × scale(L)` gold from level L. One order may buy
+  several levels in a row (as many as asked and paid for).
+- **Fortification** multiplies the defending troops: `1 + towns.fortPerTier (0.05) · (L − 1)` (+5% per
+  level, ×1 at level 1), ×`towns.capitalFort` for capitals, ×`throne.fortMult` for the Throne.
+- **Neutral towns** are levels 1–3 (§2). They start with `neutral.garrison[L]` troops and regenerate at
+  ×`neutral.regenMult` of the normal rate up to that initial size.
 
 ## 6. Marches and combat
 
-- **Send**: choose source town, target town and how many troops of each type. The mission is decided on
-  arrival: own town → reinforce; any other town → battle.
-- **Travel time** = distance ÷ (`march.landSpeed` or `march.skySpeed` × wind factor) × slowest type
-  speed and edicts. No march takes less than `march.minDurationMin`.
-- **Power.** For army X against army Y, each unit's multiplier is the average of the counter matrix over
-  Y's composition: `mult_i = Σ_j share_Y(j) · M[i][j]` (1 if Y is empty).
-  - `P_att = Σ_i a_i · atk_i · mult_i(vs D)`
-  - `P_def = Σ_j d_j · def_j · mult_j(vs A) · fortification`
-- **Outcome.** The higher power wins; a **tie goes to the defender**. The loser loses every unit. The
-  winner loses the fraction `(P_loser / P_winner) ^ combat.lossExponent` (1.5) of each type, rounded
-  so survivors are floored. An empty town has `P_def = 0` and falls without losses.
+- **Send**: choose source town, target town and how many troops. The mission is decided on arrival: own
+  town → reinforce; any other town → battle.
+- **Travel time** = distance ÷ (`march.landSpeed` or `march.skySpeed` × wind factor). No march takes
+  less than `march.minDurationMin`.
+- **Power.**
+  - `P_att = troops × (1 + attack skill bonus)`
+  - `P_def = garrison × fortification + walls` (plus allied contingents × fortification)
+- **Outcome.** The higher power wins; a **tie goes to the defender**. The loser loses every troop (walls
+  stay). The winner loses the fraction `(P_loser / P_winner) ^ combat.lossExponent` (1.5), survivors
+  floored. With 0 troops and 0 attack points a level-1 town needs 21 attackers.
+- **Recovery (league rule).** `league.attackerRecovery` (90%) of the attacker's dead and
+  `league.defenderRecovery` (90%) of each defending lord's dead reappear at once in that lord's capital
+  (its highest-level town without one; lost with no town). There are no wounded troops. Neutral
+  garrisons recover nothing.
+- **Kill rewards.** Each enemy troop killed gives `kills.xp.attack` (5) experience and `kills.gold.attack`
+  (5) gold to the attacker, and `kills.xp.defend` (3) / `kills.gold.defend` (3) to the defenders (shared
+  by the power each contingent brought, walls counting for the owner). Neutral troops count too.
 - **Capture.** If the attacker wins with at least one survivor, the town changes owner and the
-  survivors become its garrison; the tier is kept. The attacker gains plunder
-  (`plunder.goldByTier[tier]`) and glory. If no attacker survives, the garrison is still destroyed but
-  the town keeps its owner.
+  survivors become its garrison; the level is kept. The attacker gains plunder
+  (`plunder.base (40) × scale(L)`). If no attacker survives, the garrison is still destroyed but the town
+  keeps its owner.
 - Two marches that reach the same town resolve as separate battles, in arrival order.
-- Losing a capital moves it to the owner's highest-tier town (lowest id on ties).
+- Losing a capital moves it to the owner's highest-level town (lowest id on ties).
 
 ## 7. Beacons, Throne and Dominion
 
@@ -105,43 +105,50 @@ A march moves at the speed of its slowest type.
 - **Sky Throne** (off by default, `throne.enabled`). When on, the middle town of the first isle is the
   Throne: sealed until `throne.unsealAtFraction` (30%) of the season, then its holder earns
   `throne.dominionPerMin` (25) Dominion per minute on top of the town's own.
-- **Dominion** accrues every game minute: `dominion.perTier[tier]` per owned town, plus lit beacons,
-  plus the Throne if any, times edicts. The season ranking sorts by Dominion, then glory, then lord id.
+- **Dominion** accrues every game minute: `dominion.perTier` (1) × level per owned town, plus lit
+  beacons, plus the Throne if any. The season ranking sorts by Dominion, then lord level, then lord id.
 
-## 8. Glory and edicts
+## 8. Lord levels and skills
 
-- **Glory**: +1 per `glory.troopsPerPoint` (10) enemy troops killed, attacking or defending, and +`glory.perCaptureTier` × tier per capture.
-- Each threshold in `edicts.gloryThresholds` opens a **draft**: 3 random edicts not yet taken; the lord
-  keeps one for the rest of the season. Drafts wait until a choice is made.
+- Experience comes from kills (§6). Level n → n+1 needs `round(levels.xpBase (50) × scale(n))`, so lord
+  levels keep pace with town levels; up to `levels.maxLevel` (100). Levels reset with the season.
+- Each level reached gives **one skill point**. Points are spent one at a time and stay put until the
+  season ends (no reassigning).
 
-| Edict        | Effect                             |
-| ------------ | ---------------------------------- |
-| Swift Wings  | Griffin speed ×1.2                 |
-| Spear Wall   | Lancer defense ×1.25               |
-| Arrow Storm  | Archer attack ×1.25                |
-| Golden Tide  | Gold production ×1.2               |
-| Muster       | Troop production ×1.15             |
-| Architects   | Upgrade cost ×0.8                  |
-| Wind Readers | Headwind floor 0.75 instead of 0.5 |
-| Bulwarks     | Fortification ×1.1                 |
-| Plunderers   | Plunder ×2                         |
-| Legend       | Dominion ×1.15                     |
-| Veterans     | Winner losses ×0.8                 |
+| Skill  | Per point (`skills.perPoint`) |
+| ------ | ----------------------------- |
+| Gold   | +5% gold production           |
+| Troops | +5% troop production          |
+| Attack | +5% attack power              |
 
-## 8b. Lord levels
+Bonuses add up (10 points in Gold = +50%). The **Attacker** and **Defender** skills are the recovery
+shares of §6: league 1 fixes both at the 90% maximum, so they take no points. Other leagues may lower
+them and let points raise them.
 
-- Capturing a town gives experience: `levels.xpPerCaptureTier` (10) × the town's tier, doubled
-  (`levels.lordCaptureMult`) when the town belonged to another lord.
-- Level n → n+1 needs `round(levels.xpBase (30) × levels.xpGrowth (1.25)^(n−1))` experience; up to
-  `levels.maxLevel` (100). Levels reset with the season.
-- Each new level sends `levels.troopsBase (9) + levels.troopsPerLevel (3) × level` troops to the
-  capital, split evenly between the three types (the remainder goes to the capital's type), and
-  raises gold production by `levels.goldBonusPerLevel` (1% of the base per level gained: 200 gold
-  becomes 202 at level 2, 204 at level 3).
+## 8b. Equipment
+
+- Six slots, each improving one thing by the item's rarity bonus (`gear.rarityBonus`: common 3%, rare
+  6%, epic 10%, legendary 15%), added to the skill bonus of the same kind:
+
+| Slot   | Improves                               |
+| ------ | -------------------------------------- |
+| Weapon | attack                                 |
+| Armor  | defense of the lord's troops (× fort.) |
+| Helmet | walls of the lord's towns              |
+| Cloak  | troop production                       |
+| Boots  | march speed                            |
+| Ring   | gold production                        |
+
+- A lord finds one item every `gear.dropEveryLevels` (5) levels: any slot, rarity rolled with the
+  weights of the last `gear.dropOdds` row its level reached (better at high levels).
+- Online, items are also bought with Legacy (`gear.prices`: 20 / 50 / 120 / 300).
+- **Items are permanent**: they belong to the account and every season starts with the account's
+  items and gear. This is the one thing Legacy buys that changes play (styles stay cosmetic).
+- Equipping (`EQUIP`) is instant and allowed at any time; one item per slot.
 
 ## 9. Vision
 
-- Everyone sees the political map: owners, tiers, specializations, beacons and the wind.
+- Everyone sees the political map: owners, levels, walls, beacons and the wind.
 - Garrison sizes are visible on isles where the lord or a clanmate owns a town and on isles one lane
   away (two from an isle with a lit friendly beacon).
 - Another lord's private towns are hidden altogether (and so are marches toward them).
@@ -151,8 +158,8 @@ A march moves at the speed of its slowest type.
 ## 10. Exile and season end
 
 - A lord with no towns and no marches in flight is **exiled**: it restarts on a free neutral town (the
-  newest isle that still has a public one, lowest tier) with `exile.troops`, keeping gold, Dominion, glory and
-  edicts. With no neutral town left it is eliminated.
+  newest isle that still has a public one, lowest level) with `exile.troops`, keeping gold, Dominion,
+  level and skills. With no neutral town left it is eliminated.
 - At the season end every command is rejected and the final ranking is frozen.
 
 ## 11. Online world
@@ -161,7 +168,7 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
 
 - **One public world, one league.** A season lasts 30 days. At the end the ranking is frozen, rewards
   are paid and a new season starts with a fresh map. Players join whenever they connect and appear on
-  a shore slot with a tier-1 capital and their private towns (§2). When every isle is full and today's
+  a shore slot with a level-1 capital and their private towns (§2). When every isle is full and today's
   isles are spent, joining fails with `WORLD_FULL` until the next isle is born.
 - **Capitals cannot be attacked** (`rules.capitalImmune`); there are no shields. A march whose target
   became a capital on the way (an exiled lord restarting there) returns home (`MARCH_REPELLED`).
@@ -169,9 +176,9 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
   ×`towns.homeFort` (3) fortification, and owning more than `towns.sprawl.freeTowns` (6) towns divides the production of all
   your towns by `1 + towns.sprawl.penaltyPerTown (0.1) × extra towns`. The demo uses the same brakes,
   milder: ×1.5, and −5% per town beyond 8.
-- **Economy:** production ÷5, upgrade and respecialization costs ×10 and plunder ×5 versus the
-  demo, so towns grow over weeks; marches take seconds to a couple of minutes and the wind shifts
-  every 3 hours.
+- **Economy:** production ÷5, upgrade costs ×40, plunder ×5 and 400 starting gold versus the demo, so
+  an active player's best town reaches level 100 in about a week; marches take seconds to a couple of
+  minutes and the wind shifts every 3 hours.
 - **Rewards by final rank:** top 5% → 100 Legacy, top 25% → 50, top 50% → 25, everyone else who
   played → 10 (`rewards.tiers`; each cut-off rounds up and holds at least one player). Legacy is
   permanent and only buys town styles (`cosmetics.styles`); it never changes the rules of a season.
@@ -180,9 +187,9 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
   an officer accepts. At most 20 members; clans last across seasons. A leaving leader hands over to
   the oldest officer (else the oldest member); the last member out closes the clan.
 - **Allies** (same clan) never fight: a march to an ally's town **stations** its troops there. The town
-  is then defended by the owner's garrison plus every allied contingent, each with its own lord's
-  edicts; all contingents lose the same fraction, and kills and glory are shared by the power each
-  brought. A lord may move its stationed troops out again. Allies share vision. When an alliance
+  is then defended by the owner's garrison plus every allied contingent; all contingents lose the
+  same fraction, kill rewards are shared by the power each brought, and each lord recovers its own
+  dead in its own capital. A lord may move its stationed troops out again. Allies share vision. When an alliance
   breaks, stationed contingents march back to their capitals.
 - **Chat:** a global channel and one per clan; lines up to 200 characters; the last 100 are kept.
 - **Clan ranking:** summed Dominion of the members; the top clan of each season gets a medal shown in
@@ -192,48 +199,55 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
 
 Every command is validated by the engine; each rule has a passing and a violating test.
 
-| Id  | Rule                                                                              |
-| --- | --------------------------------------------------------------------------------- |
-| R01 | The acting lord exists and is not eliminated.                                     |
-| R02 | The season has started and has not ended.                                         |
-| R03 | The town acted on (upgrade, respecialize, send from) belongs to the acting lord.  |
-| R04 | Upgrade only below the maximum tier.                                              |
-| R05 | The lord has enough gold for the upgrade or respecialization.                     |
-| R06 | Respecialize only to a different type.                                            |
-| R07 | Troop amounts are non-negative integers and add up to at least `march.minTroops`. |
-| R08 | Troops sent do not exceed the garrison, per type.                                 |
-| R09 | Target differs from source.                                                       |
-| R10 | Target is on the same isle or on an isle joined by a lane.                        |
-| R11 | The Throne (when enabled) cannot be targeted while sealed.                        |
-| R12 | Active marches per lord stay below `march.maxActivePerLord`.                      |
-| R13 | An edict can be chosen only from the pending draft.                               |
-| R14 | Command payloads have the right shape; another lord's private town is unknown.    |
-| R15 | With `rules.capitalImmune`, another lord's capital cannot be targeted.            |
+| Id  | Rule                                                                           |
+| --- | ------------------------------------------------------------------------------ |
+| R01 | The acting lord exists and is not eliminated.                                  |
+| R02 | The season has started and has not ended.                                      |
+| R03 | The town acted on (upgrade, send from) belongs to the acting lord.             |
+| R04 | Upgrade only below the maximum level.                                          |
+| R05 | The lord has enough gold for at least one level.                               |
+| R06 | Retired (it was respecialization).                                             |
+| R07 | The troop count is an integer of at least `march.minTroops`.                   |
+| R08 | Troops sent do not exceed the garrison.                                        |
+| R09 | Target differs from source.                                                    |
+| R10 | Target is on the same isle or on an isle joined by a lane.                     |
+| R11 | The Throne (when enabled) cannot be targeted while sealed.                     |
+| R12 | Active marches per lord stay below `march.maxActivePerLord`.                   |
+| R13 | A skill point can be spent only if the lord has one left.                      |
+| R14 | Command payloads have the right shape; another lord's private town is unknown. |
+| R15 | With `rules.capitalImmune`, another lord's capital cannot be targeted.         |
+| R16 | A lord equips only items it owns.                                              |
 
 ## 13. Bots
 
 Each bot thinks every `bots.thinkEveryMin` game minutes (with seeded jitter) through the same command
-API as players, and reads only what its vision allows (unseen garrisons are estimated from tier). It
+API as players, and reads only what its vision allows (unseen garrisons are guessed as
+`bots.guessMin` (60) minutes of the town's production). It
 weighs only the `bots.targetsPerTown` (12) nearest targets of each town, plus a few on each linked
 isle, from its strongest towns.
 
 | Personality | Behavior                                                                      |
 | ----------- | ----------------------------------------------------------------------------- |
-| Raider      | Attacks at low margins, favors griffins and tailwinds, keeps little gold.     |
+| Raider      | Attacks at low margins, favors tailwinds, puts points into Attack.            |
 | Builder     | Upgrades first, attacks only with a wide margin, completes zones for beacons. |
 | Warden      | Reinforces threatened towns, conquers neutrals, rarely attacks lords.         |
 | Climber     | Builds up and goes for the Throne (when enabled) once it is unsealed.         |
 
-Turn order: choose a pending edict → reinforce threatened towns → spend gold on upgrades → launch the
-best attack (value ÷ travel time, predicted power ratio above the personality margin) → move surplus
-troops from towns stuck at the cap to the most exposed of their nearest own towns.
+Turn order: spend skill points (`skillWeights` per personality) and wear the best items → reinforce threatened towns → spend
+gold on upgrades (the best town takes every level the gold pays for) → launch the best attack (value ÷
+travel time, predicted power ratio above the personality margin) → move the troops of towns holding
+more than `bots.hoardMin` (30) minutes of production to the most exposed of their nearest own towns.
 
 ## 14. Demo (single player)
 
 - One human lord against `demo.bots` bots on a seeded map, accelerated time (`demo.timeScale` 20),
   season of `season.durationMin` (360) game minutes ≈ 18 real minutes. Pause and ×2 / ×4 speeds.
-- Runs offline from one HTML file; the engine and bots run in a Web Worker; progress is saved locally.
+- Runs offline from one HTML file; the engine and bots run in a Web Worker; progress is saved locally,
+  and so is the player's equipment, which carries over to the next demo game.
+- Screen: the map with the HUD on top (gold, Dominion, and the portrait with the lord level, which
+  opens the profile: Gear, Skills, Stats) and a column of picture buttons on the right (marches,
+  reports, ranking, social online, menu).
 - Onboarding: tap your capital → send troops to a neutral town on your isle → watch the wind → upgrade a
   town. First conquest in under 60 real seconds.
-- Acceptance (15 real minutes): finish onboarding, hold 6+ towns, light a beacon, choose an edict, see a
+- Acceptance (15 real minutes): finish onboarding, hold 6+ towns, light a beacon, spend a skill point, see a
   bot attack resolve, open the ranking.

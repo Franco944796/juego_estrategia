@@ -1,19 +1,20 @@
 import { defaultConfig } from '@si/config';
-import type { Command, DomainEvent, LordView, SendPreview, Troops } from '@si/engine';
+import type { Command, DomainEvent, GearSlot, Item, LordView, Rarity, SendPreview } from '@si/engine';
 import { formatDuration } from '../format';
 import { BOT_NAMES, RULE_TEXT, SERVER_TEXT, t, WIND_NAMES } from '../i18n';
 import { toRealMs, useGame, type SeasonNews } from '../store';
-import { isAlly, townLabel } from '../ui/labels';
+import { isAlly, itemName, townLabel } from '../ui/labels';
 import { LocalGameClient, type GameClient } from './client';
 import type { ChatChannel, ClanDetail, ClanRankingRow, ClanSummary, HallResponse } from '@si/protocol';
 import { api, ApiError } from './api';
-import type { Save } from './protocol';
+import type { Armory, Save } from './protocol';
 import { RemoteGameClient } from './remote';
 
 const SAVE_KEY = 'shattered-isles:save:v1';
 const LANG_KEY = 'shattered-isles:lang';
 const TUTORIAL_KEY = 'shattered-isles:tutorial-done';
 const TOKEN_KEY = 'shattered-isles:token';
+const ARMORY_KEY = 'shattered-isles:armory';
 
 let client: GameClient | null = null;
 let remote: RemoteGameClient | null = null;
@@ -51,7 +52,7 @@ export function readSave(): Save | null {
   if (!raw) return null;
   try {
     const save = JSON.parse(raw) as Save;
-    return save.version === 2 && save.state.status === 'RUNNING' ? save : null;
+    return save.version === 3 && save.state.status === 'RUNNING' ? save : null;
   } catch {
     return null;
   }
@@ -66,11 +67,34 @@ export function rememberLang(lang: 'es' | 'en'): void {
   write(LANG_KEY, lang);
 }
 
+/** The demo keeps the player's equipment in the browser, so it carries over to the next game. */
+function readArmory(): Armory {
+  try {
+    const armory = JSON.parse(read(ARMORY_KEY) ?? 'null') as Armory | null;
+    if (armory && Array.isArray(armory.items) && typeof armory.gear === 'object') return armory;
+  } catch {
+    // A damaged record just starts the armory over.
+  }
+  return { items: [], gear: {} };
+}
+
+let lastArmory = '';
+
+function keepArmory(view: LordView): void {
+  const text = JSON.stringify({ items: view.me.items, gear: view.me.gear });
+  if (text === lastArmory) return;
+  lastArmory = text;
+  write(ARMORY_KEY, text);
+}
+
 function localClient(): GameClient {
   if (client instanceof LocalGameClient) return client;
   client?.dispose();
   client = new LocalGameClient({
-    onView: (view, clock) => useGame.getState().receiveView(view, clock),
+    onView: (view, clock) => {
+      useGame.getState().receiveView(view, clock);
+      keepArmory(view);
+    },
     onEvents: (events) => notify(events),
     onSave: (save) => write(SAVE_KEY, JSON.stringify(save)),
   });
@@ -85,6 +109,7 @@ export function startNewGame(bots: number): void {
     seed: Math.floor(Math.random() * 2 ** 31),
     humanName: t(lang, 'defaultName'),
     botNames: BOT_NAMES[lang].slice(0, bots),
+    armory: readArmory(),
   });
   useGame.setState({ screen: 'game', mode: 'offline', tutorial: read(TUTORIAL_KEY) ? null : 0 });
 }
@@ -120,7 +145,7 @@ export async function command(cmd: Command): Promise<boolean> {
   return true;
 }
 
-export function preview(from: number, to: number, troops: Troops): Promise<SendPreview> {
+export function preview(from: number, to: number, troops: number): Promise<SendPreview> {
   return client ? client.preview(from, to, troops) : new Promise<SendPreview>(() => undefined);
 }
 
@@ -236,6 +261,19 @@ async function styleAction(action: typeof api.unlock, style: string): Promise<vo
 }
 
 export const unlockStyle = (style: string): Promise<void> => styleAction(api.unlock, style);
+
+export async function buyItem(slot: GearSlot, rarity: Rarity): Promise<Item | null> {
+  const { token, pushToast } = useGame.getState();
+  if (!token) return null;
+  try {
+    const result = await api.buyItem(token, slot, rarity);
+    useGame.setState({ profile: result.account });
+    return result.item;
+  } catch (error) {
+    pushToast(failure(error), 'bad');
+    return null;
+  }
+}
 export const equipStyle = (style: string): Promise<void> => styleAction(api.equip, style);
 
 export function loadHall(): Promise<HallResponse> {
@@ -289,6 +327,8 @@ function notify(events: DomainEvent[]): void {
   if (!view) return;
   const town = (id: number): string => townLabel(lang, view, id);
   const me = view.me.id;
+  // One battle can climb several levels; a single toast names the last one.
+  let level: number | null = null;
   for (const e of events) {
     switch (e.type) {
       case 'MARCH_LAUNCHED': {
@@ -328,10 +368,7 @@ function notify(events: DomainEvent[]): void {
         break;
       }
       case 'LEVEL_UP':
-        if (e.lordId === me) {
-          const troops = e.troops.LANCER + e.troops.ARCHER + e.troops.GRIFFIN;
-          pushToast(t(lang, 'toastLevelUp', { n: e.level, troops }), 'good');
-        }
+        if (e.lordId === me) level = e.level;
         break;
       case 'MARCH_STATIONED': {
         const target = view.towns.find((x) => x.id === e.march.to);
@@ -359,8 +396,9 @@ function notify(events: DomainEvent[]): void {
         if (e.townId === view.season.throneTownId)
           pushToast(t(lang, 'toastThroneTaken', { name: lordName(view, e.to) }));
         break;
-      case 'EDICT_DRAFT':
-        if (e.lordId === me) pushToast(t(lang, 'toastDraft'), 'good');
+      case 'ITEM_FOUND':
+        if (e.lordId === me && e.source === 'LEVEL')
+          pushToast(t(lang, 'toastItem', { item: itemName(lang, e.item) }), 'good');
         break;
       case 'LORD_EXILED':
         if (e.lordId === me) pushToast(t(lang, 'toastExiled'), 'bad');
@@ -372,6 +410,7 @@ function notify(events: DomainEvent[]): void {
         break;
     }
   }
+  if (level !== null) pushToast(t(lang, 'toastLevelUp', { n: level }), 'good');
 }
 
 export const DEMO_BOTS = defaultConfig.demo.bots;

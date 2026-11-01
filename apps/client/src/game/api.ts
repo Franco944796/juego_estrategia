@@ -1,3 +1,4 @@
+import type { GearSlot, Item, Rarity } from '@si/engine';
 import type {
   ClanDetail,
   ClanRankingRow,
@@ -45,6 +46,12 @@ export const api = {
   join: (token: string) => request<{ ok: boolean }>('/api/join', { method: 'POST', token }),
   unlock: (token: string, style: string) =>
     request<{ account: PublicAccount }>('/api/styles/unlock', { method: 'POST', token, body: { style } }),
+  buyItem: (token: string, slot: GearSlot, rarity: Rarity) =>
+    request<{ account: PublicAccount; item: Item }>('/api/items/buy', {
+      method: 'POST',
+      token,
+      body: { slot, rarity },
+    }),
   equip: (token: string, style: string) =>
     request<{ account: PublicAccount }>('/api/styles/equip', { method: 'POST', token, body: { style } }),
   hall: () => request<HallResponse>('/api/hall'),

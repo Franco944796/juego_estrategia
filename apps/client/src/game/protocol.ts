@@ -1,5 +1,14 @@
 import { defaultConfig } from '@si/config';
-import type { Command, DomainEvent, GameState, LordView, RuleError, SendPreview, Troops } from '@si/engine';
+import type {
+  Command,
+  DomainEvent,
+  GameState,
+  GearSlot,
+  Item,
+  LordView,
+  RuleError,
+  SendPreview,
+} from '@si/engine';
 import type { ClockInfo } from '@si/protocol';
 
 export type { ClockInfo };
@@ -13,10 +22,17 @@ export interface NewGameOptions {
   seed: number;
   humanName: string;
   botNames: string[];
+  /** The player's equipment, kept in the browser from one demo game to the next. */
+  armory: Armory;
+}
+
+export interface Armory {
+  items: Item[];
+  gear: Partial<Record<GearSlot, string>>;
 }
 
 export interface Save {
-  version: 2;
+  version: 3;
   state: GameState;
   gameNow: number;
   speed: number;
@@ -26,7 +42,7 @@ export type ToWorker =
   | { type: 'new'; options: NewGameOptions }
   | { type: 'load'; save: Save }
   | { type: 'command'; id: number; command: Command }
-  | { type: 'preview'; id: number; from: number; to: number; troops: Troops }
+  | { type: 'preview'; id: number; from: number; to: number; troops: number }
   | { type: 'speed'; speed: number }
   | { type: 'save' };
 

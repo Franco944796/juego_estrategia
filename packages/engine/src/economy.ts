@@ -1,12 +1,46 @@
 import { MINUTE_MS } from '@si/config/constants';
 import { distance } from './geometry';
 import { lordMods, ownedCounts, type LordMods } from './modifiers';
-import { cloneTroops, totalTroops } from './troops';
-import type { GameState, Town, Troops, TroopType } from './types';
+import type { GameConfig, GameState, Town } from './types';
+
+const exponents = new WeakMap<GameConfig, number>();
+
+/**
+ * Multiplier of everything that grows with the level: 1 at level 1, `scale.second` at level 2 and
+ * `scale.top` at maxTier. Its logarithm grows as (level - 1) ^ p with p < 1, so early levels jump most.
+ */
+export function levelScale(cfg: GameConfig, level: number): number {
+  const { second, top } = cfg.towns.scale;
+  const a = Math.log10(second);
+  let p = exponents.get(cfg);
+  if (p === undefined) {
+    const span = cfg.towns.maxTier - 1;
+    p = span > 1 ? Math.log(Math.log10(top) / a) / Math.log(span) : 1;
+    exponents.set(cfg, p);
+  }
+  return 10 ** (a * Math.max(0, level - 1) ** p);
+}
+
+/** Two significant digits, so wall values read as round numbers (20, 50, 92, 160…). */
+function roundish(value: number): number {
+  if (value < 100) return Math.round(value);
+  const unit = 10 ** (Math.floor(Math.log10(value)) - 1);
+  return Math.round(value / unit) * unit;
+}
+
+/** `mult` is the owner's wall bonus (helmets). */
+export function wallsAt(cfg: GameConfig, level: number, mult = 1): number {
+  return roundish(cfg.towns.walls * levelScale(cfg, level) * mult);
+}
+
+export function plunderAt(cfg: GameConfig, level: number): number {
+  return cfg.plunder.base * levelScale(cfg, level);
+}
 
 export interface TownRates {
   gold: number;
   troops: number;
+  /** Neutral towns regenerate up to their starting garrison; owned towns never stop. */
   cap: number;
 }
 
@@ -17,8 +51,8 @@ export function beaconLitFor(state: GameState, town: Town): boolean {
 
 export function townRates(state: GameState, town: Town, mods?: LordMods): TownRates {
   const cfg = state.config;
-  const i = town.tier - 1;
-  const base = (cfg.towns.troopsPerMin[i] ?? 0) * cfg.troops[town.spec].prodMult;
+  const scale = levelScale(cfg, town.tier);
+  const base = cfg.towns.troopsPerMin * scale;
   if (town.owner === null) {
     const troops = town.neutralCap > 0 ? base * cfg.neutral.regenMult : 0;
     return { gold: 0, troops, cap: town.neutralCap };
@@ -28,35 +62,30 @@ export function townRates(state: GameState, town: Town, mods?: LordMods): TownRa
   if (town.isCapital) mult *= cfg.towns.capitalProdMult;
   if (beaconLitFor(state, town)) mult *= 1 + cfg.beacon.prodBonus;
   return {
-    gold: (cfg.towns.goldPerMin[i] ?? 0) * mult * m.goldProd * m.sprawl,
+    gold: cfg.towns.goldPerMin * scale * mult * m.goldProd * m.sprawl,
     troops: base * mult * m.troopProd * m.sprawl,
-    cap: cfg.towns.garrisonCap[i] ?? 0,
+    cap: Infinity,
   };
 }
 
 /** Production pauses at the cap; reinforcements may still push a garrison above it. */
 export function growGarrison(
-  garrison: Troops,
+  garrison: number,
   carry: number,
-  spec: TroopType,
   ratePerMin: number,
   dtMin: number,
   cap: number,
-): { garrison: Troops; carry: number } {
-  const total = totalTroops(garrison);
-  if (total >= cap) return { garrison, carry: 0 };
+): { garrison: number; carry: number } {
+  if (garrison >= cap) return { garrison, carry: 0 };
   if (ratePerMin <= 0 || dtMin <= 0) return { garrison, carry };
   const amount = carry + ratePerMin * dtMin;
   let add = Math.floor(amount);
   let rest = amount - add;
-  if (total + add >= cap) {
-    add = cap - total;
+  if (garrison + add >= cap) {
+    add = cap - garrison;
     rest = 0;
   }
-  if (add === 0) return { garrison, carry: rest };
-  const next = cloneTroops(garrison);
-  next[spec] += add;
-  return { garrison: next, carry: rest };
+  return { garrison: garrison + add, carry: rest };
 }
 
 export function dominionRates(state: GameState): Map<string, number> {
@@ -66,15 +95,13 @@ export function dominionRates(state: GameState): Map<string, number> {
     rates.set(id, (rates.get(id) ?? 0) + value);
   };
   for (const town of state.towns) {
-    if (town.owner !== null) bump(town.owner, cfg.dominion.perTier[town.tier - 1] ?? 0);
+    if (town.owner !== null) bump(town.owner, cfg.dominion.perTier * town.tier);
   }
   for (const zone of state.zones) {
     if (zone.beaconOwner !== null) bump(zone.beaconOwner, cfg.beacon.dominionPerMin);
   }
   const throne = state.throneTownId === null ? undefined : state.towns[state.throneTownId];
   if (throne?.owner) bump(throne.owner, cfg.throne.dominionPerMin);
-  const owned = ownedCounts(state);
-  for (const [id, value] of rates) rates.set(id, value * lordMods(state, id, owned.get(id) ?? 0).dominion);
   return rates;
 }
 
@@ -99,7 +126,7 @@ export function accrueTo(state: GameState, t: number): void {
       const lord = state.lords[town.owner];
       if (lord) lord.gold += rates.gold * dtMin;
     }
-    const grown = growGarrison(town.garrison, town.carry, town.spec, rates.troops, dtMin, rates.cap);
+    const grown = growGarrison(town.garrison, town.carry, rates.troops, dtMin, rates.cap);
     town.garrison = grown.garrison;
     town.carry = grown.carry;
   }
@@ -134,11 +161,11 @@ export function projectedDominion(state: GameState, lordId: string, t: number): 
   return lord.dominion + (dominionRates(state).get(lordId) ?? 0) * dtMin;
 }
 
-export function projectedGarrison(state: GameState, town: Town, t: number): Troops {
+export function projectedGarrison(state: GameState, town: Town, t: number): number {
   const dtMin = elapsedMin(state, t);
   if (dtMin <= 0) return town.garrison;
   const rates = townRates(state, town);
-  return growGarrison(town.garrison, town.carry, town.spec, rates.troops, dtMin, rates.cap).garrison;
+  return growGarrison(town.garrison, town.carry, rates.troops, dtMin, rates.cap).garrison;
 }
 
 export function goldRate(state: GameState, lordId: string): number {
@@ -148,18 +175,39 @@ export function goldRate(state: GameState, lordId: string): number {
   return rate;
 }
 
-/** Null at the maximum tier. */
+/** Cost of the next level; null at the maximum level. */
 export function upgradeCost(state: GameState, town: Town): number | null {
-  const base = state.config.towns.upgradeCost[town.tier - 1];
-  if (base === undefined || town.tier >= state.config.towns.maxTier) return null;
-  return base * lordMods(state, town.owner).upgradeCost;
+  return upgradeCostAt(state.config, town.tier);
 }
 
-export function respecCost(state: GameState, town: Town): number {
-  return state.config.towns.respecCostPerTier * town.tier;
+export function upgradeCostAt(cfg: GameConfig, tier: number): number | null {
+  if (tier >= cfg.towns.maxTier) return null;
+  return cfg.towns.upgradeCost * levelScale(cfg, tier);
 }
 
-export function fortification(state: GameState, town: Town, ownerMods?: LordMods): number {
+/** How many of the next `maxLevels` levels `gold` pays for, one after another, and their total cost. */
+export function upgradePlan(
+  cfg: GameConfig,
+  tier: number,
+  gold: number,
+  maxLevels: number,
+): { levels: number; cost: number } {
+  let levels = 0;
+  let cost = 0;
+  while (levels < maxLevels) {
+    const next = upgradeCostAt(cfg, tier + levels);
+    if (next === null || cost + next > gold) break;
+    cost += next;
+    levels++;
+  }
+  return { levels, cost };
+}
+
+export function townWalls(state: GameState, town: Town, ownerMods?: LordMods): number {
+  return wallsAt(state.config, town.tier, (ownerMods ?? lordMods(state, town.owner)).walls);
+}
+
+export function fortification(state: GameState, town: Town): number {
   const cfg = state.config;
   let fort = 1 + cfg.towns.fortPerTier * (town.tier - 1);
   if (town.isCapital) fort *= cfg.towns.capitalFort;
@@ -169,5 +217,5 @@ export function fortification(state: GameState, town: Town, ownerMods?: LordMods
     const capital = capitalId === null || capitalId === undefined ? undefined : state.towns[capitalId];
     if (capital && distance(capital.pos, town.pos) <= cfg.towns.homeRadius) fort *= cfg.towns.homeFort;
   }
-  return fort * (ownerMods ?? lordMods(state, town.owner)).fort;
+  return fort;
 }

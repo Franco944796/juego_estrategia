@@ -5,11 +5,10 @@ import { hashState } from '../src/hash';
 import { distance } from '../src/geometry';
 import { growIsle, isleConquered, isleFull } from '../src/growth';
 import { joinLord, setStyle } from '../src/join';
-import { totalTroops } from '../src/troops';
 import type { DomainEvent, GameState, Isle, LordInit, Town } from '../src/types';
 import { view } from '../src/view';
 import { isleNeighbors, setOwner } from '../src/world';
-import { capitalOf, game, give, humans, lord, MIN, publicNeutral, T0, troops } from './helpers';
+import { capitalOf, game, give, humans, lord, MIN, publicNeutral, T0 } from './helpers';
 
 function world(seed = 3): GameState {
   return createGame({ seed, config: liveConfig, startsAt: T0, lords: [] });
@@ -42,7 +41,7 @@ describe('joining a running season', () => {
     const town = state.towns[result.townId];
     if (!town) throw new Error('no capital');
     expect(town).toMatchObject({ owner: 'ana', tier: 1, isCapital: true, zoneId: null, privateTo: null });
-    expect(totalTroops(town.garrison)).toBe(40);
+    expect(town.garrison).toBe(40);
     expect(state.isles[0]?.slots.filter((slot) => slot.lordId === 'ana')).toHaveLength(1);
     const own = state.towns.filter((t) => t.privateTo === 'ana');
     expect(own).toHaveLength(3);
@@ -50,7 +49,7 @@ describe('joining a running season', () => {
       expect(t).toMatchObject({ owner: null, tier: 1, isleId: 0, zoneId: null });
       expect(distance(t.pos, town.pos)).toBeLessThanOrEqual(state.config.map.spawn.privateSpacing * 1.5);
     }
-    expect(lord(state, 'ana')).toMatchObject({ style: 'classic', gold: 300, capitalId: result.townId });
+    expect(lord(state, 'ana')).toMatchObject({ style: 'classic', gold: 400, capitalId: result.townId });
     expect(result.events.at(-1)).toEqual({
       type: 'LORD_JOINED',
       at: T0 + 5 * MIN,
@@ -80,8 +79,8 @@ describe('joining a running season', () => {
     expect(view(state, 'ana', T0).towns.some((t) => t.id === mine.id)).toBe(true);
 
     const base = publicNeutral(state);
-    give(state, base, 'bo', troops(100));
-    const sneak = execute(state, 'bo', { type: 'SEND', from: base.id, to: mine.id, troops: troops(5) }, T0);
+    give(state, base, 'bo', 100);
+    const sneak = execute(state, 'bo', { type: 'SEND', from: base.id, to: mine.id, troops: 5 }, T0);
     expect(sneak.ok ? null : sneak.error).toMatchObject({ rule: 'R14', code: 'UNKNOWN_TOWN' });
 
     setOwner(state, mine, 'ana', T0, []);
@@ -115,7 +114,7 @@ describe('joining a running season', () => {
       .map((id) => state.towns[id] as Town)
       .filter((t) => t.owner === null && t.privateTo === null);
     const last = open.pop() as Town;
-    for (const t of open) give(state, t, 'ana', troops(1));
+    for (const t of open) give(state, t, 'ana', 1);
     expect(isleConquered(state, state.isles[0] as Isle)).toBe(false);
     const events: DomainEvent[] = [];
     setOwner(state, last, 'ana', T0 + MIN, events);
@@ -183,13 +182,13 @@ describe('immune capitals', () => {
     joinLord(state, player('bo'), T0);
     const capital = lord(state, 'bo').capitalId ?? -1;
     const town = publicNeutral(state);
-    give(state, town, 'ana', troops(200));
+    give(state, town, 'ana', 200);
     return { state, base: town.id, capital };
   }
 
   it('R15 rejects attacks on a capital when capitals are immune', () => {
     const { state, base, capital } = rivals();
-    const result = execute(state, 'ana', { type: 'SEND', from: base, to: capital, troops: troops(10) }, T0);
+    const result = execute(state, 'ana', { type: 'SEND', from: base, to: capital, troops: 10 }, T0);
     expect(result.ok ? null : result.error.rule).toBe('R15');
   });
 
@@ -201,8 +200,8 @@ describe('immune capitals', () => {
     if (!base) throw new Error('no base');
     base.owner = 'h1';
     base.neutralCap = 0;
-    base.garrison = troops(50);
-    const result = execute(state, 'h1', { type: 'SEND', from: base.id, to: capital, troops: troops(10) }, T0);
+    base.garrison = 50;
+    const result = execute(state, 'h1', { type: 'SEND', from: base.id, to: capital, troops: 10 }, T0);
     expect(result.ok).toBe(true);
   });
 
@@ -212,23 +211,18 @@ describe('immune capitals', () => {
     joinLord(state, player('bo'), T0);
     const home = capitalOf(state, 'ana');
     const target = publicNeutral(state);
-    const sent = execute(
-      state,
-      'ana',
-      { type: 'SEND', from: home.id, to: target.id, troops: troops(10) },
-      T0,
-    );
+    const sent = execute(state, 'ana', { type: 'SEND', from: home.id, to: target.id, troops: 10 }, T0);
     if (!sent.ok) throw new Error(sent.error.code);
     // An exiled lord restarts on a neutral town, which can be one a march is already heading to.
-    give(state, target, 'bo', troops(5));
+    give(state, target, 'bo', 5);
     target.isCapital = true;
     const launched = sent.events.find((e) => e.type === 'MARCH_LAUNCHED');
     if (!launched || launched.type !== 'MARCH_LAUNCHED') throw new Error('no march');
-    const before = home.garrison.LANCER;
+    const before = home.garrison;
     const events = advanceTo(state, launched.march.arriveAt);
     expect(events.some((e) => e.type === 'MARCH_REPELLED')).toBe(true);
     expect(events.some((e) => e.type === 'BATTLE')).toBe(false);
-    expect(home.garrison.LANCER).toBeGreaterThanOrEqual(before + 10);
+    expect(home.garrison).toBeGreaterThanOrEqual(before + 10);
     expect(target.owner).toBe('bo');
   });
 });

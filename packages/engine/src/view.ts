@@ -5,25 +5,26 @@ import {
   projectedDominion,
   projectedGarrison,
   projectedGold,
-  respecCost,
   townRates,
+  townWalls,
   upgradeCost,
+  upgradePlan,
 } from './economy';
 import { computeStandings } from './game';
 import { modsMemo } from './modifiers';
 import { windIndexAt, windShiftMs } from './marches';
-import { cloneTroops } from './troops';
+import { unspentPoints } from './skills';
 import type {
   BattleReport,
-  EdictId,
   GameState,
+  GearSlot,
   Isle,
+  Item,
   Lane,
   LordStats,
   SeasonStatus,
+  SkillId,
   Standing,
-  Troops,
-  TroopType,
   Vec,
   Zone,
 } from './types';
@@ -33,9 +34,10 @@ import { areAllies, xpForLevel } from './world';
 export interface OwnTownInfo {
   goldPerMin: number;
   troopsPerMin: number;
-  cap: number;
+  /** Cost of the next level; null at the top level. */
   upgradeCost: number | null;
-  respecCost: number;
+  /** Levels the lord's gold pays for right now, one after another, and what they cost together. */
+  upgradeMax: { levels: number; cost: number };
 }
 
 export interface TownView {
@@ -43,7 +45,6 @@ export interface TownView {
   isleId: number;
   pos: Vec;
   tier: number;
-  spec: TroopType;
   owner: string | null;
   isCapital: boolean;
   isThrone: boolean;
@@ -51,10 +52,11 @@ export interface TownView {
   isPrivate: boolean;
   zoneId: number | null;
   fort: number;
+  walls: number;
   /** Null when the garrison is out of sight. */
-  garrison: Troops | null;
+  garrison: number | null;
   /** Clanmates' troops stationed here; null when the town is out of sight. */
-  stationed: { lordId: string; troops: Troops }[] | null;
+  stationed: { lordId: string; troops: number }[] | null;
   own: OwnTownInfo | null;
 }
 
@@ -68,7 +70,7 @@ export interface MarchView {
   sky: boolean;
   windFactor: number | null;
   /** Shown for own marches and for marches aimed at the viewer's towns. */
-  troops: Troops | null;
+  troops: number | null;
   mine: boolean;
   /** Hostile march aimed at one of the viewer's towns. */
   incoming: boolean;
@@ -90,10 +92,16 @@ export interface MeView {
   goldPerMin: number;
   dominion: number;
   dominionPerMin: number;
-  glory: number;
-  nextGlory: number | null;
-  edicts: EdictId[];
-  draft: EdictId[] | null;
+  skills: Record<SkillId, number>;
+  skillPoints: number;
+  /** Bonus per skill point (0.05 = +5 %). */
+  skillPerPoint: Record<SkillId, number>;
+  /** League rule: share of dead troops that reappear in the capital. */
+  recovery: { attacker: number; defender: number };
+  items: Item[];
+  gear: Partial<Record<GearSlot, string>>;
+  /** Bonus of an item by rarity (0.03 = +3 %). */
+  gearBonus: Record<Item['rarity'], number>;
   capitalId: number | null;
   alive: boolean;
   exiles: number;
@@ -152,6 +160,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
   const t = Math.min(Math.max(now, state.accruedAt), state.endsAt);
   const visible = visibleIsles(state, lordId);
   const modsOf = modsMemo(state);
+  const gold = projectedGold(state, lordId, t);
 
   const hidden = (townId: number): boolean => {
     const owner = state.towns[townId]?.privateTo ?? null;
@@ -162,13 +171,12 @@ export function view(state: GameState, lordId: string, now: number): LordView {
     const mine = town.owner === lordId;
     let own: OwnTownInfo | null = null;
     if (mine) {
-      const rates = townRates(state, town);
+      const rates = townRates(state, town, modsOf(lordId));
       own = {
         goldPerMin: rates.gold,
         troopsPerMin: rates.troops,
-        cap: rates.cap,
         upgradeCost: upgradeCost(state, town),
-        respecCost: respecCost(state, town),
+        upgradeMax: upgradePlan(cfg, town.tier, gold, cfg.towns.maxTier),
       };
     }
     const seen: TownView = {
@@ -176,17 +184,17 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       isleId: town.isleId,
       pos: { x: town.pos.x, y: town.pos.y },
       tier: town.tier,
-      spec: town.spec,
       owner: town.owner,
       isCapital: town.isCapital,
       isThrone: town.isThrone,
       isPrivate: town.privateTo === lordId,
       zoneId: town.zoneId,
-      fort: fortification(state, town, modsOf(town.owner)),
-      garrison: mine || visible.has(town.isleId) ? cloneTroops(projectedGarrison(state, town, t)) : null,
+      fort: fortification(state, town),
+      walls: townWalls(state, town, modsOf(town.owner)),
+      garrison: mine || visible.has(town.isleId) ? projectedGarrison(state, town, t) : null,
       stationed:
         mine || visible.has(town.isleId)
-          ? town.stationed.map((s) => ({ lordId: s.lordId, troops: cloneTroops(s.troops) }))
+          ? town.stationed.map((s) => ({ lordId: s.lordId, troops: s.troops }))
           : null,
       own,
     };
@@ -215,7 +223,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
         arriveAt: m.arriveAt,
         sky: m.sky,
         windFactor: mine ? m.windFactor : null,
-        troops: mine || toMe ? cloneTroops(m.troops) : null,
+        troops: mine || toMe ? m.troops : null,
         mine,
         incoming,
         allied,
@@ -238,14 +246,17 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       id: lord.id,
       name: lord.name,
       color: lord.color,
-      gold: projectedGold(state, lordId, t),
+      gold,
       goldPerMin: goldRate(state, lordId),
       dominion: projectedDominion(state, lordId, t),
       dominionPerMin: dominionRates(state).get(lordId) ?? 0,
-      glory: lord.glory,
-      nextGlory: cfg.edicts.gloryThresholds[lord.draftsOpened] ?? null,
-      edicts: [...lord.edicts],
-      draft: lord.draft ? [...lord.draft] : null,
+      skills: { ...lord.skills },
+      skillPoints: unspentPoints(lord),
+      skillPerPoint: { ...cfg.skills.perPoint },
+      recovery: { attacker: cfg.league.attackerRecovery, defender: cfg.league.defenderRecovery },
+      items: lord.items.map((item) => ({ ...item })),
+      gear: { ...lord.gear },
+      gearBonus: { ...cfg.gear.rarityBonus },
       capitalId: lord.capitalId,
       alive: lord.alive,
       exiles: lord.exiles,

@@ -1,12 +1,5 @@
 import { defaultConfig } from '@si/config';
-import {
-  totalTroops,
-  WIND_VECTORS,
-  windFactor,
-  type LordView,
-  type TownView,
-  type TroopType,
-} from '@si/engine';
+import { WIND_VECTORS, windFactor, type LordView, type TownView } from '@si/engine';
 import { formatNumber } from '../format';
 import { isAlly, linkedIsles, NEUTRAL_COLOR, ownerColor, townById } from '../ui/labels';
 import { worldToScreen, type Camera, type Size, type Vec } from './camera';
@@ -261,15 +254,7 @@ function marches(ctx: CanvasRenderingContext2D, input: SceneInput): void {
     ctx.strokeStyle = INK;
     ctx.stroke();
     ctx.restore();
-    if (m.troops)
-      label(
-        ctx,
-        formatNumber(totalTroops(m.troops)),
-        cur.x,
-        cur.y - 14,
-        11,
-        m.incoming ? HOSTILE : '#ffffff',
-      );
+    if (m.troops) label(ctx, formatNumber(m.troops), cur.x, cur.y - 14, 11, m.incoming ? HOSTILE : '#ffffff');
     if (m.incoming) {
       ctx.strokeStyle = HOSTILE;
       ctx.lineWidth = 2;
@@ -277,39 +262,6 @@ function marches(ctx: CanvasRenderingContext2D, input: SceneInput): void {
       ctx.stroke();
     }
   }
-}
-
-function glyph(ctx: CanvasRenderingContext2D, spec: TroopType, p: Vec, s: number): void {
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  ctx.strokeStyle = INK;
-  ctx.fillStyle = INK;
-  ctx.lineWidth = Math.max(1.5, s * 0.22);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  if (spec === 'LANCER') {
-    ctx.moveTo(0, s);
-    ctx.lineTo(0, -s * 0.35);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, -s);
-    ctx.lineTo(s * 0.38, -s * 0.3);
-    ctx.lineTo(-s * 0.38, -s * 0.3);
-    ctx.closePath();
-    ctx.fill();
-  } else if (spec === 'ARCHER') {
-    ctx.arc(-s * 0.35, 0, s * 0.95, -Math.PI / 3, Math.PI / 3);
-    ctx.moveTo(-s * 0.35 + s * 0.95 * Math.cos(Math.PI / 3), -s * 0.95 * Math.sin(Math.PI / 3));
-    ctx.lineTo(-s * 0.35 + s * 0.95 * Math.cos(Math.PI / 3), s * 0.95 * Math.sin(Math.PI / 3));
-    ctx.stroke();
-  } else {
-    ctx.moveTo(-s, -s * 0.15);
-    ctx.quadraticCurveTo(-s * 0.45, -s * 0.95, 0, s * 0.4);
-    ctx.quadraticCurveTo(s * 0.45, -s * 0.95, s, -s * 0.15);
-    ctx.stroke();
-  }
-  ctx.restore();
 }
 
 function crown(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string): void {
@@ -425,7 +377,7 @@ function towns(ctx: CanvasRenderingContext2D, input: SceneInput, targets: Set<nu
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    glyph(ctx, town.spec, p, rr * 0.55);
+    label(ctx, String(town.tier), p.x, p.y, Math.max(9, rr * (town.tier >= 10 ? 0.8 : 1)));
     if (town.isCapital) crown(ctx, p.x, p.y - rr - 6, rr * 0.5, GOLD);
     if (town.isThrone) {
       crown(ctx, p.x, p.y - rr - 8, rr * 0.6, '#f4e3ff');
@@ -433,16 +385,11 @@ function towns(ctx: CanvasRenderingContext2D, input: SceneInput, targets: Set<nu
     }
   }
 
-  // Second pass, so a town drawn later never hides a neighbor's tier pips or garrison label.
+  // Second pass, so a town drawn later never hides a neighbor's garrison label.
   for (const { town, p, rr } of shown) {
-    for (let i = 0; i < town.tier; i++) {
-      circle(ctx, { x: p.x + (i - (town.tier - 1) / 2) * 5.5, y: p.y + rr + 5 }, 1.9);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-    }
     if (r >= LABEL_MIN_PX) {
-      const text = town.garrison ? formatNumber(totalTroops(town.garrison)) : '?';
-      label(ctx, text, p.x, p.y + rr + 16, 11);
+      const text = town.garrison !== null ? formatNumber(town.garrison) : '?';
+      label(ctx, text, p.x, p.y + rr + 10, 11);
     }
     if (targets?.has(town.id)) {
       ctx.setLineDash([4, 4]);

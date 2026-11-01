@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { GearSlot, Item } from '@si/engine';
 import type { ChatMessage, ClanMedal, ClanMember, ClanRole, ClanSummary, Medal } from '@si/protocol';
 
 export interface Account {
@@ -11,6 +12,9 @@ export interface Account {
   styles: string[];
   style: string;
   medals: Medal[];
+  /** Equipment kept across seasons; each season starts with a copy of it. */
+  items: Item[];
+  gear: Partial<Record<GearSlot, string>>;
   createdAt: number;
 }
 
@@ -25,7 +29,7 @@ export interface FinishedSeason extends SeasonRow {
   results: unknown;
 }
 
-export type LogKind = 'join' | 'command' | 'style' | 'clan';
+export type LogKind = 'join' | 'command' | 'style' | 'clan' | 'item';
 
 export interface LogEntry {
   seq: number;
@@ -43,6 +47,8 @@ interface AccountRecord {
   styles: string;
   style: string;
   medals: string;
+  items: string;
+  gear: string;
   created_at: number;
 }
 
@@ -56,6 +62,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   styles TEXT NOT NULL,
   style TEXT NOT NULL,
   medals TEXT NOT NULL DEFAULT '[]',
+  items TEXT NOT NULL DEFAULT '[]',
+  gear TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS seasons (
@@ -120,6 +128,8 @@ function toAccount(r: AccountRecord): Account {
     styles: JSON.parse(r.styles) as string[],
     style: r.style,
     medals: JSON.parse(r.medals) as Medal[],
+    items: JSON.parse(r.items) as Item[],
+    gear: JSON.parse(r.gear) as Partial<Record<GearSlot, string>>,
     createdAt: r.created_at,
   };
 }
@@ -132,6 +142,11 @@ export class Store {
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec(SCHEMA);
+    // Databases created before equipment existed get the new columns.
+    const columns = this.db.prepare('PRAGMA table_info(accounts)').all() as { name: string }[];
+    const has = (name: string): boolean => columns.some((c) => c.name === name);
+    if (!has('items')) this.db.exec("ALTER TABLE accounts ADD COLUMN items TEXT NOT NULL DEFAULT '[]'");
+    if (!has('gear')) this.db.exec("ALTER TABLE accounts ADD COLUMN gear TEXT NOT NULL DEFAULT '{}'");
   }
 
   close(): void {
@@ -173,7 +188,7 @@ export class Store {
   saveAccount(a: Account): void {
     this.db
       .prepare(
-        'UPDATE accounts SET name = ?, legacy = ?, legacy_total = ?, styles = ?, style = ?, medals = ? WHERE id = ?',
+        'UPDATE accounts SET name = ?, legacy = ?, legacy_total = ?, styles = ?, style = ?, medals = ?, items = ?, gear = ? WHERE id = ?',
       )
       .run(
         a.name,
@@ -182,6 +197,8 @@ export class Store {
         JSON.stringify(a.styles),
         a.style,
         JSON.stringify(a.medals),
+        JSON.stringify(a.items),
+        JSON.stringify(a.gear),
         a.id,
       );
   }

@@ -19,7 +19,12 @@ export interface SeasonMetrics {
   medianFirstBeaconMin: number | null;
   beaconLordShare: number;
   midSeasonMedianTowns: number;
-  edictsPerLord: number;
+  /** When the first town reached the top level, or null if none did. */
+  firstTopLevelMin: number | null;
+  /** Median over lords of their highest town level at the end. */
+  medianBestTownLevel: number;
+  /** Lost troops that reappeared in a capital, over all troops lost. */
+  recoveredShare: number;
   upgradesPerLord: number;
   exiles: number;
   eliminations: number;
@@ -69,8 +74,10 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
   let tense = 0;
   let captures = 0;
   let pvpCaptures = 0;
-  let edicts = 0;
   let upgrades = 0;
+  let lost = 0;
+  let recovered = 0;
+  let firstTopLevel: number | null = null;
   let exiles = 0;
   let eliminations = 0;
   let sky = 0;
@@ -84,6 +91,10 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
     switch (e.type) {
       case 'BATTLE': {
         battles++;
+        const r = e.report;
+        lost += r.attackerLost + r.defenderLost;
+        recovered +=
+          r.attackerRecovered + r.defenderRecovered + r.allies.reduce((sum, a) => sum + a.recovered, 0);
         if (e.report.defender === null) break;
         pvpBattles++;
         const strong = Math.max(e.report.attackerPower, e.report.defenderPower);
@@ -110,11 +121,9 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
       case 'BEACON_CHANGED':
         if (e.owner !== null && !firstBeacon.has(e.owner)) firstBeacon.set(e.owner, minutes(e.at));
         break;
-      case 'EDICT_CHOSEN':
-        edicts++;
-        break;
       case 'TOWN_UPGRADED':
         upgrades++;
+        if (firstTopLevel === null && e.tier >= config.towns.maxTier) firstTopLevel = minutes(e.at);
         break;
       case 'LORD_EXILED':
         exiles++;
@@ -144,7 +153,13 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
     medianFirstBeaconMin: firstBeacon.size > 0 ? median([...firstBeacon.values()]) : null,
     beaconLordShare: firstBeacon.size / bots,
     midSeasonMedianTowns: median(midTowns),
-    edictsPerLord: edicts / bots,
+    firstTopLevelMin: firstTopLevel,
+    medianBestTownLevel: median(
+      state.lordOrder.map((id) =>
+        Math.max(0, ...state.towns.filter((t) => t.owner === id).map((t) => t.tier)),
+      ),
+    ),
+    recoveredShare: lost > 0 ? recovered / lost : 0,
     upgradesPerLord: upgrades / bots,
     exiles,
     eliminations,
@@ -184,7 +199,7 @@ export const TARGETS: Record<'demo' | 'live', Target[]> = {
     { key: 'medianFirstBeaconMin', label: 'First beacon (game min, median)', max: 90, digits: 0 },
     { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
     { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
-    { key: 'edictsPerLord', label: 'Edicts per lord', min: 3, digits: 1 },
+    { key: 'firstTopLevelMin', label: 'First town at level 100 (game min)', min: 120, max: 240, digits: 0 },
     { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
   ],
   live: [
@@ -196,7 +211,7 @@ export const TARGETS: Record<'demo' | 'live', Target[]> = {
     { key: 'medianFirstBeaconMin', label: 'First beacon (min, median)', max: 1440, digits: 0 },
     { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
     { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
-    { key: 'edictsPerLord', label: 'Edicts per lord', min: 3, digits: 1 },
+    { key: 'firstTopLevelMin', label: 'First town at level 100 (min)', min: 7000, max: 13000, digits: 0 },
     { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
   ],
 };
@@ -226,7 +241,9 @@ export function renderReport(runs: SeasonMetrics[], header: string, targets: Tar
     ['Captures per season', 'captures', 0],
     ['PvP captures per season', 'pvpCaptures', 0],
     ['Upgrades per lord', 'upgradesPerLord', 1],
+    ['Best town level per lord at season end (median)', 'medianBestTownLevel', 1],
     ['Lord level at season end (median)', 'medianLevel', 1],
+    ['Lost troops recovered in a capital', 'recoveredShare', 2],
     ['Isles at season end', 'islesAtEnd', 1],
     ['Exiles per season', 'exiles', 1],
     ['Eliminations per season', 'eliminations', 1],

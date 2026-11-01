@@ -1,6 +1,13 @@
 import { defaultConfig, validateConfig } from '@si/config';
 import { advanceTo, createGame, execute, previewSend, view, type GameState, type LordInit } from '@si/engine';
-import { HUMAN_ID, LORD_COLORS, type FromWorker, type Save, type ToWorker } from './protocol';
+import {
+  HUMAN_ID,
+  LORD_COLORS,
+  type FromWorker,
+  type NewGameOptions,
+  type Save,
+  type ToWorker,
+} from './protocol';
 
 const config = validateConfig(defaultConfig);
 const TICK_MS = 100;
@@ -33,7 +40,7 @@ function postView(s: GameState): void {
 }
 
 function postSave(s: GameState): void {
-  const save: Save = { version: 2, state: s, gameNow, speed };
+  const save: Save = { version: 3, state: s, gameNow, speed };
   scope.postMessage({ type: 'save', save });
   lastSave = performance.now();
 }
@@ -51,9 +58,10 @@ function tick(force = false): void {
   if (real - lastSave >= SAVE_EVERY_MS || events.some((e) => e.type === 'SEASON_ENDED')) postSave(s);
 }
 
-function newGame(seed: number, humanName: string, botNames: string[]): GameState {
+function newGame(options: NewGameOptions): GameState {
+  const { seed, humanName, botNames, armory } = options;
   const lords: LordInit[] = [
-    { id: HUMAN_ID, name: humanName, color: LORD_COLORS[0] ?? '#fff', isBot: false, spec: 'LANCER' },
+    { id: HUMAN_ID, name: humanName, color: LORD_COLORS[0] ?? '#fff', isBot: false, ...armory },
     ...botNames.map((name, i) => ({
       id: `bot${i + 1}`,
       name,
@@ -68,7 +76,7 @@ scope.onmessage = (event) => {
   const msg = event.data;
   switch (msg.type) {
     case 'new':
-      state = newGame(msg.options.seed, msg.options.humanName, msg.options.botNames);
+      state = newGame(msg.options);
       gameNow = state.startsAt;
       speed = 1;
       lastReal = performance.now();

@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import type { ClockInfo } from './game/protocol';
 import { detectLang, type Lang } from './i18n';
 
-export type Panel = 'marches' | 'reports' | 'ranking' | 'edicts' | 'social' | 'menu';
+export type Panel = 'marches' | 'reports' | 'ranking' | 'profile' | 'social' | 'menu';
 export type Tone = 'info' | 'good' | 'bad';
 
 export interface Toast {

@@ -24,6 +24,11 @@ export function formatDecimal(value: number, lang: 'es' | 'en', digits = 1): str
   return lang === 'es' ? text.replace('.', ',') : text;
 }
 
+/** Per-minute rates: one decimal while small, then the K, M, G… suffixes of formatNumber. */
+export function formatRate(value: number, lang: 'es' | 'en'): string {
+  return Math.abs(value) < 1000 ? formatDecimal(value, lang) : formatNumber(value, lang);
+}
+
 const SECONDS_PER_DAY = 86_400;
 
 /** m:ss, h:mm:ss from one hour up, «Nd Hh» from one day up. Negative durations show as 0:00. */

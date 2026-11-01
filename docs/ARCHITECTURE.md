@@ -46,6 +46,16 @@ it: the client looks towns up with `townById` (`apps/client/src/ui/labels.ts`).
   settle up to `now`, so calling it more or less often never changes the result. Views and command
   validation use projections that repeat the settlement arithmetic in the same order, so a gold check
   that passes on the projection still holds after settling.
+- Troop counts are plain numbers; with levels up to 100 they reach trillions and beyond, past exact
+  integers in a double (2⁵³ ≈ 9·10¹⁵). That only loses units at the tail and stays deterministic,
+  because every client and the server do the same float arithmetic.
+- In a battle, the `BATTLE` event goes before the capture events, but troop recovery runs after the
+  capture (a fallen capital moves first), so `fight` inserts the event back at its place.
+- Equipment lives in two places: the account (`accounts.items`, `accounts.gear`, permanent) and the
+  season state (`lord.items`, `lord.gear`, a copy given at join). Shop purchases reach the season
+  through `grantItem`, logged as kind `item`; items found and gear changes flow back to the account
+  (`WorldService.syncGear`, run on those events and after every replay). Found items get the id
+  `startsAt-seed-lord-level`, unique across seasons and demo games.
 - Rejected commands never mutate the state. A log of accepted `(lordId, command, now)` entries replays
   to the same `hashState` (property-tested with fast-check).
 - Wind factors use only `+ − × ÷ √`, which are correctly rounded in IEEE 754, so they match across JS
@@ -87,7 +97,7 @@ bots) is a pure function of the seed and the human commands. A bot reads only wh
   season at the old end time and creates a fresh map; players rejoin when they connect.
 - Accounts are guests: `POST /api/session` returns a random token (stored as a SHA-256 hash) that the
   browser keeps and that doubles as the recovery code.
-- REST: `/api/health`, `/api/session`, `/api/me`, `/api/join`, `/api/styles/unlock`,
+- REST: `/api/health`, `/api/session`, `/api/me`, `/api/join`, `/api/styles/unlock`, `/api/items/buy`,
   `/api/styles/equip`, `/api/hall`. WebSocket `/ws?token=…`: the client sends `command` and `preview`
   messages; the server pushes `view` (after events and every 2 s), filtered `events` and `season`
   news. Message types live in `packages/protocol`; inputs are validated with zod and limited to 20

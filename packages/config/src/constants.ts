@@ -1,27 +1,24 @@
-export const TROOP_TYPES = ['LANCER', 'ARCHER', 'GRIFFIN'] as const;
-export type TroopType = (typeof TROOP_TYPES)[number];
+// Points bought with lord levels. Troop recovery is not here: each league fixes it (config `league`).
+export const SKILL_IDS = ['GOLD', 'TROOPS', 'ATTACK'] as const;
+export type SkillId = (typeof SKILL_IDS)[number];
 
-// Each type beats the type it maps to: lancers beat griffins, griffins beat archers, archers beat lancers.
-export const BEATS: Readonly<Record<TroopType, TroopType>> = {
-  LANCER: 'GRIFFIN',
-  GRIFFIN: 'ARCHER',
-  ARCHER: 'LANCER',
+export const GEAR_SLOTS = ['WEAPON', 'ARMOR', 'HELMET', 'CLOAK', 'BOOTS', 'RING'] as const;
+export type GearSlot = (typeof GEAR_SLOTS)[number];
+
+/** What an item in each slot improves, by its rarity bonus. */
+export const GEAR_EFFECTS: Readonly<
+  Record<GearSlot, 'attack' | 'defense' | 'walls' | 'troopProd' | 'speed' | 'goldProd'>
+> = {
+  WEAPON: 'attack',
+  ARMOR: 'defense',
+  HELMET: 'walls',
+  CLOAK: 'troopProd',
+  BOOTS: 'speed',
+  RING: 'goldProd',
 };
 
-export const EDICT_IDS = [
-  'SWIFT_WINGS',
-  'SPEAR_WALL',
-  'ARROW_STORM',
-  'GOLDEN_TIDE',
-  'MUSTER',
-  'ARCHITECTS',
-  'WIND_READERS',
-  'BULWARKS',
-  'PLUNDERERS',
-  'LEGEND',
-  'VETERANS',
-] as const;
-export type EdictId = (typeof EDICT_IDS)[number];
+export const RARITIES = ['COMMON', 'RARE', 'EPIC', 'LEGENDARY'] as const;
+export type Rarity = (typeof RARITIES)[number];
 
 export const PERSONALITIES = ['RAIDER', 'BUILDER', 'WARDEN', 'CLIMBER'] as const;
 export type Personality = (typeof PERSONALITIES)[number];

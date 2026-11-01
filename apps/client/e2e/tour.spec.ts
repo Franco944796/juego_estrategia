@@ -17,7 +17,7 @@ const ME = 'you';
 function newState(seed = 4242): GameState {
   const colors = defaultConfig.display.lordColors;
   const lords: LordInit[] = [
-    { id: ME, name: 'Vos', color: colors[0] ?? '#fff', isBot: false, spec: 'LANCER' },
+    { id: ME, name: 'Vos', color: colors[0] ?? '#fff', isBot: false },
     ...Array.from({ length: 7 }, (_, i) => ({
       id: `bot${i + 1}`,
       name: `Casa ${i + 1}`,
@@ -35,7 +35,7 @@ async function load(page: Page, state: GameState, gameNow: number): Promise<Lord
       localStorage.setItem(key, save);
       localStorage.setItem('shattered-isles:tutorial-done', '1');
     },
-    [SAVE_KEY, JSON.stringify({ version: 2, state, gameNow, speed: 1 })] as const,
+    [SAVE_KEY, JSON.stringify({ version: 3, state, gameNow, speed: 1 })] as const,
   );
   await page.reload();
   await page.getByTestId('continue-game').click();
@@ -81,21 +81,68 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: test.info().outputPath(`${name}.png`) });
 }
 
-test('edict draft', async ({ page }) => {
+test('skill points', async ({ page }) => {
   const state = newState();
   const me = state.lords[ME];
   if (!me) throw new Error('no lord');
-  me.glory = 12;
-  me.draftsOpened = 1;
-  me.draft = ['GOLDEN_TIDE', 'SWIFT_WINGS', 'LEGEND'];
+  me.level = 4;
   await load(page, state, 0);
-  await expect(page.getByTestId('nav-edicts').locator('.badge')).toBeVisible();
-  await page.getByTestId('nav-edicts').click();
-  await expect(page.getByTestId('edict-option')).toHaveCount(3);
-  await shot(page, 'edicts');
-  await page.getByTestId('edict-option').first().click();
-  await expect(page.getByTestId('edict-option')).toHaveCount(0);
-  await shot(page, 'edicts-chosen');
+  await expect(page.getByTestId('portrait-points')).toHaveText('3');
+  await page.getByTestId('portrait').click();
+  await expect(page.getByTestId('skill-points')).toContainText('3');
+  await shot(page, 'skills');
+  await page.getByTestId('learn-GOLD').click();
+  await page.getByTestId('learn-ATTACK').click();
+  await page.getByTestId('learn-ATTACK').click();
+  await expect(page.getByTestId('skill-points')).toContainText('0');
+  await expect(page.getByTestId('learn-GOLD')).toBeDisabled();
+  await expect(page.getByTestId('portrait-points')).toHaveCount(0);
+  await shot(page, 'skills-spent');
+});
+
+test('gear: slots, items and equipping', async ({ page }) => {
+  const state = newState();
+  const me = state.lords[ME];
+  if (!me) throw new Error('no lord');
+  me.items = [
+    { id: 'w1', slot: 'WEAPON', rarity: 'COMMON' },
+    { id: 'w2', slot: 'WEAPON', rarity: 'LEGENDARY' },
+    { id: 'h1', slot: 'HELMET', rarity: 'EPIC' },
+    { id: 'r1', slot: 'RING', rarity: 'RARE' },
+  ];
+  me.gear = { WEAPON: 'w1', HELMET: 'h1' };
+  await load(page, state, 0);
+  await page.getByTestId('portrait').click();
+  await expect(page.getByTestId('tab-gear')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('gear-item')).toHaveCount(2);
+  await shot(page, 'gear');
+  await page.getByTestId('equip-item').click();
+  await expect(page.getByTestId('slot-WEAPON')).toContainText('15');
+  await page.getByTestId('slot-RING').click();
+  await page.getByTestId('equip-item').click();
+  await expect(page.getByTestId('slot-RING')).toContainText('6');
+  await page.getByTestId('tab-stats').click();
+  await shot(page, 'profile-stats');
+});
+
+test('a big town: walls, production and upgrading several levels', async ({ page }) => {
+  const state = newState();
+  const me = state.lords[ME];
+  const capital = state.towns[me?.capitalId ?? -1];
+  if (!me || !capital) throw new Error('no capital');
+  capital.tier = 40;
+  capital.garrison = 3_456_789_012;
+  me.gold = 1e9;
+  await load(page, state, 0);
+  const point = await bringIntoView(page, capital.id);
+  await page.mouse.click(point.x, point.y);
+  await expect(page.getByTestId('town-sheet')).toBeVisible();
+  await expect(page.getByTestId('upgrade-max')).toBeVisible();
+  await page.waitForFunction(() => window.__shatteredIsles?.cameraSettled() ?? false);
+  await shot(page, 'town-big');
+  await page.getByTestId('upgrade-max').click();
+  await expect(page.getByTestId('upgrade-max')).toHaveCount(0);
+  await shot(page, 'town-upgraded');
 });
 
 test('incoming attack, marches and the defense report', async ({ page }) => {
@@ -105,13 +152,8 @@ test('incoming attack, marches and the defense report', async ({ page }) => {
   if (!capital || !base) throw new Error('no towns');
   base.owner = 'bot1';
   base.neutralCap = 0;
-  base.garrison = { LANCER: 10, ARCHER: 30, GRIFFIN: 0 };
-  const sent = execute(
-    state,
-    'bot1',
-    { type: 'SEND', from: base.id, to: capital.id, troops: { LANCER: 0, ARCHER: 25, GRIFFIN: 0 } },
-    0,
-  );
+  base.garrison = 40;
+  const sent = execute(state, 'bot1', { type: 'SEND', from: base.id, to: capital.id, troops: 25 }, 0);
   expect(sent.ok).toBe(true);
   await load(page, state, 0);
   await expect(page.getByTestId('nav-marches').locator('.badge')).toBeVisible();

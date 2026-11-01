@@ -1,13 +1,13 @@
-import { EDICT_IDS } from '@si/config/constants';
-import { totalTroops, type BattleReport, type LordView } from '@si/engine';
+import type { BattleReport, LordView } from '@si/engine';
 import type { ClanRankingRow } from '@si/protocol';
 import { useEffect, useState, type ReactNode } from 'react';
 import { formatDuration, formatNumber } from '../format';
-import { abandonGame, command, loadClanRanking, rememberLang, setSpeed, SPEEDS } from '../game/session';
-import { EDICT_TEXT, LANGS, t, type Lang, type MessageKey } from '../i18n';
+import { abandonGame, loadClanRanking, rememberLang, setSpeed, SPEEDS } from '../game/session';
+import { LANGS, t, type Lang, type MessageKey } from '../i18n';
 import { toRealMs, useGame, type Panel } from '../store';
 import { useGameNow } from './hooks';
-import { CloseIcon, StarIcon } from './icons';
+import { CloseIcon } from './icons';
+import { LordProfile } from './LordProfile';
 import { Profile } from './Profile';
 import { SocialPanel } from './Social';
 import { ownerName, townLabel } from './labels';
@@ -64,7 +64,7 @@ function MarchesPanel({ view, lang }: { view: LordView; lang: Lang }) {
                   })}
             </span>
             <span className="muted">
-              {m.troops ? `${formatNumber(totalTroops(m.troops), lang)} · ` : ''}
+              {m.troops !== null ? `${formatNumber(m.troops, lang)} · ` : ''}
               {t(lang, 'arrivesIn', { t: formatDuration(toRealMs(clock, m.arriveAt - now)) })}
             </span>
           </button>
@@ -91,8 +91,15 @@ function ReportsPanel({ view, lang }: { view: LordView; lang: Lang }) {
       {view.reports.map((r) => {
         const attacking = r.attacker === view.me.id;
         const asAlly = r.allies.find((a) => a.lordId === view.me.id);
-        const lost = totalTroops(attacking ? r.attackerLost : (asAlly?.lost ?? r.defenderLost));
-        const killed = totalTroops(attacking ? r.defenderLost : r.attackerLost);
+        const lost = attacking ? r.attackerLost : (asAlly?.lost ?? r.defenderLost);
+        const killed = attacking ? r.defenderLost : r.attackerLost;
+        const recovered = attacking ? r.attackerRecovered : (asAlly?.recovered ?? r.defenderRecovered);
+        // The defenders' rewards are split by power, so they are exact only for a lone defender.
+        const rewards = attacking
+          ? { xp: r.rewards.attackerXp, gold: r.rewards.attackerGold }
+          : r.allies.length === 0
+            ? { xp: r.rewards.defenderXp, gold: r.rewards.defenderGold }
+            : null;
         const head = reportTitle(view.me.id, r);
         const enemy = attacking ? r.defender : r.attacker;
         return (
@@ -107,6 +114,18 @@ function ReportsPanel({ view, lang }: { view: LordView; lang: Lang }) {
                 <> · {t(lang, 'plunder', { n: formatNumber(r.plunder, lang) })}</>
               )}
             </p>
+            {(recovered > 0 || (rewards && rewards.xp > 0)) && (
+              <p className="muted">
+                {recovered > 0 && t(lang, 'recovered', { n: formatNumber(recovered, lang) })}
+                {recovered > 0 && rewards && rewards.xp > 0 && ' · '}
+                {rewards &&
+                  rewards.xp > 0 &&
+                  t(lang, 'rewards', {
+                    xp: formatNumber(rewards.xp, lang),
+                    gold: formatNumber(rewards.gold, lang),
+                  })}
+              </p>
+            )}
           </li>
         );
       })}
@@ -205,71 +224,12 @@ function RankingPanel({ view, lang }: { view: LordView; lang: Lang }) {
   );
 }
 
-function EdictsPanel({ view, lang }: { view: LordView; lang: Lang }) {
-  const { me } = view;
-  const gloryShare = me.nextGlory ? Math.min(1, me.glory / me.nextGlory) : 1;
-  return (
-    <div className="edicts">
-      <div className="glory-row" data-testid="glory">
-        <StarIcon className="stat-icon glory" />
-        <span>
-          {me.nextGlory === null
-            ? t(lang, 'glory') + ' ' + Math.floor(me.glory)
-            : t(lang, 'gloryProgress', { n: Math.floor(me.glory), goal: me.nextGlory })}
-        </span>
-        <span className="meter wide" aria-hidden="true">
-          <span className="meter-fill" style={{ width: `${gloryShare * 100}%` }} />
-        </span>
-      </div>
-      {me.draft && (
-        <>
-          <p>
-            <strong>{t(lang, 'chooseEdict')}</strong>
-          </p>
-          <div className="cards">
-            {me.draft.map((id) => (
-              <button
-                key={id}
-                type="button"
-                className="card"
-                data-testid="edict-option"
-                onClick={() => void command({ type: 'CHOOSE_EDICT', edict: id })}
-              >
-                <strong>{EDICT_TEXT[lang][id].name}</strong>
-                <span className="muted">{EDICT_TEXT[lang][id].effect}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      <p className="muted">
-        {me.nextGlory !== null && me.edicts.length < EDICT_IDS.length
-          ? t(lang, 'gloryHelp')
-          : t(lang, 'allEdicts')}
-      </p>
-      <h3>{t(lang, 'yourEdicts')}</h3>
-      {me.edicts.length === 0 ? (
-        <p className="muted">{t(lang, 'noEdicts')}</p>
-      ) : (
-        <ul className="list">
-          {me.edicts.map((id) => (
-            <li key={id} className="report">
-              <strong>{EDICT_TEXT[lang][id].name}</strong>{' '}
-              <span className="muted">· {EDICT_TEXT[lang][id].effect}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 function MenuPanel({ lang }: { lang: Lang }) {
   const clock = useGame((s) => s.clock);
   const setLang = useGame((s) => s.setLang);
   const online = useGame((s) => s.mode === 'online');
   const [confirming, setConfirming] = useState(false);
-  const help: MessageKey[] = ['help1', 'help2', 'help3', 'help4', 'help7', 'help5', 'help6'];
+  const help: MessageKey[] = ['help1', 'help2', 'help3', 'help4', 'help7', 'help8', 'help5', 'help6'];
   return (
     <div className="menu">
       {online && <Profile />}
@@ -342,7 +302,7 @@ const TITLES: Record<Panel, MessageKey> = {
   marches: 'marchesTitle',
   reports: 'reportsTitle',
   ranking: 'rankingTitle',
-  edicts: 'edictsTitle',
+  profile: 'skillsTitle',
   social: 'socialTitle',
   menu: 'menuTitle',
 };
@@ -352,11 +312,11 @@ export function PanelView({ panel }: { panel: Panel }) {
   const lang = useGame((s) => s.lang);
   if (!view) return null;
   return (
-    <PanelFrame title={t(lang, TITLES[panel])} testid={`panel-${panel}`}>
+    <PanelFrame title={panel === 'profile' ? view.me.name : t(lang, TITLES[panel])} testid={`panel-${panel}`}>
       {panel === 'marches' && <MarchesPanel view={view} lang={lang} />}
       {panel === 'reports' && <ReportsPanel view={view} lang={lang} />}
       {panel === 'ranking' && <RankingPanel view={view} lang={lang} />}
-      {panel === 'edicts' && <EdictsPanel view={view} lang={lang} />}
+      {panel === 'profile' && <LordProfile view={view} lang={lang} />}
       {panel === 'social' && <SocialPanel lang={lang} />}
       {panel === 'menu' && <MenuPanel lang={lang} />}
     </PanelFrame>

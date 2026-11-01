@@ -1,12 +1,11 @@
-import { MINUTE_MS, TROOP_TYPES } from '@si/config/constants';
+import { MINUTE_MS } from '@si/config/constants';
 import { resolveSiege } from './combat';
-import { fortification } from './economy';
+import { fortification, plunderAt, townWalls } from './economy';
 import { distance, windFactor } from './geometry';
-import { lordMods, neutralMods, type LordMods } from './modifiers';
+import { lordMods, type LordMods } from './modifiers';
 import { schedule } from './queue';
-import { addTroops, cloneTroops, subTroops, totalTroops, zeroTroops } from './troops';
-import type { BattleReport, DomainEvent, GameState, Lord, March, Town, Troops } from './types';
-import { areAllies, checkExile, gainXp, getLord, openDrafts, setOwner } from './world';
+import type { BattleReport, DomainEvent, GameState, Lord, March, Town } from './types';
+import { areAllies, checkExile, gainXp, getLord, recoverTroops, setOwner } from './world';
 
 export function windShiftMs(state: GameState): number {
   return Math.round(state.config.wind.shiftEveryMin * MINUTE_MS);
@@ -27,39 +26,27 @@ export interface TravelInfo {
   sky: boolean;
 }
 
-/** A march moves at the speed of its slowest troop type. */
-export function slowestSpeed(
-  state: GameState,
-  lordId: string,
-  troops: Troops,
-  lordModsGiven?: LordMods,
-): number {
-  const mods = lordModsGiven ?? lordMods(state, lordId);
-  let slowest = Infinity;
-  for (const type of TROOP_TYPES) {
-    if (troops[type] > 0) slowest = Math.min(slowest, state.config.troops[type].speed * mods.speed[type]);
-  }
-  return Number.isFinite(slowest) ? slowest : 1;
-}
-
 /** The wind factor is read at departure and stays locked for the whole flight. */
 export function travelInfo(
   state: GameState,
   lordId: string,
   from: Town,
   to: Town,
-  troops: Troops,
   departAt: number,
-  lordModsGiven?: LordMods,
+  mods?: LordMods,
 ): TravelInfo {
   const cfg = state.config;
-  const mods = lordModsGiven ?? lordMods(state, lordId);
   const sky = from.isleId !== to.isleId;
-  let speed = (sky ? cfg.march.skySpeed : cfg.march.landSpeed) * slowestSpeed(state, lordId, troops, mods);
+  let speed = (sky ? cfg.march.skySpeed : cfg.march.landSpeed) * (mods ?? lordMods(state, lordId)).speed;
   let factor = 1;
   if (sky) {
-    const headwindMin = Math.max(cfg.wind.headwindMin, mods.headwindMin ?? 0);
-    factor = windFactor(from.pos, to.pos, windDirAt(state, departAt), cfg.wind.tailwindMax, headwindMin);
+    factor = windFactor(
+      from.pos,
+      to.pos,
+      windDirAt(state, departAt),
+      cfg.wind.tailwindMax,
+      cfg.wind.headwindMin,
+    );
     speed *= factor;
   }
   const minutes = Math.max(cfg.march.minDurationMin, distance(from.pos, to.pos) / speed);
@@ -72,17 +59,17 @@ export function dispatchMarch(
   lordId: string,
   from: Town,
   to: Town,
-  troops: Troops,
+  troops: number,
   at: number,
   events: DomainEvent[],
 ): March {
-  const travel = travelInfo(state, lordId, from, to, troops, at);
+  const travel = travelInfo(state, lordId, from, to, at);
   const march: March = {
     id: state.nextMarchId++,
     owner: lordId,
     from: from.id,
     to: to.id,
-    troops: cloneTroops(troops),
+    troops,
     departAt: at,
     arriveAt: at + travel.durationMs,
     windFactor: travel.windFactor,
@@ -90,7 +77,7 @@ export function dispatchMarch(
   };
   state.marches.push(march);
   schedule(state, march.arriveAt, { kind: 'MARCH_ARRIVAL', marchId: march.id });
-  events.push({ type: 'MARCH_LAUNCHED', at, march: { ...march, troops: cloneTroops(march.troops) } });
+  events.push({ type: 'MARCH_LAUNCHED', at, march: { ...march } });
   return march;
 }
 
@@ -100,16 +87,16 @@ export function launchMarch(
   lordId: string,
   from: Town,
   to: Town,
-  troops: Troops,
+  troops: number,
   at: number,
   events: DomainEvent[],
 ): March {
   if (from.owner === lordId) {
-    from.garrison = subTroops(from.garrison, troops);
+    from.garrison -= troops;
   } else {
     from.stationed = from.stationed
-      .map((s) => (s.lordId === lordId ? { lordId, troops: subTroops(s.troops, troops) } : s))
-      .filter((s) => totalTroops(s.troops) > 0);
+      .map((s) => (s.lordId === lordId ? { lordId, troops: s.troops - troops } : s))
+      .filter((s) => s.troops > 0);
   }
   return dispatchMarch(state, lordId, from, to, troops, at, events);
 }
@@ -122,21 +109,21 @@ export function arriveMarch(state: GameState, marchId: number, at: number, event
   const town = state.towns[march.to];
   if (!town) return;
   if (town.owner === march.owner) {
-    town.garrison = addTroops(town.garrison, march.troops);
+    town.garrison += march.troops;
     events.push({ type: 'MARCH_REINFORCED', at, march });
     return;
   }
   if (areAllies(state, march.owner, town.owner)) {
     const mine = town.stationed.find((s) => s.lordId === march.owner);
-    if (mine) mine.troops = addTroops(mine.troops, march.troops);
-    else town.stationed.push({ lordId: march.owner, troops: cloneTroops(march.troops) });
+    if (mine) mine.troops += march.troops;
+    else town.stationed.push({ lordId: march.owner, troops: march.troops });
     events.push({ type: 'MARCH_STATIONED', at, march });
     return;
   }
   // A neutral town can become someone's capital while a march is on its way.
   if (state.config.rules.capitalImmune && town.isCapital) {
     const origin = state.towns[march.from];
-    if (origin?.owner === march.owner) origin.garrison = addTroops(origin.garrison, march.troops);
+    if (origin?.owner === march.owner) origin.garrison += march.troops;
     events.push({ type: 'MARCH_REPELLED', at, march });
     return;
   }
@@ -148,75 +135,76 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
   const attacker = getLord(state, march.owner);
   if (!attacker) return;
   const defenderId = town.owner;
-  const attackMods = lordMods(state, attacker.id);
   const contingents = [
-    {
-      lordId: defenderId,
-      troops: cloneTroops(town.garrison),
-      mods: defenderId === null ? neutralMods() : lordMods(state, defenderId),
-    },
-    ...town.stationed.map((s) => ({
-      lordId: s.lordId as string | null,
-      troops: cloneTroops(s.troops),
-      mods: lordMods(state, s.lordId),
-    })),
+    { lordId: defenderId, troops: town.garrison },
+    ...town.stationed.map((s) => ({ lordId: s.lordId as string | null, troops: s.troops })),
   ];
   const fort = fortification(state, town);
+  const walls = townWalls(state, town);
   const outcome = resolveSiege(cfg, {
     attacker: march.troops,
-    attackMults: attackMods.attack,
-    attackerLossMult: attackMods.winnerLosses,
-    defenders: contingents.map((c) => ({
-      troops: c.troops,
-      defenseMults: c.mods.defense,
-      lossMult: c.mods.winnerLosses,
-    })),
+    attackMult: lordMods(state, attacker.id).attack,
+    defenders: contingents.map((c) => ({ troops: c.troops, defense: lordMods(state, c.lordId).defense })),
     fort,
+    walls,
   });
 
   const [garrison, ...allied] = outcome.defenders;
-  town.garrison = garrison?.survivors ?? zeroTroops();
+  town.garrison = garrison?.survivors ?? 0;
   town.stationed = town.stationed
-    .map((s, i) => ({ lordId: s.lordId, troops: allied[i]?.survivors ?? zeroTroops() }))
-    .filter((s) => totalTroops(s.troops) > 0);
+    .map((s, i) => ({ lordId: s.lordId, troops: allied[i]?.survivors ?? 0 }))
+    .filter((s) => s.troops > 0);
 
-  const killedByAttacker = outcome.defenders.reduce((sum, d) => sum + totalTroops(d.lost), 0);
-  const killedByDefenders = totalTroops(outcome.attackerLost);
+  const killedByAttacker = outcome.defenders.reduce((sum, d) => sum + d.lost, 0);
+  const killedByDefenders = outcome.attackerLost;
+  const attackerWon = outcome.winner === 'ATTACKER';
   attacker.stats.troopsKilled += killedByAttacker;
   attacker.stats.troopsLost += killedByDefenders;
-  attacker.glory += killedByAttacker / cfg.glory.troopsPerPoint;
-
-  const attackerWon = outcome.winner === 'ATTACKER';
   if (attackerWon) attacker.stats.battlesWon++;
   else attacker.stats.battlesLost++;
-  // Defending lords share the kills (and the glory) in proportion to the power they brought.
-  const defenders: Lord[] = [];
+  const rewards = {
+    attackerXp: killedByAttacker * cfg.kills.xp.attack,
+    attackerGold: killedByAttacker * cfg.kills.gold.attack,
+    defenderXp: defenderId === null ? 0 : killedByDefenders * cfg.kills.xp.defend,
+    defenderGold: defenderId === null ? 0 : killedByDefenders * cfg.kills.gold.defend,
+  };
+  attacker.gold += rewards.attackerGold;
+
+  // Defending lords share the kill rewards in proportion to the power they brought (walls go to the owner).
+  const defenders: { lord: Lord; share: number; lost: number; index: number }[] = [];
   contingents.forEach((c, i) => {
     const lord = c.lordId === null ? undefined : getLord(state, c.lordId);
     const result = outcome.defenders[i];
     if (!lord || !result) return;
-    defenders.push(lord);
     const share = outcome.defenderPower > 0 ? result.power / outcome.defenderPower : i === 0 ? 1 : 0;
-    const kills = killedByDefenders * share;
-    lord.stats.troopsKilled += Math.round(kills);
-    lord.stats.troopsLost += totalTroops(result.lost);
-    lord.glory += kills / cfg.glory.troopsPerPoint;
+    defenders.push({ lord, share, lost: result.lost, index: i });
+    lord.stats.troopsKilled += Math.round(killedByDefenders * share);
+    lord.stats.troopsLost += result.lost;
+    lord.gold += rewards.defenderGold * share;
     if (attackerWon) lord.stats.battlesLost++;
     else lord.stats.battlesWon++;
   });
 
   // Without a survivor the garrison is still wiped out, but nobody is left to hold the town.
-  const captured = attackerWon && totalTroops(outcome.attackerSurvivors) > 0;
+  const captured = attackerWon && outcome.attackerSurvivors > 0;
   let plunder = 0;
   if (captured) {
-    plunder = (cfg.plunder.goldByTier[town.tier - 1] ?? 0) * attackMods.plunder;
+    plunder = plunderAt(cfg, town.tier);
     attacker.gold += plunder;
-    attacker.glory += cfg.glory.perCaptureTier * town.tier;
     attacker.stats.captures++;
   }
-  const capturedXp = captured
-    ? cfg.levels.xpPerCaptureTier * town.tier * (defenderId === null ? 1 : cfg.levels.lordCaptureMult)
-    : 0;
+
+  // The report goes before the capture events, but recovery has to wait for capitals to move.
+  const battleAt = events.length;
+  if (captured) {
+    setOwner(state, town, attacker.id, at, events);
+    town.garrison = outcome.attackerSurvivors;
+  }
+  const attackerRecovered = recoverTroops(state, attacker.id, killedByDefenders, cfg.league.attackerRecovery);
+  const recovered = contingents.map(() => 0);
+  for (const d of defenders) {
+    recovered[d.index] = recoverTroops(state, d.lord.id, d.lost, cfg.league.defenderRecovery);
+  }
 
   const report: BattleReport = {
     id: state.nextReportId++,
@@ -225,34 +213,34 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
     marchId: march.id,
     attacker: attacker.id,
     defender: defenderId,
-    attackerTroops: cloneTroops(march.troops),
-    defenderTroops: contingents.reduce((sum, c) => addTroops(sum, c.troops), zeroTroops()),
+    attackerTroops: march.troops,
+    defenderTroops: contingents.reduce((sum, c) => sum + c.troops, 0),
     attackerPower: outcome.attackerPower,
     defenderPower: outcome.defenderPower,
     fort,
-    attackerLost: outcome.attackerLost,
-    defenderLost: outcome.defenders.reduce((sum, d) => addTroops(sum, d.lost), zeroTroops()),
+    walls,
+    attackerLost: killedByDefenders,
+    defenderLost: killedByAttacker,
+    attackerRecovered,
+    defenderRecovered: recovered[0] ?? 0,
     winner: outcome.winner,
     captured,
     plunder,
+    rewards,
     allies: contingents.slice(1).map((c, i) => ({
       lordId: c.lordId ?? '',
       troops: c.troops,
-      lost: allied[i]?.lost ?? zeroTroops(),
+      lost: allied[i]?.lost ?? 0,
+      recovered: recovered[i + 1] ?? 0,
     })),
   };
   state.reports.push(report);
   const excess = state.reports.length - cfg.limits.reportsKept;
   if (excess > 0) state.reports.splice(0, excess);
-  events.push({ type: 'BATTLE', at, report });
+  events.splice(battleAt, 0, { type: 'BATTLE', at, report });
 
-  if (captured) {
-    setOwner(state, town, attacker.id, at, events);
-    town.garrison = outcome.attackerSurvivors;
-    gainXp(state, attacker, capturedXp, at, events);
-  }
-  openDrafts(state, attacker, at, events);
-  for (const lord of defenders) openDrafts(state, lord, at, events);
+  gainXp(state, attacker, rewards.attackerXp, at, events);
+  for (const d of defenders) gainXp(state, d.lord, rewards.defenderXp * d.share, at, events);
   checkExile(state, attacker.id, at, events);
   if (defenderId !== null) checkExile(state, defenderId, at, events);
 }

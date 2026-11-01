@@ -1,10 +1,9 @@
-import { resolveSiege, type BattleOutcome } from './combat';
+import { resolveSiege, summarizeSiege, type BattleOutcome } from './combat';
 import { validateCommand } from './commands';
-import { fortification, projectedGarrison } from './economy';
+import { fortification, projectedGarrison, townWalls } from './economy';
 import { travelInfo, windIndexAt, windShiftMs, type TravelInfo } from './marches';
-import { lordMods, neutralMods } from './modifiers';
-import { addTroops, totalTroops, zeroTroops } from './troops';
-import type { GameState, RuleError, Troops } from './types';
+import { lordMods } from './modifiers';
+import type { GameState, RuleError } from './types';
 import { visibleIsles } from './vision';
 import { areAllies, getTown } from './world';
 
@@ -32,7 +31,7 @@ export function previewSend(
   lordId: string,
   fromId: number,
   toId: number,
-  troops: Troops,
+  troops: number,
   now: number,
 ): SendPreview {
   const cfg = state.config;
@@ -45,38 +44,21 @@ export function previewSend(
     return { error, reinforce: false, travel: null, arriveAt: null, battle: null, later: [] };
   }
 
-  const travel = travelInfo(state, lordId, from, to, troops, t);
+  const travel = travelInfo(state, lordId, from, to, t);
   const reinforce = to.owner === lordId || areAllies(state, lordId, to.owner);
   let battle: BattleOutcome | null = null;
-  if (!reinforce && totalTroops(troops) > 0 && visibleIsles(state, lordId).has(to.isleId)) {
-    const attack = lordMods(state, lordId);
-    const contingents = [
-      {
-        troops: projectedGarrison(state, to, t),
-        mods: to.owner === null ? neutralMods() : lordMods(state, to.owner),
-      },
-      ...to.stationed.map((s) => ({ troops: s.troops, mods: lordMods(state, s.lordId) })),
-    ];
+  if (!reinforce && troops > 0 && visibleIsles(state, lordId).has(to.isleId)) {
     const siege = resolveSiege(cfg, {
       attacker: troops,
-      attackMults: attack.attack,
-      attackerLossMult: attack.winnerLosses,
-      defenders: contingents.map((c) => ({
-        troops: c.troops,
-        defenseMults: c.mods.defense,
-        lossMult: c.mods.winnerLosses,
-      })),
+      attackMult: lordMods(state, lordId).attack,
+      defenders: [
+        { troops: projectedGarrison(state, to, t), defense: lordMods(state, to.owner).defense },
+        ...to.stationed.map((s) => ({ troops: s.troops, defense: lordMods(state, s.lordId).defense })),
+      ],
       fort: fortification(state, to),
+      walls: townWalls(state, to),
     });
-    battle = {
-      attackerPower: siege.attackerPower,
-      defenderPower: siege.defenderPower,
-      winner: siege.winner,
-      attackerSurvivors: siege.attackerSurvivors,
-      attackerLost: siege.attackerLost,
-      defenderSurvivors: siege.defenders.reduce((sum, d) => addTroops(sum, d.survivors), zeroTroops()),
-      defenderLost: siege.defenders.reduce((sum, d) => addTroops(sum, d.lost), zeroTroops()),
-    };
+    battle = summarizeSiege(siege);
   }
 
   const later: LaterDeparture[] = [];
@@ -86,7 +68,7 @@ export function previewSend(
     for (let k = index + 1; k <= index + cfg.wind.forecastShifts && k < state.windDirs.length; k++) {
       const departAt = state.startsAt + k * shift;
       if (departAt >= state.endsAt) break;
-      const alt = travelInfo(state, lordId, from, to, troops, departAt);
+      const alt = travelInfo(state, lordId, from, to, departAt);
       later.push({
         departAt,
         dir: state.windDirs[k] ?? 0,

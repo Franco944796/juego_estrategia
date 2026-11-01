@@ -1,9 +1,10 @@
-import { EDICT_IDS, TROOP_TYPES } from '@si/config/constants';
-import { accrueTo, projectedGarrison, projectedGold, respecCost, upgradeCost } from './economy';
+import { SKILL_IDS } from '@si/config/constants';
+import { accrueTo, projectedGarrison, projectedGold, upgradeCost, upgradePlan } from './economy';
+import { equipItem } from './gear';
 import { launchMarch } from './marches';
-import { fitsIn, totalTroops, zeroTroops } from './troops';
-import type { Command, DomainEvent, GameState, RuleError, RuleId, Troops } from './types';
-import { areAllies, chooseEdict, getLord, getTown, islesLinked } from './world';
+import { learnSkill, unspentPoints } from './skills';
+import type { Command, DomainEvent, GameState, RuleError, RuleId } from './types';
+import { areAllies, getLord, getTown, islesLinked } from './world';
 
 function fail(rule: RuleId, code: string, message: string): RuleError {
   return { rule, code, message };
@@ -13,41 +14,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function hasNumericTroops(value: unknown): value is Troops {
-  return isRecord(value) && TROOP_TYPES.every((type) => typeof value[type] === 'number');
-}
-
 function isTownId(state: GameState, value: unknown): value is number {
   return typeof value === 'number' && getTown(state, value) !== undefined;
 }
 
-/** R14: known command type, existing ids, known enums and numeric troop fields. */
+/** R14: known command type, existing ids, known skills and a numeric troop count. */
 function parseCommand(state: GameState, input: unknown): Command | null {
   if (!isRecord(input)) return null;
   switch (input.type) {
-    case 'UPGRADE':
-      return isTownId(state, input.townId) ? { type: 'UPGRADE', townId: input.townId } : null;
-    case 'RESPECIALIZE': {
-      const spec = TROOP_TYPES.find((type) => type === input.spec);
-      return isTownId(state, input.townId) && spec
-        ? { type: 'RESPECIALIZE', townId: input.townId, spec }
+    case 'UPGRADE': {
+      const levels = input.levels ?? 1;
+      return isTownId(state, input.townId) &&
+        Number.isInteger(levels) &&
+        typeof levels === 'number' &&
+        levels >= 1
+        ? { type: 'UPGRADE', townId: input.townId, levels }
         : null;
     }
     case 'SEND': {
       const { from, to, troops } = input;
-      return isTownId(state, from) && isTownId(state, to) && hasNumericTroops(troops)
-        ? {
-            type: 'SEND',
-            from,
-            to,
-            troops: { LANCER: troops.LANCER, ARCHER: troops.ARCHER, GRIFFIN: troops.GRIFFIN },
-          }
+      return isTownId(state, from) && isTownId(state, to) && typeof troops === 'number'
+        ? { type: 'SEND', from, to, troops }
         : null;
     }
-    case 'CHOOSE_EDICT': {
-      const edict = EDICT_IDS.find((id) => id === input.edict);
-      return edict ? { type: 'CHOOSE_EDICT', edict } : null;
+    case 'LEARN_SKILL': {
+      const skill = SKILL_IDS.find((id) => id === input.skill);
+      return skill ? { type: 'LEARN_SKILL', skill } : null;
     }
+    case 'EQUIP':
+      return typeof input.itemId === 'string' ? { type: 'EQUIP', itemId: input.itemId } : null;
     default:
       return null;
   }
@@ -76,17 +71,8 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       const town = state.towns[command.townId];
       if (!town || town.owner !== lordId) return fail('R03', 'NOT_OWNER', 'town not owned');
       const cost = upgradeCost(state, town);
-      if (cost === null) return fail('R04', 'MAX_TIER', 'town already at the maximum tier');
+      if (cost === null) return fail('R04', 'MAX_TIER', 'town already at the maximum level');
       if (projectedGold(state, lordId, now) < cost) return fail('R05', 'NO_GOLD', 'not enough gold');
-      return null;
-    }
-    case 'RESPECIALIZE': {
-      const town = state.towns[command.townId];
-      if (!town || town.owner !== lordId) return fail('R03', 'NOT_OWNER', 'town not owned');
-      if (town.spec === command.spec) return fail('R06', 'SAME_SPEC', 'already trains that type');
-      if (projectedGold(state, lordId, now) < respecCost(state, town)) {
-        return fail('R05', 'NO_GOLD', 'not enough gold');
-      }
       return null;
     }
     case 'SEND': {
@@ -96,16 +82,12 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       if (!from || !to || (from.owner !== lordId && !stationed)) {
         return fail('R03', 'NOT_OWNER', 'no troops of yours in the source town');
       }
-      const amounts = TROOP_TYPES.map((type) => command.troops[type]);
-      if (
-        amounts.some((n) => !Number.isInteger(n) || n < 0) ||
-        totalTroops(command.troops) < cfg.march.minTroops
-      ) {
-        return fail('R07', 'BAD_TROOPS', 'troop amounts must be whole, non-negative and enough');
+      if (!Number.isInteger(command.troops) || command.troops < cfg.march.minTroops) {
+        return fail('R07', 'BAD_TROOPS', 'the troop count must be whole and enough');
       }
       const available =
-        from.owner === lordId ? projectedGarrison(state, from, now) : (stationed?.troops ?? zeroTroops());
-      if (!fitsIn(command.troops, available)) {
+        from.owner === lordId ? projectedGarrison(state, from, now) : (stationed?.troops ?? 0);
+      if (command.troops > available) {
         return fail('R08', 'NOT_ENOUGH_TROOPS', 'not enough troops in the town');
       }
       if (to.privateTo !== null && to.privateTo !== lordId) {
@@ -130,9 +112,12 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       }
       return null;
     }
-    case 'CHOOSE_EDICT':
-      if (!lord.draft || !lord.draft.includes(command.edict)) {
-        return fail('R13', 'NO_DRAFT', 'that edict is not offered');
+    case 'LEARN_SKILL':
+      if (unspentPoints(lord) <= 0) return fail('R13', 'NO_SKILL_POINTS', 'no skill points left');
+      return null;
+    case 'EQUIP':
+      if (!lord.items.some((item) => item.id === command.itemId)) {
+        return fail('R16', 'NO_ITEM', 'the lord does not own that item');
       }
       return null;
   }
@@ -156,21 +141,19 @@ export function applyCommand(
   switch (command.type) {
     case 'UPGRADE': {
       const town = state.towns[command.townId];
-      const cost = town ? upgradeCost(state, town) : null;
-      if (!town || cost === null) return null;
-      lord.gold -= cost;
-      town.tier += 1;
-      events.push({ type: 'TOWN_UPGRADED', at: now, lordId, townId: town.id, tier: town.tier, cost });
-      return null;
-    }
-    case 'RESPECIALIZE': {
-      const town = state.towns[command.townId];
       if (!town) return null;
-      const cost = respecCost(state, town);
-      lord.gold -= cost;
-      town.spec = command.spec;
-      town.carry = 0;
-      events.push({ type: 'TOWN_RESPECIALIZED', at: now, lordId, townId: town.id, spec: town.spec, cost });
+      const plan = upgradePlan(state.config, town.tier, lord.gold, command.levels ?? 1);
+      if (plan.levels === 0) return null;
+      lord.gold -= plan.cost;
+      town.tier += plan.levels;
+      events.push({
+        type: 'TOWN_UPGRADED',
+        at: now,
+        lordId,
+        townId: town.id,
+        tier: town.tier,
+        cost: plan.cost,
+      });
       return null;
     }
     case 'SEND': {
@@ -179,8 +162,13 @@ export function applyCommand(
       if (from && to) launchMarch(state, lordId, from, to, command.troops, now, events);
       return null;
     }
-    case 'CHOOSE_EDICT':
-      chooseEdict(state, lord, command.edict, now, events);
+    case 'LEARN_SKILL':
+      learnSkill(lord, command.skill, now, events);
       return null;
+    case 'EQUIP': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (item) equipItem(lord, item, now, events);
+      return null;
+    }
   }
 }

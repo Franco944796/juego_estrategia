@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { EDICT_IDS, TROOP_TYPES } from './constants';
 
 const positive = z.number().positive();
 const nonNegative = z.number().nonnegative();
@@ -7,29 +6,9 @@ const fraction = z.number().min(0).max(1);
 const count = z.number().int().min(1);
 const intNonNegative = z.number().int().nonnegative();
 
-function perTroop<T extends z.ZodType>(value: T) {
-  return z.object({ LANCER: value, ARCHER: value, GRIFFIN: value });
-}
-
-const troopMultipliers = z.object({
-  LANCER: positive.optional(),
-  ARCHER: positive.optional(),
-  GRIFFIN: positive.optional(),
-});
-
-const edictEffect = z.object({
-  attack: troopMultipliers.optional(),
-  defense: troopMultipliers.optional(),
-  speed: troopMultipliers.optional(),
-  goldProd: positive.optional(),
-  troopProd: positive.optional(),
-  upgradeCost: positive.optional(),
-  headwindMin: z.number().gt(0).max(1).optional(),
-  fort: positive.optional(),
-  plunder: positive.optional(),
-  dominion: positive.optional(),
-  winnerLosses: positive.optional(),
-});
+const perSkill = z.object({ GOLD: nonNegative, TROOPS: nonNegative, ATTACK: nonNegative });
+const perRarity = <T extends z.ZodType>(value: T) =>
+  z.object({ COMMON: value, RARE: value, EPIC: value, LEGENDARY: value });
 
 const personality = z.object({
   attackMargin: positive,
@@ -42,8 +21,8 @@ const personality = z.object({
   keepHome: fraction,
   minWindFactor: positive,
   minAttackTroops: count,
-  preferredSpec: z.enum(TROOP_TYPES),
-  edictPreference: z.array(z.enum(EDICT_IDS)),
+  /** Share of skill points the bot puts in each skill. */
+  skillWeights: perSkill,
 });
 
 export const gameConfigSchema = z
@@ -79,15 +58,20 @@ export const gameConfigSchema = z
       forecastShifts: intNonNegative,
       maxStep: z.number().int().min(1).max(4),
     }),
-    troops: perTroop(z.object({ attack: positive, defense: positive, speed: positive, prodMult: positive })),
-    combat: z.object({ counterBonus: z.number().min(1), lossExponent: positive }),
+    combat: z.object({ lossExponent: positive }),
     towns: z.object({
       maxTier: z.number().int().min(2),
-      goldPerMin: z.array(nonNegative),
-      troopsPerMin: z.array(nonNegative),
-      garrisonCap: z.array(count),
-      upgradeCost: z.array(positive),
-      respecCostPerTier: nonNegative,
+      /**
+       * Everything that grows with the level is multiplied by `second` at level 2 and by `top` at
+       * maxTier, growing fastest at first (see levelScale in the engine).
+       */
+      scale: z.object({ second: z.number().gt(1), top: z.number().gt(1) }),
+      /** Values at level 1, multiplied by the level scale. */
+      goldPerMin: nonNegative,
+      troopsPerMin: nonNegative,
+      walls: nonNegative,
+      /** Cost from level 1 to 2; from level L it is this times the scale of L. */
+      upgradeCost: positive,
       fortPerTier: nonNegative,
       capitalFort: z.number().min(1),
       capitalProdMult: positive,
@@ -96,12 +80,14 @@ export const gameConfigSchema = z
       sprawl: z.object({ freeTowns: intNonNegative, penaltyPerTown: nonNegative }),
     }),
     neutral: z.object({
+      /** Garrison per level, for the levels neutral towns can have. */
       garrison: z.array(intNonNegative),
-      mainShare: fraction,
       regenMult: nonNegative,
     }),
-    plunder: z.object({ goldByTier: z.array(nonNegative) }),
-    dominion: z.object({ perTier: z.array(nonNegative) }),
+    /** Gold taken on capture: `base` times the level scale of the town. */
+    plunder: z.object({ base: nonNegative }),
+    /** Dominion per minute per town level. */
+    dominion: z.object({ perTier: nonNegative }),
     beacon: z.object({
       prodBonus: nonNegative,
       dominionPerMin: nonNegative,
@@ -115,24 +101,25 @@ export const gameConfigSchema = z
       dominionPerMin: nonNegative,
       fortMult: z.number().min(1),
     }),
-    glory: z.object({ troopsPerPoint: positive, perCaptureTier: nonNegative }),
-    edicts: z.object({
-      gloryThresholds: z.array(positive),
-      draftSize: count,
-      catalog: z.object({
-        SWIFT_WINGS: edictEffect,
-        SPEAR_WALL: edictEffect,
-        ARROW_STORM: edictEffect,
-        GOLDEN_TIDE: edictEffect,
-        MUSTER: edictEffect,
-        ARCHITECTS: edictEffect,
-        WIND_READERS: edictEffect,
-        BULWARKS: edictEffect,
-        PLUNDERERS: edictEffect,
-        LEGEND: edictEffect,
-        VETERANS: edictEffect,
-      }),
+    /** Rewards per enemy troop killed, attacking or defending. */
+    kills: z.object({
+      xp: z.object({ attack: nonNegative, defend: nonNegative }),
+      gold: z.object({ attack: nonNegative, defend: nonNegative }),
     }),
+    /** Bonus per skill point (0.05 = +5 %), added up, not compounded. */
+    skills: z.object({ perPoint: perSkill }),
+    gear: z.object({
+      /** Bonus of an item by rarity (0.03 = +3 %), added to the skill bonus of the same kind. */
+      rarityBonus: perRarity(fraction),
+      /** A lord finds one item every this many levels. */
+      dropEveryLevels: count,
+      /** Rarity weights (common, rare, epic, legendary) by lord level: the last row reached applies. */
+      dropOdds: z.array(z.object({ minLevel: count, weights: z.array(nonNegative).length(4) })).min(1),
+      /** Legacy price of an item in the online shop. */
+      prices: perRarity(intNonNegative),
+    }),
+    /** League rules: share of a lord's dead troops that reappear in its capital. */
+    league: z.object({ attackerRecovery: fraction, defenderRecovery: fraction }),
     march: z.object({
       landSpeed: positive,
       skySpeed: positive,
@@ -143,14 +130,18 @@ export const gameConfigSchema = z
     vision: z.object({ hops: intNonNegative }),
     lords: z.object({
       startGold: nonNegative,
-      startTroops: perTroop(intNonNegative),
+      startTroops: intNonNegative,
       capitalTier: count,
     }),
-    exile: z.object({ enabled: z.boolean(), troops: perTroop(intNonNegative) }),
+    exile: z.object({ enabled: z.boolean(), troops: intNonNegative }),
     bots: z.object({
       thinkEveryMin: positive,
       jitterMin: nonNegative,
       targetsPerTown: count,
+      /** Unseen lord garrisons are guessed as this many minutes of the town's production. */
+      guessMin: nonNegative,
+      /** A safe town keeps this many minutes of its production before pushing troops to the front. */
+      hoardMin: nonNegative,
       personalities: z.object({
         RAIDER: personality,
         BUILDER: personality,
@@ -169,16 +160,8 @@ export const gameConfigSchema = z
       lordColors: z.array(z.string().regex(/^#[0-9a-f]{6}$/i)).min(1),
     }),
     rules: z.object({ capitalImmune: z.boolean() }),
-    levels: z.object({
-      xpPerCaptureTier: positive,
-      lordCaptureMult: z.number().min(1),
-      xpBase: positive,
-      xpGrowth: z.number().min(1),
-      troopsBase: intNonNegative,
-      troopsPerLevel: intNonNegative,
-      goldBonusPerLevel: nonNegative,
-      maxLevel: count,
-    }),
+    /** Lord levels: from level L the next one needs `xpBase` times the town level scale of L. */
+    levels: z.object({ xpBase: positive, maxLevel: count }),
     rewards: z.object({
       tiers: z.array(z.object({ topShare: z.number().gt(0).max(1), legacy: intNonNegative })).min(1),
     }),
@@ -188,21 +171,15 @@ export const gameConfigSchema = z
   })
   .superRefine((c, ctx) => {
     const tiers = c.towns.maxTier;
-    const perTier: [string, readonly unknown[]][] = [
-      ['towns.goldPerMin', c.towns.goldPerMin],
-      ['towns.troopsPerMin', c.towns.troopsPerMin],
-      ['towns.garrisonCap', c.towns.garrisonCap],
-      ['neutral.garrison', c.neutral.garrison],
-      ['plunder.goldByTier', c.plunder.goldByTier],
-      ['dominion.perTier', c.dominion.perTier],
-    ];
-    for (const [path, table] of perTier) {
-      if (table.length !== tiers) {
-        ctx.addIssue({ code: 'custom', message: `${path} needs ${tiers} entries` });
-      }
+    if (c.towns.scale.top <= c.towns.scale.second) {
+      ctx.addIssue({ code: 'custom', message: 'towns.scale.top must exceed towns.scale.second' });
     }
-    if (c.towns.upgradeCost.length !== tiers - 1) {
-      ctx.addIssue({ code: 'custom', message: `towns.upgradeCost needs ${tiers - 1} entries` });
+    const neutralTiers = Math.max(...c.map.isle.tiers, c.throne.tier, c.lords.capitalTier);
+    if (c.neutral.garrison.length < neutralTiers) {
+      ctx.addIssue({ code: 'custom', message: `neutral.garrison needs ${neutralTiers} entries` });
+    }
+    if (c.levels.maxLevel > tiers) {
+      ctx.addIssue({ code: 'custom', message: 'levels.maxLevel exceeds towns.maxTier' });
     }
     if (c.map.isle.tiers.length !== c.map.isle.tierBands.length + 1) {
       ctx.addIssue({ code: 'custom', message: 'map.isle.tiers needs one entry more than tierBands' });
@@ -213,6 +190,10 @@ export const gameConfigSchema = z
     if (c.throne.tier > tiers || c.lords.capitalTier > tiers) {
       ctx.addIssue({ code: 'custom', message: 'throne or capital tier exceeds towns.maxTier' });
     }
+    const minLevels = c.gear.dropOdds.map((row) => row.minLevel);
+    if (minLevels.some((m, i) => i > 0 && m <= (minLevels[i - 1] ?? 0))) {
+      ctx.addIssue({ code: 'custom', message: 'gear.dropOdds must ascend by minLevel' });
+    }
     const shares = c.rewards.tiers.map((tier) => tier.topShare);
     if (shares.some((s, i) => i > 0 && s <= (shares[i - 1] ?? 0)) || shares.at(-1) !== 1) {
       ctx.addIssue({ code: 'custom', message: 'rewards.tiers must ascend and end at topShare 1' });
@@ -220,13 +201,7 @@ export const gameConfigSchema = z
     if (c.cosmetics.styles[0]?.cost !== 0) {
       ctx.addIssue({ code: 'custom', message: 'the first cosmetic style is the free default' });
     }
-
-    const thresholds = c.edicts.gloryThresholds;
-    if (thresholds.some((t, i) => i > 0 && t <= (thresholds[i - 1] ?? 0))) {
-      ctx.addIssue({ code: 'custom', message: 'edicts.gloryThresholds must be ascending' });
-    }
   });
 
 export type GameConfig = z.infer<typeof gameConfigSchema>;
 export type PersonalityConfig = z.infer<typeof personality>;
-export type EdictEffect = z.infer<typeof edictEffect>;

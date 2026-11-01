@@ -158,7 +158,7 @@ export function execute(state: GameState, lordId: string, command: unknown, now:
   return error ? { ok: false, error, events } : { ok: true, events };
 }
 
-/** Ranking by Dominion, then glory, then lord id. Frozen once the season has ended. */
+/** Ranking by Dominion, then level, then lord id. Frozen once the season has ended. */
 export function computeStandings(state: GameState, now: number): Standing[] {
   if (state.status === 'ENDED' && state.standings) return state.standings;
   const lords = state.lordOrder.flatMap((id) => {
@@ -170,14 +170,14 @@ export function computeStandings(state: GameState, now: number): Standing[] {
     name: lord.name,
     color: lord.color,
     dominion: projectedDominion(state, lord.id, now),
-    glory: lord.glory,
+    level: lord.level,
     towns: state.towns.filter((t) => t.owner === lord.id).length,
     alive: lord.alive,
   }));
   rows.sort(
     (a, b) =>
       b.dominion - a.dominion ||
-      b.glory - a.glory ||
+      b.level - a.level ||
       (a.lordId < b.lordId ? -1 : a.lordId > b.lordId ? 1 : 0),
   );
   return rows.map((row, i) => ({ rank: i + 1, ...row }));

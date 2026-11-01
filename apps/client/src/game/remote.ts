@@ -1,4 +1,4 @@
-import type { Command, DomainEvent, LordView, RuleError, SendPreview, Troops } from '@si/engine';
+import type { Command, DomainEvent, LordView, RuleError, SendPreview } from '@si/engine';
 import type { ChatChannel, ChatMessage, ClientMessage, ClockInfo, ServerMessage } from '@si/protocol';
 import type { GameClient } from './client';
 
@@ -104,7 +104,7 @@ export class RemoteGameClient implements GameClient {
     });
   }
 
-  preview(from: number, to: number, troops: Troops): Promise<SendPreview> {
+  preview(from: number, to: number, troops: number): Promise<SendPreview> {
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.previews.set(id, resolve);

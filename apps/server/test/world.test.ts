@@ -1,3 +1,7 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { hashState, type DomainEvent } from '@si/engine';
 import { describe, expect, it } from 'vitest';
 import { Store } from '../src/store';
@@ -29,7 +33,7 @@ function attackAcross(w: ReturnType<typeof setup>['w'], lordId: string) {
     type: 'SEND',
     from: capital.id,
     to: target.id,
-    troops: { LANCER: 18, ARCHER: 14, GRIFFIN: 8 },
+    troops: 40,
   });
 }
 
@@ -46,7 +50,7 @@ describe('world service', () => {
     const { store, w, ana } = setup();
     const capital = w.gameState.lords[ana.id]?.capitalId ?? -1;
     expect(attackAcross(w, ana.id).ok).toBe(true);
-    expect(w.command(ana.id, { type: 'UPGRADE', townId: capital }).ok).toBe(false);
+    expect(w.command(ana.id, { type: 'SEND', from: capital, to: capital, troops: 1 }).ok).toBe(false);
     expect(store.logAfter(1, 0).filter((e) => e.kind === 'command')).toHaveLength(1);
   });
 
@@ -108,6 +112,41 @@ describe('world service', () => {
     expect(store.account(ana.id)?.medals).toHaveLength(1);
     expect(store.finishedSeasons(5)).toHaveLength(1);
     expect(w.join(ana)).toEqual({ ok: true });
+  });
+
+  it('keeps items and gear in the account across seasons and replays shop items', () => {
+    const { store, c, w, ana } = setup();
+    const sword = { id: 'sword', slot: 'WEAPON' as const, rarity: 'RARE' as const };
+    w.grantItem(ana.id, sword);
+    w.grantItem('nobody', sword);
+    expect(w.command(ana.id, { type: 'EQUIP', itemId: 'sword' }).ok).toBe(true);
+    c.t += MIN;
+    const restarted = world(store, c);
+    expect(hashState(restarted.gameState)).toBe(hashState(w.gameState));
+    expect(restarted.gameState.lords[ana.id]?.items).toEqual([sword]);
+    expect(store.account(ana.id)).toMatchObject({ items: [sword], gear: { WEAPON: 'sword' } });
+
+    c.t = T0 + 120 * MIN + 1;
+    restarted.tick();
+    const fresh = store.account(ana.id);
+    if (!fresh) throw new Error('no account');
+    expect(restarted.join(fresh)).toEqual({ ok: true });
+    expect(restarted.gameState.lords[ana.id]).toMatchObject({ items: [sword], gear: { WEAPON: 'sword' } });
+  });
+
+  it('adds the equipment columns to a database made before them', () => {
+    const path = `${mkdtempSync(join(tmpdir(), 'si-'))}/old.db`;
+    const old = new DatabaseSync(path);
+    old.exec(
+      "CREATE TABLE accounts (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, legacy INTEGER NOT NULL DEFAULT 0, legacy_total INTEGER NOT NULL DEFAULT 0, styles TEXT NOT NULL, style TEXT NOT NULL, medals TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL)",
+    );
+    old.exec(
+      "INSERT INTO accounts (id, token_hash, name, styles, style, created_at) VALUES ('a', 'h', 'Ana', '[]', 'classic', 1)",
+    );
+    old.close();
+    const store = new Store(path);
+    expect(store.account('a')).toMatchObject({ items: [], gear: {} });
+    store.close();
   });
 
   it('catches up on several missed season ends', () => {

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { distance } from '../src/geometry';
 import { addIsle, generateWorld, islePosition, starterSpots, type MapParts } from '../src/mapgen';
 import { seedRng } from '../src/rng';
-import { totalTroops } from '../src/troops';
 import { config, T0 } from './helpers';
 
 const cfg = defaultConfig;
@@ -21,7 +20,7 @@ describe('generateWorld', () => {
     expect(isle.townIds).toEqual(world.towns.map((t) => t.id));
     for (const town of world.towns) {
       expect(town).toMatchObject({ owner: null, isleId: 0, isThrone: false, privateTo: null });
-      expect(totalTroops(town.garrison)).toBe(town.neutralCap);
+      expect(town.garrison).toBe(town.neutralCap);
     }
     expect(world.throneTownId).toBeNull();
   });
@@ -75,7 +74,7 @@ describe('generateWorld', () => {
     const withThrone = generateWorld(config({ throne: { enabled: true } }), seedRng(1), T0);
     const throne = withThrone.towns[withThrone.throneTownId ?? -1];
     expect(throne).toMatchObject({ id: 0, isThrone: true, tier: cfg.throne.tier, zoneId: null });
-    expect(totalTroops(throne?.garrison ?? { LANCER: 0, ARCHER: 0, GRIFFIN: 0 })).toBe(cfg.throne.garrison);
+    expect(throne?.garrison).toBe(cfg.throne.garrison);
     expect(withThrone.zones.some((z) => z.townIds.includes(0))).toBe(false);
   });
 

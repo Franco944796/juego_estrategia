@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import type { GameConfig } from '@si/config';
-import { EDICT_IDS, TROOP_TYPES } from '@si/config/constants';
+import { GEAR_SLOTS, RARITIES, SKILL_IDS } from '@si/config/constants';
 import type { Command, DomainEvent, GameState } from '@si/engine';
 import type { PublicAccount, ServerMessage } from '@si/protocol';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -42,18 +42,18 @@ const CHAT_BURST = 5;
 const CHAT_WINDOW_MS = 10_000;
 const CLAN_SEARCH_LIMIT = 30;
 
-const troopsSchema = z.object({
-  LANCER: z.number().int().min(0),
-  ARCHER: z.number().int().min(0),
-  GRIFFIN: z.number().int().min(0),
-});
-const troopType = z.enum(TROOP_TYPES);
+const troopsSchema = z.number().int().min(0);
 const commandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('UPGRADE'), townId: z.number().int() }),
-  z.object({ type: z.literal('RESPECIALIZE'), townId: z.number().int(), spec: troopType }),
+  z.object({
+    type: z.literal('UPGRADE'),
+    townId: z.number().int(),
+    levels: z.number().int().min(1).default(1),
+  }),
   z.object({ type: z.literal('SEND'), from: z.number().int(), to: z.number().int(), troops: troopsSchema }),
-  z.object({ type: z.literal('CHOOSE_EDICT'), edict: z.enum(EDICT_IDS) }),
+  z.object({ type: z.literal('LEARN_SKILL'), skill: z.enum(SKILL_IDS) }),
+  z.object({ type: z.literal('EQUIP'), itemId: z.string().max(200) }),
 ]);
+const itemBody = z.object({ slot: z.enum(GEAR_SLOTS), rarity: z.enum(RARITIES) });
 const socketMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('command'), id: z.number().int(), command: commandSchema }),
   z.object({
@@ -88,6 +88,7 @@ function publicAccount(a: Account): PublicAccount {
     styles: a.styles,
     style: a.style,
     medals: a.medals,
+    items: a.items,
   };
 }
 
@@ -106,9 +107,9 @@ export function eventsFor(lordId: string, events: DomainEvent[], state: GameStat
           e.report.allies.some((a) => a.lordId === lordId)
         );
       case 'TOWN_UPGRADED':
-      case 'TOWN_RESPECIALIZED':
-      case 'EDICT_DRAFT':
-      case 'EDICT_CHOSEN':
+      case 'SKILL_LEARNED':
+      case 'ITEM_FOUND':
+      case 'ITEM_EQUIPPED':
       case 'LORD_EXILED':
       case 'LORD_ELIMINATED':
         return e.lordId === lordId;
@@ -181,6 +182,21 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     account.styles.push(style.id);
     store.saveAccount(account);
     return { account: publicAccount(account) };
+  });
+
+  app.post('/api/items/buy', async (req, reply) => {
+    const account = bearer(req);
+    if (!account) return reply.code(401).send({ error: 'UNAUTHORIZED' });
+    const body = itemBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'UNKNOWN_ITEM' });
+    const price = config.gear.prices[body.data.rarity];
+    if (account.legacy < price) return reply.code(409).send({ error: 'NOT_ENOUGH_LEGACY' });
+    const item = { id: randomUUID(), slot: body.data.slot, rarity: body.data.rarity };
+    account.legacy -= price;
+    account.items.push(item);
+    store.saveAccount(account);
+    world.grantItem(account.id, item);
+    return { account: publicAccount(account), item };
   });
 
   app.post('/api/styles/equip', async (req, reply) => {

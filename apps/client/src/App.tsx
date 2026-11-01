@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { savedLang, watchVisibility } from './game/session';
 import { MapCanvas } from './map/MapCanvas';
 import { useGame } from './store';
-import { BottomNav } from './ui/BottomNav';
+import { SideRail } from './ui/SideRail';
 import { Hud } from './ui/Hud';
 import { ConnectionBanner, EndScreen, PickBanner, SeasonNews, TopStack } from './ui/Overlays';
 import { PanelView } from './ui/Panels';
@@ -35,7 +35,7 @@ function GameScreen() {
           </div>
           {picking && <PickBanner />}
           <Drawer />
-          <BottomNav />
+          <SideRail />
           <EndScreen />
           <SeasonNews />
           <ConnectionBanner />

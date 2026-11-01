@@ -5,6 +5,7 @@ import {
   computeStandings,
   createGame,
   execute,
+  grantItem,
   joinLord,
   migrateState,
   previewSend,
@@ -16,10 +17,10 @@ import {
   type DomainEvent,
   type ExecResult,
   type GameState,
+  type Item,
   type LordView,
   type SendPreview,
   type Standing,
-  type Troops,
 } from '@si/engine';
 import type { ClanRankingRow, Reward, SeasonSummary, StandingRow } from '@si/protocol';
 import { computeRewards } from './rewards';
@@ -103,8 +104,10 @@ export class WorldService {
       if (entry.kind === 'command') execute(this.state, entry.lordId, entry.payload, entry.at);
       if (entry.kind === 'style') setStyle(this.state, entry.lordId, String(entry.payload), entry.at);
       if (entry.kind === 'clan') setClan(this.state, entry.lordId, entry.payload as string | null, entry.at);
+      if (entry.kind === 'item') grantItem(this.state, entry.lordId, entry.payload as Item, entry.at);
       this.lastSeq = entry.seq;
     }
+    this.syncGear(this.state.lordOrder);
     this.lastSnapshotAt = this.opts.now();
   }
 
@@ -115,7 +118,7 @@ export class WorldService {
   }
 
   private log(
-    kind: 'join' | 'command' | 'style' | 'clan',
+    kind: 'join' | 'command' | 'style' | 'clan' | 'item',
     at: number,
     lordId: string,
     payload: unknown,
@@ -125,7 +128,27 @@ export class WorldService {
 
   private emit(events: DomainEvent[]): void {
     if (events.length === 0) return;
+    const geared = events.flatMap((e) =>
+      e.type === 'ITEM_FOUND' || e.type === 'ITEM_EQUIPPED' ? [e.lordId] : [],
+    );
+    if (geared.length > 0) this.syncGear(geared);
     for (const listener of this.eventListeners) listener(events);
+  }
+
+  /**
+   * Copies the lords' items and gear into their accounts, where equipment outlives the season. Also run
+   * after a replay, since replayed events are not emitted.
+   */
+  private syncGear(lordIds: string[]): void {
+    for (const id of new Set(lordIds)) {
+      const lord = this.state.lords[id];
+      const account = lord ? this.store.account(id) : null;
+      if (!lord || !account) continue;
+      const known = new Set(account.items.map((item) => item.id));
+      account.items.push(...lord.items.filter((item) => !known.has(item.id)).map((item) => ({ ...item })));
+      account.gear = { ...lord.gear };
+      this.store.saveAccount(account);
+    }
   }
 
   onEvents(listener: EventListener): () => void {
@@ -180,6 +203,8 @@ export class WorldService {
       isBot: false,
       style: account.style,
       clanId: this.store.membership(account.id)?.clanId ?? null,
+      items: account.items,
+      gear: account.gear,
     };
     const result = joinLord(this.state, init, at);
     this.emit(result.events);
@@ -196,7 +221,7 @@ export class WorldService {
     return result;
   }
 
-  preview(accountId: string, from: number, to: number, troops: Troops): SendPreview {
+  preview(accountId: string, from: number, to: number, troops: number): SendPreview {
     return previewSend(this.state, accountId, from, to, troops, this.opts.now());
   }
 
@@ -205,6 +230,15 @@ export class WorldService {
     const at = this.opts.now();
     const events = setStyle(this.state, accountId, style, at);
     if (events.length > 0) this.log('style', at, accountId, style);
+    this.emit(events);
+  }
+
+  /** Hands an item bought in the Legacy shop to the running season (no-op if not joined). */
+  grantItem(accountId: string, item: Item): void {
+    if (!this.hasJoined(accountId)) return;
+    const at = this.opts.now();
+    const events = grantItem(this.state, accountId, item, at);
+    if (events.length > 0) this.log('item', at, accountId, item);
     this.emit(events);
   }
 

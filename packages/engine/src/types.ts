@@ -1,8 +1,13 @@
-import type { EdictId, GameConfig, Personality, TroopType } from '@si/config';
+import type { GameConfig, GearSlot, Personality, Rarity, SkillId } from '@si/config';
 
-export type { EdictId, GameConfig, Personality, TroopType };
+export type { GameConfig, GearSlot, Personality, Rarity, SkillId };
 
-export type Troops = Record<TroopType, number>;
+/** Equipment belongs to the player's account and outlives seasons; the season state keeps a copy. */
+export interface Item {
+  id: string;
+  slot: GearSlot;
+  rarity: Rarity;
+}
 
 export interface Vec {
   x: number;
@@ -45,17 +50,17 @@ export interface Lane {
 /** Troops a clanmate keeps in someone else's town; they defend it with the owner's garrison. */
 export interface Stationed {
   lordId: string;
-  troops: Troops;
+  troops: number;
 }
 
 export interface Town {
   id: number;
   isleId: number;
   pos: Vec;
+  /** The town level, 1 to towns.maxTier. */
   tier: number;
-  spec: TroopType;
   owner: string | null;
-  garrison: Troops;
+  garrison: number;
   /** Fraction of a troop already produced but not yet added to the garrison. */
   carry: number;
   isCapital: boolean;
@@ -85,11 +90,12 @@ export interface Lord {
   personality: Personality | null;
   gold: number;
   dominion: number;
-  glory: number;
-  edicts: EdictId[];
-  draft: EdictId[] | null;
-  /** Glory thresholds already turned into drafts. */
-  draftsOpened: number;
+  /** Points spent per skill; the unspent ones are level - 1 minus these. */
+  skills: Record<SkillId, number>;
+  /** Every item the lord owns: brought from its account when joining, or found this season. */
+  items: Item[];
+  /** Equipped item id per slot. */
+  gear: Partial<Record<GearSlot, string>>;
   capitalId: number | null;
   alive: boolean;
   exiles: number;
@@ -98,7 +104,7 @@ export interface Lord {
   style: string;
   /** Lords sharing a clan are allies: no attacks, shared vision, stationed reinforcements. */
   clanId: string | null;
-  /** Season level from conquest experience; each level adds troops and gold production. */
+  /** Season level from battle experience; each level reached gives one skill point. */
   level: number;
   /** Experience toward the next level. */
   xp: number;
@@ -109,7 +115,7 @@ export interface March {
   owner: string;
   from: number;
   to: number;
-  troops: Troops;
+  troops: number;
   departAt: number;
   arriveAt: number;
   windFactor: number;
@@ -125,18 +131,24 @@ export interface BattleReport {
   marchId: number;
   attacker: string;
   defender: string | null;
-  attackerTroops: Troops;
-  defenderTroops: Troops;
+  attackerTroops: number;
+  defenderTroops: number;
   attackerPower: number;
   defenderPower: number;
   fort: number;
-  attackerLost: Troops;
-  defenderLost: Troops;
+  walls: number;
+  attackerLost: number;
+  defenderLost: number;
+  /** Lost troops that reappeared in their lords' capitals (league rule); allies count their own. */
+  attackerRecovered: number;
+  defenderRecovered: number;
   winner: BattleWinner;
   captured: boolean;
   plunder: number;
+  /** Kill rewards; the defenders' total is split among the defending lords by the power they brought. */
+  rewards: { attackerXp: number; attackerGold: number; defenderXp: number; defenderGold: number };
   /** Allied contingents that defended alongside the owner (their troops are included above). */
-  allies: { lordId: string; troops: Troops; lost: Troops }[];
+  allies: { lordId: string; troops: number; lost: number; recovered: number }[];
 }
 
 export type ScheduledEvent =
@@ -156,7 +168,7 @@ export interface QueueItem {
 export type SeasonStatus = 'RUNNING' | 'ENDED';
 
 /** Bumped when the state shape changes so much that older saves cannot be loaded. */
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 export interface GameState {
   version: typeof STATE_VERSION;
@@ -198,8 +210,9 @@ export interface LordInit {
   color: string;
   isBot: boolean;
   personality?: Personality;
-  spec?: TroopType;
   style?: string;
+  items?: Item[];
+  gear?: Partial<Record<GearSlot, string>>;
   clanId?: string | null;
 }
 
@@ -216,16 +229,17 @@ export interface Standing {
   name: string;
   color: string;
   dominion: number;
-  glory: number;
+  level: number;
   towns: number;
   alive: boolean;
 }
 
 export type Command =
-  | { type: 'UPGRADE'; townId: number }
-  | { type: 'RESPECIALIZE'; townId: number; spec: TroopType }
-  | { type: 'SEND'; from: number; to: number; troops: Troops }
-  | { type: 'CHOOSE_EDICT'; edict: EdictId };
+  /** Raises up to `levels` levels (1 if left out) in one go, stopping when the gold runs out. */
+  | { type: 'UPGRADE'; townId: number; levels?: number }
+  | { type: 'SEND'; from: number; to: number; troops: number }
+  | { type: 'LEARN_SKILL'; skill: SkillId }
+  | { type: 'EQUIP'; itemId: string };
 
 export type RuleId =
   | 'R01'
@@ -233,7 +247,6 @@ export type RuleId =
   | 'R03'
   | 'R04'
   | 'R05'
-  | 'R06'
   | 'R07'
   | 'R08'
   | 'R09'
@@ -242,7 +255,8 @@ export type RuleId =
   | 'R12'
   | 'R13'
   | 'R14'
-  | 'R15';
+  | 'R15'
+  | 'R16';
 
 export interface RuleError {
   rule: RuleId;
@@ -255,14 +269,6 @@ export type ExecResult =
 
 export type DomainEvent =
   | { type: 'TOWN_UPGRADED'; at: number; lordId: string; townId: number; tier: number; cost: number }
-  | {
-      type: 'TOWN_RESPECIALIZED';
-      at: number;
-      lordId: string;
-      townId: number;
-      spec: TroopType;
-      cost: number;
-    }
   | { type: 'MARCH_LAUNCHED'; at: number; march: March }
   | { type: 'MARCH_REINFORCED'; at: number; march: March }
   | { type: 'BATTLE'; at: number; report: BattleReport }
@@ -271,8 +277,9 @@ export type DomainEvent =
   | { type: 'BEACON_CHANGED'; at: number; zoneId: number; owner: string | null }
   | { type: 'WIND_SHIFTED'; at: number; dir: number }
   | { type: 'THRONE_UNSEALED'; at: number }
-  | { type: 'EDICT_DRAFT'; at: number; lordId: string; options: EdictId[] }
-  | { type: 'EDICT_CHOSEN'; at: number; lordId: string; edict: EdictId }
+  | { type: 'SKILL_LEARNED'; at: number; lordId: string; skill: SkillId; points: number }
+  | { type: 'ITEM_FOUND'; at: number; lordId: string; item: Item; source: 'LEVEL' | 'SHOP' }
+  | { type: 'ITEM_EQUIPPED'; at: number; lordId: string; item: Item }
   | { type: 'LORD_EXILED'; at: number; lordId: string; townId: number }
   | { type: 'LORD_ELIMINATED'; at: number; lordId: string }
   | { type: 'LORD_JOINED'; at: number; lordId: string; townId: number }
@@ -280,6 +287,6 @@ export type DomainEvent =
   | { type: 'MARCH_REPELLED'; at: number; march: March }
   | { type: 'MARCH_STATIONED'; at: number; march: March }
   | { type: 'CLAN_CHANGED'; at: number; lordId: string; clanId: string | null }
-  | { type: 'LEVEL_UP'; at: number; lordId: string; level: number; troops: Troops }
+  | { type: 'LEVEL_UP'; at: number; lordId: string; level: number }
   | { type: 'STYLE_CHANGED'; at: number; lordId: string; style: string }
   | { type: 'SEASON_ENDED'; at: number; standings: Standing[] };

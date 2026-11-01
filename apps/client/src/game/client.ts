@@ -1,4 +1,4 @@
-import type { Command, DomainEvent, LordView, RuleError, SendPreview, Troops } from '@si/engine';
+import type { Command, DomainEvent, LordView, RuleError, SendPreview } from '@si/engine';
 import type { ClockInfo, FromWorker, NewGameOptions, Save, ToWorker } from './protocol';
 import EngineWorker from './worker?worker&inline';
 
@@ -13,7 +13,7 @@ export interface GameClient {
   start(options: NewGameOptions): void;
   load(save: Save): void;
   command(command: Command): Promise<RuleError | null>;
-  preview(from: number, to: number, troops: Troops): Promise<SendPreview>;
+  preview(from: number, to: number, troops: number): Promise<SendPreview>;
   setSpeed(speed: number): void;
   requestSave(): void;
   dispose(): void;
@@ -72,7 +72,7 @@ export class LocalGameClient implements GameClient {
     });
   }
 
-  preview(from: number, to: number, troops: Troops): Promise<SendPreview> {
+  preview(from: number, to: number, troops: number): Promise<SendPreview> {
     const id = this.nextId++;
     return new Promise((resolve) => {
       this.previews.set(id, resolve);

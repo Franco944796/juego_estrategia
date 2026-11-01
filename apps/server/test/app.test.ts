@@ -90,6 +90,34 @@ describe('REST API', () => {
     expect((await a.inject({ method: 'POST', url: '/api/join' })).statusCode).toBe(401);
   });
 
+  it('sells items for Legacy and hands them to the running season', async () => {
+    const { app: a, store, w } = await start();
+    const token = await session(a, 'Ana');
+    await a.inject({ method: 'POST', url: '/api/join', headers: auth(token) });
+    const buy = (payload: Record<string, string>) =>
+      a.inject({ method: 'POST', url: '/api/items/buy', headers: auth(token), payload });
+    expect((await a.inject({ method: 'POST', url: '/api/items/buy', payload: {} })).statusCode).toBe(401);
+    expect((await buy({ slot: 'WEAPON', rarity: 'EPIC' })).json()).toEqual({ error: 'NOT_ENOUGH_LEGACY' });
+    expect((await buy({ slot: 'TAIL', rarity: 'EPIC' })).statusCode).toBe(400);
+    const me = (await a.inject({ method: 'GET', url: '/api/me', headers: auth(token) })).json() as {
+      account: { id: string };
+    };
+    const account = store.account(me.account.id);
+    if (!account) throw new Error('no account');
+    account.legacy = 130;
+    store.saveAccount(account);
+    const bought = (await buy({ slot: 'WEAPON', rarity: 'EPIC' })).json() as {
+      account: { legacy: number; items: unknown[] };
+      item: { id: string; slot: string; rarity: string };
+    };
+    expect(bought.account.legacy).toBe(10);
+    expect(bought.item).toMatchObject({ slot: 'WEAPON', rarity: 'EPIC' });
+    expect(bought.account.items).toEqual([bought.item]);
+    expect(w.gameState.lords[account.id]?.items).toEqual([bought.item]);
+    expect(w.command(account.id, { type: 'EQUIP', itemId: bought.item.id }).ok).toBe(true);
+    expect(store.account(account.id)?.gear).toEqual({ WEAPON: bought.item.id });
+  });
+
   it('unlocks styles with Legacy and equips only owned ones', async () => {
     const { app: a, store, w } = await start();
     const token = await session(a, 'Ana');
@@ -170,7 +198,7 @@ describe('WebSocket', () => {
           type: 'SEND',
           from: capital.id,
           to: neighbor.id,
-          troops: { LANCER: 5, ARCHER: 0, GRIFFIN: 0 },
+          troops: 5,
         },
       }),
     );
@@ -180,11 +208,7 @@ describe('WebSocket', () => {
     const seen = await bo.next(
       (m) => m.type === 'view' && (m.view as LordView).marches.some((march) => march.incoming),
     );
-    expect((seen.view as LordView).marches.find((m) => m.incoming)?.troops).toEqual({
-      LANCER: 5,
-      ARCHER: 0,
-      GRIFFIN: 0,
-    });
+    expect((seen.view as LordView).marches.find((m) => m.incoming)?.troops).toBe(5);
 
     ana.socket.send(
       JSON.stringify({ type: 'command', id: 8, command: { type: 'SEND', from: capital.id, to: 99999 } }),
@@ -195,7 +219,7 @@ describe('WebSocket', () => {
         id: 9,
         from: capital.id,
         to: neighbor.id,
-        troops: { LANCER: 1, ARCHER: 0, GRIFFIN: 0 },
+        troops: 1,
       }),
     );
     const preview = await ana.next((m) => m.type === 'preview' && m.id === 9);
@@ -214,11 +238,11 @@ describe('WebSocket', () => {
 });
 
 describe('event filtering', () => {
-  it('hides battles and edicts of other lords but keeps public news', async () => {
+  it('hides battles and skills of other lords but keeps public news', async () => {
     const { w } = await start();
     const events: DomainEvent[] = [
       { type: 'WIND_SHIFTED', at: 1, dir: 2 },
-      { type: 'EDICT_CHOSEN', at: 1, lordId: 'other', edict: 'LEGEND' },
+      { type: 'SKILL_LEARNED', at: 1, lordId: 'other', skill: 'GOLD', points: 1 },
       {
         type: 'BATTLE',
         at: 1,
@@ -229,16 +253,20 @@ describe('event filtering', () => {
           marchId: 1,
           attacker: 'x',
           defender: 'y',
-          attackerTroops: { LANCER: 1, ARCHER: 0, GRIFFIN: 0 },
-          defenderTroops: { LANCER: 1, ARCHER: 0, GRIFFIN: 0 },
+          attackerTroops: 1,
+          defenderTroops: 1,
           attackerPower: 1,
           defenderPower: 1,
           fort: 1,
-          attackerLost: { LANCER: 1, ARCHER: 0, GRIFFIN: 0 },
-          defenderLost: { LANCER: 0, ARCHER: 0, GRIFFIN: 0 },
+          walls: 0,
+          attackerLost: 1,
+          defenderLost: 0,
+          attackerRecovered: 0,
+          defenderRecovered: 0,
           winner: 'DEFENDER',
           captured: false,
           plunder: 0,
+          rewards: { attackerXp: 0, attackerGold: 0, defenderXp: 3, defenderGold: 3 },
           allies: [],
         },
       },

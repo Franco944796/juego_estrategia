@@ -9,9 +9,9 @@
 
 ## Decisiones tomadas (2026-10-30)
 
-- Diseño «Vientos y 3 tropas» (detalle en `docs/DESIGN.md`):
+- Diseño original «Vientos y 3 tropas» (detalle vigente en `docs/DESIGN.md`):
   - viento rotativo con pronóstico; entre islas: a favor ×2, cruzado ×1, en contra ×0,5;
-  - Lanceros > Grifos > Arqueros > Lanceros; cada pueblo entrena según su especialidad;
+  - desde el 2026-11-01 hay un solo tipo de tropa (se quitaron los tres tipos y sus contras);
   - faro por isla completa (+producción, +visión); Trono del Cielo central que da Dominio por minuto;
   - temporada corta; gana quien tenga más Dominio.
 - Alcance de esta sesión: monorepo TS (`packages/config`, `packages/engine`, `apps/client`, `tools/sim`),
@@ -61,6 +61,69 @@
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
 
+## Hecho en la etapa «perfil, botones y equipo» (2026-11-01, demo y en línea)
+
+Decisiones de Franco (vigentes):
+
+- Columna de botones con imágenes a la derecha (marchas, informes, ranking, social en línea, menú); sin
+  barra abajo.
+- El retrato del HUD (nivel del señor) abre el perfil con solapas Equipo, Habilidades y
+  Estadísticas; sin botón aparte para habilidades.
+- 6 ranuras: arma = ataque; armadura = defensa de las tropas; casco = muros; capa = producción de
+  tropas; botas = velocidad de marcha; anillo = oro. 4 rarezas: +3/+6/+10/+15 %.
+- 1 objeto cada 5 niveles del señor y tienda con Legado (en línea). Todos los objetos son
+  permanentes (cambia la regla de que el Legado solo compraba estilos).
+
+Mías (avisadas): precios 20/50/120/300 de Legado; rareza al azar con más chances de las buenas a
+mayor nivel (`gear.dropOdds`); en la demo el equipo se guarda en el navegador y pasa a la partida
+siguiente; los bots se ponen el mejor objeto de cada ranura; en el celular los puntos sin repartir se
+ven en el retrato; la sección de la cuenta en el menú pasó a llamarse «Cuenta».
+
+Hecho:
+
+- Motor: `gear.ts` (objeto al subir de nivel, `grantItem`, mejor objeto para bots), orden `EQUIP`
+  (R16 `NO_ITEM`), efectos en `modifiers.ts` (defensa por contingente, muros, velocidad).
+- Servidor: columnas `items` y `gear` en `accounts` (migración automática), `POST /api/items/buy`,
+  registro `item` para el replay, `syncGear` copia equipo de la temporada a la cuenta.
+- Cliente: `SideRail.tsx` (reemplaza `BottomNav.tsx`), retrato en `Hud.tsx`, `LordProfile.tsx`
+  (equipo, tienda, habilidades, estadísticas), íconos de ranuras, textos es/en.
+- Verificado: 190 tests unitarios (motor 99,6 % de líneas), 18 de Playwright, revisión visual
+  (equipo y estadísticas en celular y escritorio, columna con 5 botones sin tapar el panel). Sim:
+  demo 7/10, en línea 7/10; nivel 100 a los 176 min (demo) y 6,8 días (en línea).
+
+## Hecho en la etapa «economía y combate» (2026-11-01, demo y en línea)
+
+Decisiones de Franco (vigentes):
+
+- Un solo tipo de tropa. Ciudades propias sin tope de tropas; neutrales regeneran hasta su guarnición.
+- Ciudades hasta nivel 100. Todo lo que crece con el nivel usa una escala (×2,5 en nivel 2, ×5·10¹¹
+  en nivel 100, salta más al principio). Muros: 20 en nivel 1 → 10T en nivel 100, se suman a la
+  defensa; fortificación +5 % por nivel desde 0; capital y cerca de capital conservan su bonus.
+- Neutrales de nivel 1 a 3. Números grandes con K, M, G, T.
+- Un jugador activo en línea llega a nivel 100 en ~1 semana (en la demo, a mitad de temporada).
+- Habilidades: 1 punto por nivel del señor, fijos, se reinician cada temporada; oro, tropas y ataque
+  +5 % por punto. «Atacante» y «defensor» = % de bajas que vuelven a la capital; liga 1: 90 % fijo.
+- Matar una tropa: 5 exp y 5 oro atacando, 3 y 3 defendiendo. Sin edictos ni gloria.
+- Mías (avisadas): se quitaron los premios viejos por nivel; las bajas recuperadas van a la capital (si
+  no hay, a la ciudad de mayor nivel); los neutrales no recuperan; matar neutrales también da
+  recompensa; conquistar ya no da experiencia; botón «Hasta nivel N» para subir varios niveles de una;
+  pestaña abajo «Skills» (no entra «Habilidades» en el celular).
+
+Hecho:
+
+- Motor: tropas = número; `combat.ts` con muros; `economy.ts` (`levelScale`, `wallsAt`, `upgradePlan`);
+  `skills.ts`; recuperación y recompensas en `marches.ts`; orden `LEARN_SKILL` (R13) y `UPGRADE` con
+  `levels`; R06 retirada; `STATE_VERSION` 3 (servidor y demo descartan partidas viejas).
+- Cliente: envío con una sola barra (porcentaje), ficha con muros/producción/«Hasta nivel N», panel de
+  habilidades, informes con tropas recuperadas y exp/oro, nivel dibujado dentro de cada ciudad,
+  tasas grandes con sufijos (`formatRate`).
+- Config: demo `upgradeCost` 8; en línea costo ×40 y 400 de oro inicial.
+- Verificado: 176 tests unitarios (motor 99,5 % de líneas), 16 de Playwright, revisión visual
+  (habilidades, ciudad nivel 40→55, envío, informe de defensa). Sim: demo 8/10, en línea 6/10.
+- Decisión pendiente para Franco: faros de zona raros en la demo (0,49 de los señores; en línea ya
+  da 0,96). Opciones: zonas más chicas o bonus de defensa en zonas con faro.
+- Probar en línea desde cero: `rm apps/server/data/shattered-isles.db` y `pnpm serve`.
+
 ## Hecho en la etapa «islas grandes» (2026-11-01, demo y en línea)
 
 - Marchas ×10 (tierra 350, aire 450, mínimo 0,05 min); sin Trono (`throne.enabled: false`, se puede
@@ -80,22 +143,12 @@
   con progreso del faro de la zona, HUD sin Trono, textos de ayuda.
 - Verificado: 176 tests unitarios (cobertura del motor 99,6 % de líneas), 14 de Playwright, revisión
   visual del mapa en celular y escritorio. Simulador: demo 9/10, en línea 9/10.
-- Decisión pendiente para Franco: los bots casi no encienden faros de zona (demo 0,44 de los
-  señores; en línea el primero a los ~6 días). Opciones: zonas más chicas o bonus de defensa en zonas
-  con faro.
-- Para ver el mapa nuevo en el mundo de prueba: `rm apps/server/data/shattered-isles.db` y
-  `pnpm serve` (igual el servidor descarta solo la temporada vieja).
 
-## Economía más rápida y niveles del señor (2026-11-01)
+## Economía en línea y HUD (2026-11-01)
 
-- Mundo en línea: producción ÷5 respecto de la demo (antes ÷20, o sea ×4), costos de mejora ×10,
-  botín ×5, Trono con 600 tropas. Simulador: 10/11 objetivos (tensión PvP 0,40 en el borde).
-- Niveles del señor (demo y en línea): experiencia por conquista = 10 × nivel del pueblo, ×2 si era
-  de otro señor; curva 30 × 1,25^(n−1); cada nivel da 9 + 3 × nivel tropas a la capital (repartidas
-  entre los tres tipos) y +1 % de oro sobre la base. Se reinicia con la temporada.
-- HUD: oro, Dominio y nivel (con barra de experiencia); la gloria pasó al panel de Edictos.
-- La temporada en curso del servidor conserva su configuración: para ver la economía nueva en el
-  mundo de prueba hay que reiniciarlo (borrar `apps/server/data/shattered-isles.db`).
+- Mundo en línea: producción ÷5 respecto de la demo y botín ×5 (costos y niveles: ver «economía y
+  combate»).
+- HUD: oro, Dominio y nivel del señor con barra de experiencia.
 
 ## Hecho en la etapa de clanes y chat (2026-11-01)
 
@@ -131,17 +184,17 @@
 
 ## Revisión visual (2026-11-01)
 
-- `apps/client/e2e/tour.spec.ts` arma partidas guardadas con el motor (edicto pendiente, ataque
-  entrante, pueblo enemigo y vuelo entre islas, fin de temporada) y saca capturas en celular y
-  escritorio, con control de desbordes y texto cortado. 13 tests de Playwright en verde.
+- `apps/client/e2e/tour.spec.ts` arma partidas guardadas con el motor (puntos de habilidad, ciudad
+  grande, ataque entrante, pueblo enemigo y vuelo entre islas, fin de temporada) y saca capturas en
+  celular y escritorio, con control de desbordes y texto cortado.
 - Corregido: etiquetas de guarnición tapadas por pueblos vecinos (dibujo en dos pasadas); la pista
   «si esperás el viento» solo aparece si así llegás antes; el cierre dice «X gana la temporada».
 
 ## Balance de la demo (2026-11-01)
 
-- Demo con los mismos frenos que el mundo en línea, más suaves (isla de la capital ×1,5; −5 % por pueblo
-  pasados 8) y guarnición del Trono 240 (el mundo en línea mantiene 300). 11/11 objetivos en 12
-  temporadas; `pnpm sim` usa 12 corridas por defecto en la demo. Registro en `docs/BALANCE.md`.
+- Demo con los mismos frenos que el mundo en línea, más suaves (cerca de la capital ×1,5; −5 % por
+  pueblo pasados 8). `pnpm sim` usa 12 corridas por defecto en la demo. Registro en
+  `docs/BALANCE.md`.
 - Corregido: al elegir destino la cámara centra el pueblo de origen (antes algunos destinos quedaban
   debajo de la burbuja del tutorial y el toque no llegaba; el test fallaba a veces); cartel de
   «elegí destino» en una línea; el test en línea ya no supone un mundo vacío.
@@ -149,26 +202,21 @@
 
 ## Pendiente
 
-Pedidos de Franco del 2026-11-01 (sin preguntas hechas todavía; preguntar al empezar cada uno):
+Preguntar a Franco los detalles al empezar cada uno:
 
-1. Ciudades sin tope de tropas: se generan sin parar y se acumulan.
-2. Muros: defensa propia de cada ciudad aparte de las tropas (ej.: nivel 1 = 25 de defensa, con 0
-   tropas hacen falta 26 para conquistarla si el atacante tiene 0 puntos en «ataque»).
-3. Árbol de habilidades: 1 punto por nivel del señor para repartir; oro (+5 % por punto), tropas
-   (+5 % por punto) y ataque (efecto a definir).
-4. Matar tropas enemigas da bastante experiencia y oro; se pierde un 10 % de las tropas totales
-   muertas en el ataque (regla de la liga 1, la única que existe por ahora).
-5. Agrupar tropas: al tocar una ciudad, elegir de qué ciudades recibir tropas, con las cercanas
+1. Agrupar tropas: al tocar una ciudad, elegir de qué ciudades recibir tropas, con las cercanas
    preseleccionadas.
-6. Marchas más lentas según la distancia entre ciudades.
-7. Juego en 3D, con ciudades como chozas bien detalladas; por ahora una sola isla para probar
+2. Marchas más lentas según la distancia entre ciudades.
+3. Juego en 3D, con ciudades como chozas bien detalladas; por ahora una sola isla para probar
    (Franco agrega más cuando todo funcione).
-8. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
+4. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
    `sudo firewall-cmd --add-port=8787/tcp` (con `--permanent` para que quede).
-9. Subir el repo a GitHub (acción de Franco): `git remote add origin
+5. Subir el repo a GitHub (acción de Franco): `git remote add origin
 https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main`. Repo público
    con licencia PolyForm Noncommercial 1.0.0 (`LICENSE.md`, copyright Franco944796).
-10. Varias ligas con ascensos y descensos entre temporadas.
+6. Varias ligas con ascensos y descensos (en ligas superiores, «atacante» y «defensor» con puntos).
+
+- Decisión pendiente: faros de zona raros en la demo (zonas más chicas o bonus de defensa).
 
 ## Comandos
 
@@ -180,8 +228,11 @@ https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main
 
 ## Problemas conocidos
 
-- Balance de la demo: tensión PvP 0,40, justo en el borde del objetivo (0,2–0,4). Detalle en
-  `docs/BALANCE.md`.
+- Balance (detalle en `docs/BALANCE.md`): tensión PvP baja (demo 0,17, en línea 0,06; objetivo
+  0,2–0,4); con 90 % de recuperación las ciudades cambian de dueño muchísimo; señores y ciudades
+  llegan a nivel 100 bastante antes del fin de temporada; menos de la mitad de los vuelos esperan
+  viento a favor (demo 0,49, en línea 0,38).
+- Tropas por encima de ~9·10¹⁵ pierden unidades por precisión de los números (determinista igual).
 
 ## Notas del motor (no obvias en el código)
 

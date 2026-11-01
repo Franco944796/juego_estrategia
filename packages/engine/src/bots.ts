@@ -1,12 +1,13 @@
 import type { PersonalityConfig } from '@si/config';
 import { applyCommand } from './commands';
-import { resolveBattle, type BattleOutcome } from './combat';
-import { fortification, townRates, upgradeCost } from './economy';
+import { resolveSiege, type SiegeOutcome } from './combat';
+import { fortification, townRates, townWalls, upgradeCost, upgradePlan } from './economy';
 import { distance } from './geometry';
 import { travelInfo, type TravelInfo } from './marches';
-import { modsMemo, neutralMods, type LordMods } from './modifiers';
-import { addTroops, scaleTroops, splitGarrison, totalTroops, zeroTroops } from './troops';
-import type { DomainEvent, GameState, Lord, Town, Troops } from './types';
+import { modsMemo, type LordMods } from './modifiers';
+import { bestUpgrade } from './gear';
+import { botSkill, unspentPoints } from './skills';
+import type { DomainEvent, GameState, Lord, Town } from './types';
 import { visibleIsles } from './vision';
 import { isleNeighbors, islesLinked, townsOf } from './world';
 
@@ -46,13 +47,28 @@ export function botTurn(state: GameState, lordId: string, now: number, events: D
     busy: new Set(),
     targeted: new Set(state.marches.filter((m) => m.owner === lordId).map((m) => m.to)),
   };
+  learn(turn);
   defend(turn);
   upgrade(turn);
   attack(turn);
   consolidate(turn);
 }
 
-function send(turn: Turn, from: Town, to: Town, troops: Troops): boolean {
+function learn(turn: Turn): void {
+  const { state, lord } = turn;
+  while (unspentPoints(lord) > 0) {
+    const skill = botSkill(state, lord);
+    if (!skill || applyCommand(state, lord.id, { type: 'LEARN_SKILL', skill }, turn.now, turn.events)) break;
+  }
+  for (let item = bestUpgrade(state, lord); item; item = bestUpgrade(state, lord)) {
+    if (applyCommand(state, lord.id, { type: 'EQUIP', itemId: item.id }, turn.now, turn.events)) break;
+  }
+  // New points and gear change this lord's modifiers, so the turn's memo starts over.
+  turn.modsOf = modsMemo(state);
+  turn.mods = turn.modsOf(lord.id);
+}
+
+function send(turn: Turn, from: Town, to: Town, troops: number): boolean {
   const command = { type: 'SEND', from: from.id, to: to.id, troops };
   if (applyCommand(turn.state, turn.lord.id, command, turn.now, turn.events)) return false;
   turn.busy.add(from.id);
@@ -60,8 +76,8 @@ function send(turn: Turn, from: Town, to: Town, troops: Troops): boolean {
   return true;
 }
 
-function spare(turn: Turn, town: Town): Troops {
-  return scaleTroops(town.garrison, 1 - turn.p.keepHome);
+function spare(turn: Turn, town: Town): number {
+  return Math.floor(town.garrison * (1 - turn.p.keepHome));
 }
 
 function marchSlots(turn: Turn): number {
@@ -69,26 +85,28 @@ function marchSlots(turn: Turn): number {
   return turn.state.config.march.maxActivePerLord - active;
 }
 
-/** Unseen garrisons are guessed: neutrals at their regeneration ceiling, lords at their cap. */
-function knownGarrison(turn: Turn, town: Town): Troops {
-  const cfg = turn.state.config;
-  if (turn.visible.has(town.isleId))
-    return town.stationed.reduce((sum, s) => addTroops(sum, s.troops), town.garrison);
-  const size = town.owner === null ? town.neutralCap : (cfg.towns.garrisonCap[town.tier - 1] ?? 0);
-  return splitGarrison(size, town.spec, cfg.neutral.mainShare);
+/** Unseen garrisons are guessed: neutrals at their regeneration ceiling, lords by their production. */
+function knownGarrison(turn: Turn, town: Town): number {
+  const { state } = turn;
+  if (turn.visible.has(town.isleId)) return town.stationed.reduce((sum, s) => sum + s.troops, town.garrison);
+  if (town.owner === null) return town.neutralCap;
+  return townRates(state, town, turn.modsOf(town.owner)).troops * state.config.bots.guessMin;
 }
 
-function predictAttack(turn: Turn, attackers: Troops, target: Town, defenders: Troops): BattleOutcome {
+function predictAttack(
+  turn: Turn,
+  attackers: number,
+  attackMult: number,
+  target: Town,
+  defenders: number,
+): SiegeOutcome {
   const state = turn.state;
-  const defense = target.owner === null ? neutralMods() : turn.modsOf(target.owner);
-  return resolveBattle(state.config, {
+  return resolveSiege(state.config, {
     attacker: attackers,
-    defender: defenders,
-    attackMults: turn.mods.attack,
-    defenseMults: defense.defense,
-    fort: fortification(state, target, turn.modsOf(target.owner)),
-    attackerLossMult: turn.mods.winnerLosses,
-    defenderLossMult: defense.winnerLosses,
+    attackMult,
+    defenders: [{ troops: defenders, defense: turn.modsOf(target.owner).defense }],
+    fort: fortification(state, target),
+    walls: townWalls(state, target, turn.modsOf(target.owner)),
   });
 }
 
@@ -105,26 +123,18 @@ function defend(turn: Turn): void {
     if (!town) continue;
     const arriving = state.marches
       .filter((m) => m.owner === lord.id && m.to === town.id && m.arriveAt <= threat.arriveAt)
-      .reduce((sum, m) => addTroops(sum, m.troops), zeroTroops());
+      .reduce((sum, m) => sum + m.troops, 0);
     const enemy = turn.modsOf(threat.owner);
-    const outcome = resolveBattle(state.config, {
-      attacker: threat.troops,
-      defender: addTroops(town.garrison, arriving),
-      attackMults: enemy.attack,
-      defenseMults: turn.mods.defense,
-      fort: fortification(state, town, turn.mods),
-      attackerLossMult: enemy.winnerLosses,
-      defenderLossMult: turn.mods.winnerLosses,
-    });
+    const outcome = predictAttack(turn, threat.troops, enemy.attack, town, town.garrison + arriving);
     if (outcome.winner === 'DEFENDER') continue;
 
-    let best: { from: Town; troops: Troops; travel: TravelInfo } | null = null;
+    let best: { from: Town; troops: number; travel: TravelInfo } | null = null;
     for (const from of townsOf(state, lord.id)) {
       if (from.id === town.id || turn.busy.has(from.id)) continue;
       if (!islesLinked(state, from.isleId, town.isleId)) continue;
       const troops = spare(turn, from);
-      if (totalTroops(troops) === 0) continue;
-      const travel = travelInfo(state, lord.id, from, town, troops, now, turn.mods);
+      if (troops === 0) continue;
+      const travel = travelInfo(state, lord.id, from, town, now, turn.mods);
       if (now + travel.durationMs >= threat.arriveAt) continue;
       if (!best || travel.durationMs < best.travel.durationMs) best = { from, troops, travel };
     }
@@ -136,8 +146,7 @@ function upgradeGain(state: GameState, town: Town): number {
   const cfg = state.config;
   const current = townRates(state, town);
   const next = townRates(state, { ...town, tier: town.tier + 1 });
-  const dominion = (cfg.dominion.perTier[town.tier] ?? 0) - (cfg.dominion.perTier[town.tier - 1] ?? 0);
-  return next.gold - current.gold + next.troops - current.troops + dominion;
+  return next.gold - current.gold + next.troops - current.troops + cfg.dominion.perTier;
 }
 
 function upgrade(turn: Turn): void {
@@ -151,7 +160,14 @@ function upgrade(turn: Turn): void {
       if (!best || score > best.score) best = { town, score };
     }
     if (!best) return;
-    const command = { type: 'UPGRADE', townId: best.town.id };
+    // The best town takes every level the spare gold pays for; with 100 levels one at a time is too slow.
+    const levels = upgradePlan(
+      state.config,
+      best.town.tier,
+      lord.gold - p.goldReserve,
+      state.config.towns.maxTier,
+    ).levels;
+    const command = { type: 'UPGRADE', townId: best.town.id, levels };
     if (applyCommand(state, lord.id, command, turn.now, turn.events)) return;
   }
 }
@@ -160,7 +176,7 @@ function upgrade(turn: Turn): void {
 function targetValue(turn: Turn, to: Town): number {
   const { state, lord, p } = turn;
   const cfg = state.config;
-  let value = (cfg.dominion.perTier[to.tier - 1] ?? 0) * (to.owner === null ? 1 : p.lordAggression);
+  let value = cfg.dominion.perTier * to.tier * (to.owner === null ? 1 : p.lordAggression);
   const zone = to.zoneId === null ? undefined : state.zones[to.zoneId];
   if (zone) {
     // Worth more the closer it brings the lord to lighting the zone's beacon.
@@ -225,22 +241,22 @@ function attack(turn: Turn): void {
   const { state, lord, p, now } = turn;
   let slots = Math.min(p.attacksPerTurn, marchSlots(turn));
   if (slots <= 0) return;
-  const options: { from: Town; to: Town; troops: Troops; score: number }[] = [];
+  const options: { from: Town; to: Town; troops: number; score: number }[] = [];
 
   const sources = townsOf(state, lord.id)
     .filter((from) => !turn.busy.has(from.id))
     .map((from) => ({ from, troops: spare(turn, from) }))
-    .filter((x) => totalTroops(x.troops) >= p.minAttackTroops)
-    .sort((a, b) => totalTroops(b.troops) - totalTroops(a.troops) || a.from.id - b.from.id)
+    .filter((x) => x.troops >= p.minAttackTroops)
+    .sort((a, b) => b.troops - a.troops || a.from.id - b.from.id)
     .slice(0, slots * SOURCES_PER_ATTACK);
   for (const { from, troops } of sources) {
     for (const to of targetsNear(turn, from)) {
       if (turn.targeted.has(to.id)) continue;
       const value = targetValue(turn, to);
       if (value <= 0) continue;
-      const outcome = predictAttack(turn, troops, to, knownGarrison(turn, to));
+      const outcome = predictAttack(turn, troops, turn.mods.attack, to, knownGarrison(turn, to));
       if (outcome.attackerPower < outcome.defenderPower * p.attackMargin) continue;
-      const travel = travelInfo(state, lord.id, from, to, troops, now, turn.mods);
+      const travel = travelInfo(state, lord.id, from, to, now, turn.mods);
       if (travel.sky && travel.windFactor < p.minWindFactor) continue;
       options.push({ from, to, troops, score: value / travel.durationMs });
     }
@@ -267,7 +283,7 @@ function frontierScore(turn: Turn, town: Town): number {
   return score;
 }
 
-/** Towns stuck at their cap push their spare troops to the most exposed of their nearest own towns. */
+/** Towns holding a good stock push their spare troops to the most exposed of their nearest own towns. */
 function consolidate(turn: Turn): void {
   const { state, lord, p } = turn;
   const scores = new Map<number, number>();
@@ -283,8 +299,8 @@ function consolidate(turn: Turn): void {
   for (const from of townsOf(state, lord.id)) {
     if (marchSlots(turn) <= 0) return;
     if (turn.busy.has(from.id)) continue;
-    const cap = state.config.towns.garrisonCap[from.tier - 1] ?? 0;
-    if (totalTroops(from.garrison) < cap) continue;
+    const stock = townRates(state, from, turn.mods).troops * state.config.bots.hoardMin;
+    if (from.garrison < stock) continue;
     const reach = [from.isleId, ...(isleNeighbors(state)[from.isleId] ?? [])];
     const near = nearest(state, from, reach, state.config.bots.targetsPerTown, (t) => t.owner === lord.id);
     let best: Town | null = null;
@@ -294,6 +310,6 @@ function consolidate(turn: Turn): void {
     }
     if (!best) continue;
     const troops = spare(turn, from);
-    if (totalTroops(troops) >= p.minAttackTroops) send(turn, from, best, troops);
+    if (troops >= p.minAttackTroops) send(turn, from, best, troops);
   }
 }
