@@ -59,16 +59,22 @@
 
 ## En curso
 
-- Etapa «clanes y chat». Plan:
-  1. Motor: `clanId` por señor (`setClan`, registrado en el log), tropas aliadas estacionadas por
-     pueblo, misión al llegar (propio → refuerzo, aliado → estacionar, otro → batalla), defensa con
-     todos los contingentes, retirar tropas estacionadas, visión compartida, R15 permite reforzar
-     capitales aliadas, regreso automático al romperse la alianza; tests.
-  2. Servidor: tablas de clanes, miembros, solicitudes y chat; API de clanes; chat por WebSocket;
-     ranking de clanes; medalla al cerrar la temporada; tests.
-  3. Cliente: pestaña «Social» en línea (chat global/clan, clan, solicitudes), refuerzo a aliados,
-     tropas aliadas en la hoja del pueblo, ranking de clanes, salón de la fama; e2e y revisión visual.
-  4. Commit por paso.
+- Nada. Etapa «clanes y chat» terminada el 2026-11-01.
+
+## Hecho en la etapa de clanes y chat (2026-11-01)
+
+- Motor (`packages/engine/src/alliances.ts`, `marches.ts`, `combat.ts`): `setClan`, tropas
+  estacionadas en pueblos aliados, defensa conjunta (`resolveSiege`), retiro de tropas, R15 permite
+  reforzar capitales aliadas, regreso al romperse la alianza, visión compartida, `migrateState`.
+- Servidor (`apps/server/src/clans.ts`, `store.ts`, `app.ts`): clanes con solicitudes, rangos y
+  sucesión del líder, máximo 20; ranking de clanes y medalla al cierre; chat global/clan por
+  WebSocket con historial y límite de envíos.
+- Cliente: pestaña «Social» (chat Todos/Mi clan, clan: fundar, buscar, solicitudes, miembros,
+  rangos), ranking Señores/Clanes, reforzar y retirar tropas en pueblos aliados, anillo celeste en
+  pueblos aliados, avisos de refuerzos, informes desde el punto de vista del aliado, clan ganador en
+  el salón de la fama.
+- Verificado: 158 tests unitarios, 14 de Playwright (incluido clanes y chat con dos navegadores),
+  revisión visual de chat, clan, solicitudes y ranking de clanes.
 
 ## Hecho en la etapa del servidor (2026-10-31)
 
@@ -109,7 +115,10 @@
 
 1. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
    `sudo firewall-cmd --add-port=8787/tcp` (con `--permanent` para que quede).
-2. Clanes y chat en el mundo en línea.
+2. Subir el repo a GitHub (acción de Franco): `git remote add origin
+https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main`. Repo público:
+   falta decidir la licencia (todos los derechos reservados o PolyForm Noncommercial) y el nombre para
+   el copyright.
 3. Varias ligas con ascensos y descensos entre temporadas.
 
 ## Comandos

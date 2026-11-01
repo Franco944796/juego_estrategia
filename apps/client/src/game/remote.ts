@@ -1,5 +1,5 @@
 import type { Command, DomainEvent, LordView, RuleError, SendPreview, Troops } from '@si/engine';
-import type { ClientMessage, ClockInfo, ServerMessage } from '@si/protocol';
+import type { ChatChannel, ChatMessage, ClientMessage, ClockInfo, ServerMessage } from '@si/protocol';
 import type { GameClient } from './client';
 
 const RECONNECT_MIN_MS = 1000;
@@ -12,6 +12,9 @@ export interface RemoteHandlers {
   onEvents(events: DomainEvent[]): void;
   onSeason(news: Extract<ServerMessage, { type: 'season' }>): void;
   onConnection(connected: boolean): void;
+  onChat(message: ChatMessage): void;
+  onChatHistory(channel: ChatChannel, messages: ChatMessage[]): void;
+  onClanChanged(): void;
 }
 
 /** The online world over WebSocket. Speed, saving and new games belong to the server, so they do nothing. */
@@ -50,6 +53,15 @@ export class RemoteGameClient implements GameClient {
           return;
         case 'season':
           this.handlers.onSeason(msg);
+          return;
+        case 'chat':
+          this.handlers.onChat(msg.message);
+          return;
+        case 'chatHistory':
+          this.handlers.onChatHistory(msg.channel, msg.messages);
+          return;
+        case 'clanChanged':
+          this.handlers.onClanChanged();
           return;
         case 'result':
           this.results.get(msg.id)?.(msg.error);
@@ -98,6 +110,10 @@ export class RemoteGameClient implements GameClient {
       this.previews.set(id, resolve);
       this.send({ type: 'preview', id, from, to, troops });
     });
+  }
+
+  sendChat(channel: ChatChannel, text: string): void {
+    this.send({ type: 'chat', channel, text });
   }
 
   dispose(): void {

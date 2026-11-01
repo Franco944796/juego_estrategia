@@ -63,6 +63,13 @@ export const TrophyIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const ChatIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 5h16v11H9l-5 4z" />
+    <path d="M8 9h8M8 12h5" />
+  </Svg>
+);
+
 export const MenuIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 7h16M4 12h16M4 17h16" />

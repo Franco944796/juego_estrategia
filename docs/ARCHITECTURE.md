@@ -84,9 +84,17 @@ bots) is a pure function of the seed and the human commands. A bot reads only wh
   messages; the server pushes `view` (after events and every 2 s), filtered `events` and `season`
   news. Message types live in `packages/protocol`; inputs are validated with zod and limited to 20
   messages per second per socket.
+- Clans (`clans.ts`): tables `clans`, `clan_members`, `clan_requests`; every membership change reaches
+  the running season through `WorldService.setClan`, which logs a `clan` entry so replays match.
+  Endpoints: `POST /api/clans`, `GET /api/clans?q=`, `GET /api/clans/ranking`, `GET /api/clans/:id`,
+  `POST /api/clans/:id/requests`, `POST /api/clans/:id/requests/:accountId/accept|reject`,
+  `POST /api/clan/leave`, `POST /api/clan/members/:accountId/kick|role`.
+- Chat: `chat_messages` keeps the last 100 lines per channel (`global`, `clan:<id>`). Sockets send
+  `chat`; the server pushes `chat`, `chatHistory` on connect and `clanChanged` after membership
+  changes; 5 lines per 10 s per account.
 - `TIME_SCALE` (environment) speeds up the server clock for the end-to-end tests only.
 
 ## Not built yet
 
-Several leagues and shards, clans, chat, and a store. One world per server process: scaling out would
+Several leagues and shards, and a store. One world per server process: scaling out would
 put one world actor per process and route sockets to it.

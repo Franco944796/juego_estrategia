@@ -1,10 +1,10 @@
 import type { LordView } from '@si/engine';
-import type { PublicAccount, ServerMessage } from '@si/protocol';
+import type { ChatChannel, ChatMessage, MyClan, PublicAccount, ServerMessage } from '@si/protocol';
 import { create } from 'zustand';
 import type { ClockInfo } from './game/protocol';
 import { detectLang, type Lang } from './i18n';
 
-export type Panel = 'marches' | 'reports' | 'ranking' | 'edicts' | 'menu';
+export type Panel = 'marches' | 'reports' | 'ranking' | 'edicts' | 'social' | 'menu';
 export type Tone = 'info' | 'good' | 'bad';
 
 export interface Toast {
@@ -29,6 +29,10 @@ export interface GameStore {
   profile: PublicAccount | null;
   connected: boolean;
   seasonNews: SeasonNews | null;
+  clan: MyClan | null;
+  chat: Record<ChatChannel, ChatMessage[]>;
+  /** Chat lines received while the social panel was closed. */
+  unread: number;
   screen: 'title' | 'game';
   view: LordView | null;
   clock: Clock;
@@ -67,6 +71,9 @@ export const useGame = create<GameStore>()((set, get) => ({
   profile: null,
   connected: true,
   seasonNews: null,
+  clan: null,
+  chat: { global: [], clan: [] },
+  unread: 0,
   screen: 'title',
   view: null,
   clock: idleClock,
@@ -83,7 +90,8 @@ export const useGame = create<GameStore>()((set, get) => ({
   startPicking: () => set({ picking: true, send: null }),
   openSend: (from, to) => set({ send: { from, to }, picking: false, selected: from, panel: null }),
   closeSheet: () => set({ selected: null, picking: false, send: null }),
-  setPanel: (panel) => set({ panel, picking: false, send: null, selected: null }),
+  setPanel: (panel) =>
+    set({ panel, picking: false, send: null, selected: null, ...(panel === 'social' ? { unread: 0 } : {}) }),
   pushToast: (text, tone = 'info') => {
     const id = toastId++;
     set({ toasts: [...get().toasts, { id, text, tone }].slice(-MAX_TOASTS) });

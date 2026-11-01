@@ -1,13 +1,15 @@
 import { EDICT_IDS } from '@si/config/constants';
 import { totalTroops, type BattleReport, type LordView } from '@si/engine';
-import { useState, type ReactNode } from 'react';
+import type { ClanRankingRow } from '@si/protocol';
+import { useEffect, useState, type ReactNode } from 'react';
 import { formatDuration, formatNumber } from '../format';
-import { abandonGame, command, rememberLang, setSpeed, SPEEDS } from '../game/session';
+import { abandonGame, command, loadClanRanking, rememberLang, setSpeed, SPEEDS } from '../game/session';
 import { EDICT_TEXT, LANGS, t, type Lang, type MessageKey } from '../i18n';
 import { toRealMs, useGame, type Panel } from '../store';
 import { useGameNow } from './hooks';
 import { CloseIcon } from './icons';
 import { Profile } from './Profile';
+import { SocialPanel } from './Social';
 import { ownerName, townLabel } from './labels';
 
 function PanelFrame({ title, children, testid }: { title: string; children: ReactNode; testid: string }) {
@@ -77,7 +79,9 @@ function reportTitle(me: string, r: BattleReport): { key: MessageKey; tone: stri
     if (r.captured) return { key: 'took', tone: 'good' };
     return r.winner === 'ATTACKER' ? { key: 'wonAt', tone: 'muted' } : { key: 'failedAt', tone: 'bad' };
   }
-  return r.captured ? { key: 'lostTown', tone: 'bad' } : { key: 'defended', tone: 'good' };
+  if (r.defender === me)
+    return r.captured ? { key: 'lostTown', tone: 'bad' } : { key: 'defended', tone: 'good' };
+  return r.captured ? { key: 'allyLost', tone: 'bad' } : { key: 'allyDefended', tone: 'good' };
 }
 
 function ReportsPanel({ view, lang }: { view: LordView; lang: Lang }) {
@@ -86,7 +90,8 @@ function ReportsPanel({ view, lang }: { view: LordView; lang: Lang }) {
     <ul className="list">
       {view.reports.map((r) => {
         const attacking = r.attacker === view.me.id;
-        const lost = totalTroops(attacking ? r.attackerLost : r.defenderLost);
+        const asAlly = r.allies.find((a) => a.lordId === view.me.id);
+        const lost = totalTroops(attacking ? r.attackerLost : (asAlly?.lost ?? r.defenderLost));
         const killed = totalTroops(attacking ? r.defenderLost : r.attackerLost);
         const head = reportTitle(view.me.id, r);
         const enemy = attacking ? r.defender : r.attacker;
@@ -109,7 +114,7 @@ function ReportsPanel({ view, lang }: { view: LordView; lang: Lang }) {
   );
 }
 
-function RankingPanel({ view, lang }: { view: LordView; lang: Lang }) {
+function LordRanking({ view, lang }: { view: LordView; lang: Lang }) {
   return (
     <table className="ranking">
       <thead>
@@ -133,6 +138,70 @@ function RankingPanel({ view, lang }: { view: LordView; lang: Lang }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+function ClanRanking({ lang }: { lang: Lang }) {
+  const myClan = useGame((s) => s.clan?.id);
+  const [rows, setRows] = useState<ClanRankingRow[] | null>(null);
+  useEffect(() => {
+    void loadClanRanking().then(setRows);
+  }, []);
+  if (rows === null) return null;
+  if (rows.length === 0) return <p className="muted">{t(lang, 'noClans')}</p>;
+  return (
+    <table className="ranking">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>{t(lang, 'tabClan')}</th>
+          <th>{t(lang, 'dominion')}</th>
+          <th>{t(lang, 'colMembers')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr
+            key={r.clanId}
+            data-testid="clan-ranking-row"
+            className={r.clanId === myClan ? 'me' : undefined}
+          >
+            <td>{r.rank}</td>
+            <td>
+              [{r.tag}] {r.name}
+            </td>
+            <td>{formatNumber(r.dominion, lang)}</td>
+            <td>{r.members}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function RankingPanel({ view, lang }: { view: LordView; lang: Lang }) {
+  const online = useGame((s) => s.mode === 'online');
+  const [tab, setTab] = useState<'lords' | 'clans'>('lords');
+  if (!online) return <LordRanking view={view} lang={lang} />;
+  return (
+    <div className="stack">
+      <div className="segmented" role="tablist">
+        {(['lords', 'clans'] as const).map((x) => (
+          <button
+            key={x}
+            type="button"
+            role="tab"
+            aria-selected={tab === x}
+            aria-pressed={tab === x}
+            data-testid={`ranking-${x}`}
+            onClick={() => setTab(x)}
+          >
+            {t(lang, x === 'lords' ? 'rankingLords' : 'rankingClans')}
+          </button>
+        ))}
+      </div>
+      {tab === 'lords' ? <LordRanking view={view} lang={lang} /> : <ClanRanking lang={lang} />}
+    </div>
   );
 }
 
@@ -263,6 +332,7 @@ const TITLES: Record<Panel, MessageKey> = {
   reports: 'reportsTitle',
   ranking: 'rankingTitle',
   edicts: 'edictsTitle',
+  social: 'socialTitle',
   menu: 'menuTitle',
 };
 
@@ -276,6 +346,7 @@ export function PanelView({ panel }: { panel: Panel }) {
       {panel === 'reports' && <ReportsPanel view={view} lang={lang} />}
       {panel === 'ranking' && <RankingPanel view={view} lang={lang} />}
       {panel === 'edicts' && <EdictsPanel view={view} lang={lang} />}
+      {panel === 'social' && <SocialPanel lang={lang} />}
       {panel === 'menu' && <MenuPanel lang={lang} />}
     </PanelFrame>
   );

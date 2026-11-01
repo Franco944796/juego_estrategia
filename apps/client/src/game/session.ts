@@ -3,9 +3,9 @@ import type { Command, DomainEvent, LordView, SendPreview, Troops } from '@si/en
 import { formatDuration } from '../format';
 import { BOT_NAMES, RULE_TEXT, SERVER_TEXT, t, WIND_NAMES } from '../i18n';
 import { toRealMs, useGame, type SeasonNews } from '../store';
-import { townLabel } from '../ui/labels';
+import { isAlly, townLabel } from '../ui/labels';
 import { LocalGameClient, type GameClient } from './client';
-import type { HallResponse } from '@si/protocol';
+import type { ChatChannel, ClanDetail, ClanRankingRow, ClanSummary, HallResponse } from '@si/protocol';
 import { api, ApiError } from './api';
 import type { Save } from './protocol';
 import { RemoteGameClient } from './remote';
@@ -16,6 +16,9 @@ const TUTORIAL_KEY = 'shattered-isles:tutorial-done';
 const TOKEN_KEY = 'shattered-isles:token';
 
 let client: GameClient | null = null;
+let remote: RemoteGameClient | null = null;
+/** Chat lines kept per channel on the client, like the server keeps. */
+const CHAT_KEPT = 100;
 let speedBeforeHide: number | null = null;
 
 function storage(): Storage | null {
@@ -148,7 +151,7 @@ export async function checkOnline(): Promise<void> {
   if (!token) return;
   try {
     const me = await api.me(token);
-    useGame.setState({ token, profile: me.account });
+    useGame.setState({ token, profile: me.account, clan: me.clan });
   } catch (error) {
     if (error instanceof ApiError && error.code === 'UNAUTHORIZED') write(TOKEN_KEY, null);
   }
@@ -170,12 +173,21 @@ export async function enterOnline(name?: string): Promise<string | null> {
   }
   client?.dispose();
   useGame.getState().reset();
-  client = new RemoteGameClient(socketUrl(token), {
+  remote = new RemoteGameClient(socketUrl(token), {
     onView: (view, clock) => useGame.getState().receiveView(view, clock),
     onEvents: (events) => notify(events),
     onSeason: (news) => void startNextSeason(news),
     onConnection: (connected) => useGame.setState({ connected }),
+    onChat: (message) =>
+      useGame.setState((s) => ({
+        chat: { ...s.chat, [message.channel]: [...s.chat[message.channel], message].slice(-CHAT_KEPT) },
+        unread: s.panel === 'social' ? 0 : s.unread + 1,
+      })),
+    onChatHistory: (channel, messages) =>
+      useGame.setState((s) => ({ chat: { ...s.chat, [channel]: messages } })),
+    onClanChanged: () => void refreshProfile().catch(() => undefined),
   });
+  client = remote;
   useGame.setState({ screen: 'game', mode: 'online', tutorial: read(TUTORIAL_KEY) ? null : 0 });
   return null;
 }
@@ -209,7 +221,7 @@ export async function refreshProfile(): Promise<void> {
   const { token } = useGame.getState();
   if (!token) return;
   const me = await api.me(token);
-  useGame.setState({ profile: me.account });
+  useGame.setState({ profile: me.account, clan: me.clan });
 }
 
 async function styleAction(action: typeof api.unlock, style: string): Promise<void> {
@@ -233,6 +245,7 @@ export function loadHall(): Promise<HallResponse> {
 export function leaveOnline(): void {
   client?.dispose();
   client = null;
+  remote = null;
   useGame.getState().reset();
   useGame.setState({ screen: 'title', mode: 'offline', seasonNews: null, connected: true });
 }
@@ -282,6 +295,11 @@ function notify(events: DomainEvent[]): void {
         const target = view.towns.find((x) => x.id === e.march.to);
         if (e.march.owner === me) {
           if (store.tutorial === 2) store.setTutorial(3);
+        } else if (target?.owner === me && isAlly(view, e.march.owner)) {
+          pushToast(
+            t(lang, 'toastAllyHelp', { name: lordName(view, e.march.owner), town: town(e.march.to) }),
+            'good',
+          );
         } else if (target?.owner === me) {
           const eta = formatDuration(toRealMs(store.clock, e.march.arriveAt - e.at));
           pushToast(
@@ -301,6 +319,21 @@ function notify(events: DomainEvent[]): void {
           if (r.captured) pushToast(t(lang, 'toastLost', { town: town(r.townId) }), 'bad');
           else if (r.winner === 'DEFENDER')
             pushToast(t(lang, 'toastDefended', { town: town(r.townId) }), 'good');
+        } else if (r.allies.some((a) => a.lordId === me)) {
+          pushToast(
+            t(lang, r.captured ? 'allyLost' : 'allyDefended', { town: town(r.townId) }),
+            r.captured ? 'bad' : 'good',
+          );
+        }
+        break;
+      }
+      case 'MARCH_STATIONED': {
+        const target = view.towns.find((x) => x.id === e.march.to);
+        if (target?.owner === me && e.march.owner !== me) {
+          pushToast(
+            t(lang, 'toastAllyArrived', { name: lordName(view, e.march.owner), town: town(e.march.to) }),
+            'good',
+          );
         }
         break;
       }
@@ -337,3 +370,59 @@ function notify(events: DomainEvent[]): void {
 
 export const DEMO_BOTS = defaultConfig.demo.bots;
 export const SPEEDS = defaultConfig.demo.speeds;
+
+export function sendChat(channel: ChatChannel, text: string): void {
+  remote?.sendChat(channel, text);
+}
+
+/** Runs a clan call with the stored token; failures become a toast and `false`. */
+async function clanCall(action: (token: string) => Promise<unknown>): Promise<boolean> {
+  const { token, pushToast } = useGame.getState();
+  if (!token) return false;
+  try {
+    await action(token);
+    await refreshProfile();
+    return true;
+  } catch (error) {
+    pushToast(failure(error), 'bad');
+    return false;
+  }
+}
+
+export const createClan = (name: string, tag: string): Promise<boolean> =>
+  clanCall((token) => api.createClan(token, name, tag));
+export const requestJoin = (clanId: string): Promise<boolean> =>
+  clanCall((token) => api.requestJoin(token, clanId));
+export const decideRequest = (clanId: string, accountId: string, accept: boolean): Promise<boolean> =>
+  clanCall((token) => api.decide(token, clanId, accountId, accept));
+export const leaveClan = (): Promise<boolean> => clanCall((token) => api.leaveClan(token));
+export const kickMember = (accountId: string): Promise<boolean> =>
+  clanCall((token) => api.kick(token, accountId));
+export const setMemberRole = (accountId: string, role: 'officer' | 'member'): Promise<boolean> =>
+  clanCall((token) => api.setRole(token, accountId, role));
+
+export async function loadClan(clanId: string): Promise<ClanDetail | null> {
+  const { token } = useGame.getState();
+  if (!token) return null;
+  try {
+    return (await api.clan(token, clanId)).value;
+  } catch {
+    return null;
+  }
+}
+
+export async function searchClans(query: string): Promise<ClanSummary[]> {
+  try {
+    return (await api.searchClans(query)).clans;
+  } catch {
+    return [];
+  }
+}
+
+export async function loadClanRanking(): Promise<ClanRankingRow[]> {
+  try {
+    return (await api.clanRanking()).ranking;
+  } catch {
+    return [];
+  }
+}

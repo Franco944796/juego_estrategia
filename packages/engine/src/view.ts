@@ -268,7 +268,11 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       status: state.status,
       capitalImmune: cfg.rules.capitalImmune,
     },
-    reports: state.reports.filter((r) => r.attacker === lordId || r.defender === lordId).reverse(),
+    reports: state.reports
+      .filter(
+        (r) => r.attacker === lordId || r.defender === lordId || r.allies.some((a) => a.lordId === lordId),
+      )
+      .reverse(),
     standings: computeStandings(state, t),
   };
 }

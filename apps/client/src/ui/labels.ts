@@ -26,3 +26,10 @@ export function linkedIsles(view: LordView, isleId: number): Set<number> {
   }
   return linked;
 }
+
+/** A clanmate of the viewer (never the viewer itself). */
+export function isAlly(view: LordView, ownerId: string | null): boolean {
+  const mine = view.me.clanId;
+  if (ownerId === null || ownerId === view.me.id || mine === null) return false;
+  return view.lords.find((l) => l.id === ownerId)?.clanId === mine;
+}

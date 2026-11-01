@@ -8,7 +8,7 @@ import {
   type TroopType,
 } from '@si/engine';
 import { formatNumber } from '../format';
-import { linkedIsles, NEUTRAL_COLOR, ownerColor } from '../ui/labels';
+import { isAlly, linkedIsles, NEUTRAL_COLOR, ownerColor } from '../ui/labels';
 import { worldToScreen, type Camera, type Size, type Vec } from './camera';
 
 export interface SceneInput {
@@ -32,6 +32,7 @@ const STREAK_SPEED = 0.05;
 const INK = '#0d1b2a';
 const GOLD = '#ffd166';
 const HOSTILE = '#ff4d4d';
+const ALLY = '#4cc9f0';
 
 export function townRadiusPx(cam: Camera): number {
   return Math.max(MIN_TOWN_PX, TOWN_RADIUS * cam.zoom);
@@ -385,6 +386,13 @@ function towns(ctx: CanvasRenderingContext2D, input: SceneInput, targets: Set<nu
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = '#ffffff';
       ctx.stroke();
+    } else if (isAlly(view, town.owner)) {
+      ctx.setLineDash([3, 3]);
+      circle(ctx, p, rr + 3);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = ALLY;
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     glyph(ctx, town.spec, p, rr * 0.55);
     if (town.isCapital) crown(ctx, p.x, p.y - rr - 6, rr * 0.5, GOLD);

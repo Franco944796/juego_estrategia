@@ -40,7 +40,7 @@ export default defineConfig({
     },
     {
       name: 'online',
-      testMatch: 'online.spec.ts',
+      testMatch: /online|clans/,
       use: { ...devices['Desktop Chrome'], baseURL: ONLINE_URL },
     },
   ],

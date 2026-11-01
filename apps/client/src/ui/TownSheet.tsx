@@ -5,7 +5,7 @@ import { command } from '../game/session';
 import { t, TROOP_NAMES } from '../i18n';
 import { useGame } from '../store';
 import { CloseIcon, CrownIcon, ShieldIcon, TroopIcon } from './icons';
-import { linkedIsles, ownerColor, ownerName, townLabel } from './labels';
+import { isAlly, linkedIsles, ownerColor, ownerName, townLabel } from './labels';
 
 /** The player's town with the most troops that can reach `target`, if any. */
 export function bestSource(view: LordView, target: TownView): TownView | null {
@@ -24,9 +24,12 @@ export function TownSheet({ townId }: { townId: number }) {
   const closeSheet = useGame((s) => s.closeSheet);
   const startPicking = useGame((s) => s.startPicking);
   const openSend = useGame((s) => s.openSend);
+  const select = useGame((s) => s.select);
   const town = view?.towns[townId];
   if (!view || !town) return null;
   const mine = town.owner === view.me.id;
+  const ally = !mine && isAlly(view, town.owner);
+  const myStationed = town.stationed?.find((s) => s.lordId === view.me.id);
   const isle = view.isles[town.isleId];
   const source = mine ? null : bestSource(view, town);
   const gold = view.me.gold;
@@ -88,6 +91,18 @@ export function TownSheet({ townId }: { townId: number }) {
             </span>
           </div>
         )}
+        {town.stationed && town.stationed.length > 0 && (
+          <div className="fact" data-testid="stationed">
+            <span className="fact-label">{t(lang, 'allies')}</span>
+            <span>
+              {town.stationed
+                .map(
+                  (s) => `${ownerName(lang, view, s.lordId)} · ${formatNumber(totalTroops(s.troops), lang)}`,
+                )
+                .join(' — ')}
+            </span>
+          </div>
+        )}
         {isle?.beaconOwner && (
           <div className="fact">
             <CrownIcon size={15} />
@@ -97,6 +112,19 @@ export function TownSheet({ townId }: { townId: number }) {
       </div>
 
       <div className="actions">
+        {myStationed && (
+          <button
+            type="button"
+            data-testid="withdraw-button"
+            onClick={() => {
+              select(town.id);
+              startPicking();
+            }}
+          >
+            {t(lang, 'yourStationed', { n: formatNumber(totalTroops(myStationed.troops), lang) })} ·{' '}
+            {t(lang, 'withdraw')}
+          </button>
+        )}
         {mine ? (
           <>
             <button type="button" className="primary" data-testid="send-button" onClick={startPicking}>
@@ -133,6 +161,19 @@ export function TownSheet({ townId }: { townId: number }) {
               </div>
             </div>
           </>
+        ) : ally ? (
+          source ? (
+            <button
+              type="button"
+              className="primary"
+              data-testid="reinforce-button"
+              onClick={() => openSend(source.id, town.id)}
+            >
+              {t(lang, 'reinforceAlly')}
+            </button>
+          ) : (
+            <p className="muted">{t(lang, 'noSource')}</p>
+          )
         ) : view.season.capitalImmune && town.isCapital ? (
           <p className="muted" data-testid="capital-immune">
             {t(lang, 'capitalImmune')}

@@ -1,4 +1,14 @@
-import type { HallResponse, MeResponse, PublicAccount, SessionResponse } from '@si/protocol';
+import type {
+  ClanDetail,
+  ClanRankingRow,
+  ClanRole,
+  ClanSummary,
+  HallResponse,
+  MeResponse,
+  MyClan,
+  PublicAccount,
+  SessionResponse,
+} from '@si/protocol';
 
 export class ApiError extends Error {
   constructor(readonly code: string) {
@@ -38,4 +48,21 @@ export const api = {
   equip: (token: string, style: string) =>
     request<{ account: PublicAccount }>('/api/styles/equip', { method: 'POST', token, body: { style } }),
   hall: () => request<HallResponse>('/api/hall'),
+  createClan: (token: string, name: string, tag: string) =>
+    request<{ value: MyClan }>('/api/clans', { method: 'POST', token, body: { name, tag } }),
+  searchClans: (query: string) =>
+    request<{ clans: ClanSummary[] }>(`/api/clans?q=${encodeURIComponent(query)}`),
+  clan: (token: string, id: string) => request<{ value: ClanDetail }>(`/api/clans/${id}`, { token }),
+  clanRanking: () => request<{ ranking: ClanRankingRow[] }>('/api/clans/ranking'),
+  requestJoin: (token: string, id: string) => request(`/api/clans/${id}/requests`, { method: 'POST', token }),
+  decide: (token: string, id: string, accountId: string, accept: boolean) =>
+    request(`/api/clans/${id}/requests/${accountId}/${accept ? 'accept' : 'reject'}`, {
+      method: 'POST',
+      token,
+    }),
+  leaveClan: (token: string) => request('/api/clan/leave', { method: 'POST', token }),
+  kick: (token: string, accountId: string) =>
+    request(`/api/clan/members/${accountId}/kick`, { method: 'POST', token }),
+  setRole: (token: string, accountId: string, role: Exclude<ClanRole, 'leader'>) =>
+    request(`/api/clan/members/${accountId}/role`, { method: 'POST', token, body: { role } }),
 };

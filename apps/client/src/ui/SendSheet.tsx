@@ -51,7 +51,11 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
   const now = useGameNow();
   const source = view?.towns[from];
   const target = view?.towns[to];
-  const available: Troops = source?.garrison ?? zeroTroops();
+  // From a clanmate's town the player can only move the troops it stationed there.
+  const available: Troops =
+    (source?.owner === view?.me.id
+      ? source?.garrison
+      : source?.stationed?.find((s) => s.lordId === view?.me.id)?.troops) ?? zeroTroops();
   const [amounts, setAmounts] = useState<Troops>(() => ({ ...available }));
   const [preview, setPreview] = useState<SendPreview | null>(null);
   const [busy, setBusy] = useState(false);

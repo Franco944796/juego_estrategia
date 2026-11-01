@@ -156,6 +156,17 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
   played → 10 (`rewards.tiers`; each cut-off rounds up and holds at least one player). Legacy is
   permanent and only buys town styles (`cosmetics.styles`); it never changes the rules of a season.
 - No bots in the online world.
+- **Clans.** Anyone may found a clan (name and a 2–4 letter tag). Others ask to join; the leader or
+  an officer accepts. At most 20 members; clans last across seasons. A leaving leader hands over to
+  the oldest officer (else the oldest member); the last member out closes the clan.
+- **Allies** (same clan) never fight: a march to an ally's town **stations** its troops there. The town
+  is then defended by the owner's garrison plus every allied contingent, each with its own lord's
+  edicts; all contingents lose the same fraction, and kills and glory are shared by the power each
+  brought. A lord may move its stationed troops out again. Allies share vision. When an alliance
+  breaks, stationed contingents march back to their capitals.
+- **Chat:** a global channel and one per clan; lines up to 200 characters; the last 100 are kept.
+- **Clan ranking:** summed Dominion of the members; the top clan of each season gets a medal shown in
+  the hall of fame (no extra Legacy).
 
 ## 12. Rule register
 

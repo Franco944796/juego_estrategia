@@ -67,4 +67,5 @@ docs/             design, architecture, balance
 
 Built: the rules engine with bots, the balance simulator, the offline single-player demo and the online
 world (server with persistence and replay, guest accounts with a recovery code, monthly seasons,
-Legacy rewards and town styles). Not built yet: several leagues, clans, chat and any store.
+Legacy rewards and town styles, clans with allied reinforcements, chat). Not built yet: several leagues
+and any store.

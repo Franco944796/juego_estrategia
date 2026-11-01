@@ -114,6 +114,11 @@ export function Profile() {
         hall.seasons.map((season) => (
           <div key={season.id} className="report">
             <strong>{t(lang, 'hallSeason', { n: season.id })}</strong>
+            {season.clans[0] && (
+              <p className="muted">
+                {t(lang, 'hallClan', { name: season.clans[0].name, tag: season.clans[0].tag })}
+              </p>
+            )}
             <ol className="end-ranking">
               {season.top.slice(0, 3).map((row) => (
                 <li key={row.lordId}>
