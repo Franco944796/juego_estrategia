@@ -239,6 +239,7 @@ describe('event filtering', () => {
           winner: 'DEFENDER',
           captured: false,
           plunder: 0,
+          allies: [],
         },
       },
     ];

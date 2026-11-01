@@ -46,6 +46,7 @@ function makeTown(
     isCapital: false,
     isThrone: false,
     neutralCap: garrisonSize,
+    stationed: [],
   };
 }
 

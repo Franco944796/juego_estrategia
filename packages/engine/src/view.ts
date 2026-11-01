@@ -26,6 +26,7 @@ import type {
   Vec,
 } from './types';
 import { visibleIsles } from './vision';
+import { areAllies } from './world';
 
 export interface OwnTownInfo {
   goldPerMin: number;
@@ -47,6 +48,8 @@ export interface TownView {
   fort: number;
   /** Null when the garrison is out of sight. */
   garrison: Troops | null;
+  /** Clanmates' troops stationed here; null when the town is out of sight. */
+  stationed: { lordId: string; troops: Troops }[] | null;
   own: OwnTownInfo | null;
 }
 
@@ -62,7 +65,10 @@ export interface MarchView {
   /** Shown for own marches and for marches aimed at the viewer's towns. */
   troops: Troops | null;
   mine: boolean;
+  /** Hostile march aimed at one of the viewer's towns. */
   incoming: boolean;
+  /** March of a clanmate. */
+  allied: boolean;
 }
 
 export interface WindView {
@@ -88,6 +94,7 @@ export interface MeView {
   exiles: number;
   stats: LordStats;
   activeMarches: number;
+  clanId: string | null;
 }
 
 export interface LordSummary {
@@ -97,6 +104,7 @@ export interface LordSummary {
   isBot: boolean;
   alive: boolean;
   style: string;
+  clanId: string | null;
 }
 
 export interface SeasonView {
@@ -156,6 +164,10 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       isThrone: town.isThrone,
       fort: fortification(state, town),
       garrison: mine || visible.has(town.isleId) ? cloneTroops(projectedGarrison(state, town, t)) : null,
+      stationed:
+        mine || visible.has(town.isleId)
+          ? town.stationed.map((s) => ({ lordId: s.lordId, troops: cloneTroops(s.troops) }))
+          : null,
       own,
     };
   });
@@ -171,7 +183,9 @@ export function view(state: GameState, lordId: string, now: number): LordView {
     )
     .map((m) => {
       const mine = m.owner === lordId;
-      const incoming = !mine && state.towns[m.to]?.owner === lordId;
+      const allied = areAllies(state, lordId, m.owner);
+      const toMe = state.towns[m.to]?.owner === lordId;
+      const incoming = !mine && !allied && toMe;
       return {
         id: m.id,
         owner: m.owner,
@@ -181,9 +195,10 @@ export function view(state: GameState, lordId: string, now: number): LordView {
         arriveAt: m.arriveAt,
         sky: m.sky,
         windFactor: mine ? m.windFactor : null,
-        troops: mine || incoming ? cloneTroops(m.troops) : null,
+        troops: mine || toMe ? cloneTroops(m.troops) : null,
         mine,
         incoming,
+        allied,
       };
     });
 
@@ -216,11 +231,22 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       exiles: lord.exiles,
       stats: { ...lord.stats },
       activeMarches: state.marches.filter((m) => m.owner === lordId).length,
+      clanId: lord.clanId,
     },
     lords: state.lordOrder.flatMap((id) => {
       const l = state.lords[id];
       return l
-        ? [{ id: l.id, name: l.name, color: l.color, isBot: l.isBot, alive: l.alive, style: l.style }]
+        ? [
+            {
+              id: l.id,
+              name: l.name,
+              color: l.color,
+              isBot: l.isBot,
+              alive: l.alive,
+              style: l.style,
+              clanId: l.clanId,
+            },
+          ]
         : [];
     }),
     isles: state.isles.map((isle) => ({

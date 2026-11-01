@@ -26,6 +26,12 @@ export interface Lane {
   b: number;
 }
 
+/** Troops a clanmate keeps in someone else's town; they defend it with the owner's garrison. */
+export interface Stationed {
+  lordId: string;
+  troops: Troops;
+}
+
 export interface Town {
   id: number;
   isleId: number;
@@ -40,6 +46,7 @@ export interface Town {
   isThrone: boolean;
   /** Neutral towns regenerate up to this size; 0 once a lord has owned the town. */
   neutralCap: number;
+  stationed: Stationed[];
 }
 
 export interface LordStats {
@@ -70,6 +77,8 @@ export interface Lord {
   stats: LordStats;
   /** Cosmetic town style, chosen outside the season rules. */
   style: string;
+  /** Lords sharing a clan are allies: no attacks, shared vision, stationed reinforcements. */
+  clanId: string | null;
 }
 
 export interface March {
@@ -103,6 +112,8 @@ export interface BattleReport {
   winner: BattleWinner;
   captured: boolean;
   plunder: number;
+  /** Allied contingents that defended alongside the owner (their troops are included above). */
+  allies: { lordId: string; troops: Troops; lost: Troops }[];
 }
 
 export type ScheduledEvent =
@@ -157,6 +168,7 @@ export interface LordInit {
   personality?: Personality;
   spec?: TroopType;
   style?: string;
+  clanId?: string | null;
 }
 
 export interface CreateGameParams {
@@ -234,5 +246,7 @@ export type DomainEvent =
   | { type: 'LORD_JOINED'; at: number; lordId: string; townId: number }
   | { type: 'MAP_EXPANDED'; at: number; isleIds: number[] }
   | { type: 'MARCH_REPELLED'; at: number; march: March }
+  | { type: 'MARCH_STATIONED'; at: number; march: March }
+  | { type: 'CLAN_CHANGED'; at: number; lordId: string; clanId: string | null }
   | { type: 'STYLE_CHANGED'; at: number; lordId: string; style: string }
   | { type: 'SEASON_ENDED'; at: number; standings: Standing[] };

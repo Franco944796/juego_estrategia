@@ -1,12 +1,12 @@
-import { resolveBattle, type BattleOutcome } from './combat';
+import { resolveSiege, type BattleOutcome } from './combat';
 import { validateCommand } from './commands';
 import { fortification, projectedGarrison } from './economy';
 import { travelInfo, windIndexAt, windShiftMs, type TravelInfo } from './marches';
 import { lordMods, neutralMods } from './modifiers';
-import { totalTroops } from './troops';
+import { addTroops, totalTroops, zeroTroops } from './troops';
 import type { GameState, RuleError, Troops } from './types';
 import { visibleIsles } from './vision';
-import { getTown } from './world';
+import { areAllies, getTown } from './world';
 
 export interface LaterDeparture {
   departAt: number;
@@ -46,20 +46,37 @@ export function previewSend(
   }
 
   const travel = travelInfo(state, lordId, from, to, troops, t);
-  const reinforce = to.owner === lordId;
+  const reinforce = to.owner === lordId || areAllies(state, lordId, to.owner);
   let battle: BattleOutcome | null = null;
   if (!reinforce && totalTroops(troops) > 0 && visibleIsles(state, lordId).has(to.isleId)) {
     const attack = lordMods(state, lordId);
-    const defense = to.owner === null ? neutralMods() : lordMods(state, to.owner);
-    battle = resolveBattle(cfg, {
+    const contingents = [
+      {
+        troops: projectedGarrison(state, to, t),
+        mods: to.owner === null ? neutralMods() : lordMods(state, to.owner),
+      },
+      ...to.stationed.map((s) => ({ troops: s.troops, mods: lordMods(state, s.lordId) })),
+    ];
+    const siege = resolveSiege(cfg, {
       attacker: troops,
-      defender: projectedGarrison(state, to, t),
       attackMults: attack.attack,
-      defenseMults: defense.defense,
-      fort: fortification(state, to),
       attackerLossMult: attack.winnerLosses,
-      defenderLossMult: defense.winnerLosses,
+      defenders: contingents.map((c) => ({
+        troops: c.troops,
+        defenseMults: c.mods.defense,
+        lossMult: c.mods.winnerLosses,
+      })),
+      fort: fortification(state, to),
     });
+    battle = {
+      attackerPower: siege.attackerPower,
+      defenderPower: siege.defenderPower,
+      winner: siege.winner,
+      attackerSurvivors: siege.attackerSurvivors,
+      attackerLost: siege.attackerLost,
+      defenderSurvivors: siege.defenders.reduce((sum, d) => addTroops(sum, d.survivors), zeroTroops()),
+      defenderLost: siege.defenders.reduce((sum, d) => addTroops(sum, d.lost), zeroTroops()),
+    };
   }
 
   const later: LaterDeparture[] = [];

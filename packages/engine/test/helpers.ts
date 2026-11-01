@@ -98,6 +98,9 @@ export function give(_state: GameState, town: Town, owner: string | null, garris
 export function allTroops(state: GameState): number {
   let sum = 0;
   for (const town of state.towns) sum += town.garrison.LANCER + town.garrison.ARCHER + town.garrison.GRIFFIN;
+  for (const town of state.towns) {
+    for (const s of town.stationed) sum += s.troops.LANCER + s.troops.ARCHER + s.troops.GRIFFIN;
+  }
   for (const m of state.marches) sum += m.troops.LANCER + m.troops.ARCHER + m.troops.GRIFFIN;
   return sum;
 }

@@ -35,6 +35,7 @@ export function foundLord(
     exiles: 0,
     stats: { captures: 0, townsLost: 0, battlesWon: 0, battlesLost: 0, troopsKilled: 0, troopsLost: 0 },
     style: init.style ?? cfg.cosmetics.styles[0]?.id ?? '',
+    clanId: init.clanId ?? null,
   };
   state.lords[init.id] = lord;
   state.lordOrder.push(init.id);
@@ -119,6 +120,7 @@ export function setOwner(
   const previous = town.owner;
   town.owner = newOwner;
   town.carry = 0;
+  town.stationed = [];
   town.neutralCap = 0;
   const wasCapital = town.isCapital;
   town.isCapital = false;
@@ -211,4 +213,24 @@ export function openDrafts(state: GameState, lord: Lord, at: number, events: Dom
       return;
     }
   }
+}
+
+/** Two different lords in the same clan. */
+export function areAllies(state: GameState, a: string | null, b: string | null): boolean {
+  if (a === null || b === null || a === b) return false;
+  const clan = getLord(state, a)?.clanId ?? null;
+  return clan !== null && clan === (getLord(state, b)?.clanId ?? null);
+}
+
+/** Fills fields added after a state was saved (older demo saves and server snapshots). */
+export function migrateState(state: GameState): GameState {
+  for (const town of state.towns) town.stationed ??= [];
+  for (const id of state.lordOrder) {
+    const lord = state.lords[id];
+    if (!lord) continue;
+    lord.clanId ??= null;
+    lord.style ??= state.config.cosmetics.styles[0]?.id ?? '';
+  }
+  for (const report of state.reports) report.allies ??= [];
+  return state;
 }

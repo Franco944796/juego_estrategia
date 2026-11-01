@@ -64,7 +64,8 @@ function marchSlots(turn: Turn): number {
 /** Unseen garrisons are guessed: neutrals at their regeneration ceiling, lords at their cap. */
 function knownGarrison(turn: Turn, town: Town): Troops {
   const cfg = turn.state.config;
-  if (turn.visible.has(town.isleId)) return town.garrison;
+  if (turn.visible.has(town.isleId))
+    return town.stationed.reduce((sum, s) => addTroops(sum, s.troops), town.garrison);
   const size = town.owner === null ? town.neutralCap : (cfg.towns.garrisonCap[town.tier - 1] ?? 0);
   return splitGarrison(size, town.spec, cfg.neutral.mainShare);
 }

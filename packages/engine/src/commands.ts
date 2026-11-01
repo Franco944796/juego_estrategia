@@ -1,9 +1,9 @@
 import { EDICT_IDS, TROOP_TYPES } from '@si/config/constants';
 import { accrueTo, projectedGarrison, projectedGold, respecCost, upgradeCost } from './economy';
 import { launchMarch } from './marches';
-import { fitsIn, totalTroops } from './troops';
+import { fitsIn, totalTroops, zeroTroops } from './troops';
 import type { Command, DomainEvent, GameState, RuleError, RuleId, Troops } from './types';
-import { chooseEdict, getLord, getTown, islesLinked } from './world';
+import { areAllies, chooseEdict, getLord, getTown, islesLinked } from './world';
 
 function fail(rule: RuleId, code: string, message: string): RuleError {
   return { rule, code, message };
@@ -92,7 +92,10 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
     case 'SEND': {
       const from = state.towns[command.from];
       const to = state.towns[command.to];
-      if (!from || !to || from.owner !== lordId) return fail('R03', 'NOT_OWNER', 'source not owned');
+      const stationed = from?.stationed.find((s) => s.lordId === lordId);
+      if (!from || !to || (from.owner !== lordId && !stationed)) {
+        return fail('R03', 'NOT_OWNER', 'no troops of yours in the source town');
+      }
       const amounts = TROOP_TYPES.map((type) => command.troops[type]);
       if (
         amounts.some((n) => !Number.isInteger(n) || n < 0) ||
@@ -100,7 +103,9 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       ) {
         return fail('R07', 'BAD_TROOPS', 'troop amounts must be whole, non-negative and enough');
       }
-      if (!fitsIn(command.troops, projectedGarrison(state, from, now))) {
+      const available =
+        from.owner === lordId ? projectedGarrison(state, from, now) : (stationed?.troops ?? zeroTroops());
+      if (!fitsIn(command.troops, available)) {
         return fail('R08', 'NOT_ENOUGH_TROOPS', 'not enough troops in the town');
       }
       if (from.id === to.id) return fail('R09', 'SAME_TOWN', 'target is the source');
@@ -108,7 +113,12 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
         return fail('R10', 'UNREACHABLE', 'target isle has no lane to the source isle');
       }
       if (to.isThrone && !state.throneUnsealed) return fail('R11', 'THRONE_SEALED', 'the Throne is sealed');
-      if (cfg.rules.capitalImmune && to.isCapital && to.owner !== lordId) {
+      if (
+        cfg.rules.capitalImmune &&
+        to.isCapital &&
+        to.owner !== lordId &&
+        !areAllies(state, lordId, to.owner)
+      ) {
         return fail('R15', 'CAPITAL_IMMUNE', 'capitals cannot be attacked');
       }
       const active = state.marches.filter((m) => m.owner === lordId).length;

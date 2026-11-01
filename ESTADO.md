@@ -23,6 +23,11 @@
 - `ESTADO.md` reemplaza a PLAN.md y PROGRESS.md del prompt.
 - Node: lo instala Franco con pacman (`sudo pacman -S --needed nodejs npm pnpm`).
 - Git: Claude hace commits locales por hito; el push lo hace Franco (decidido 2026-11-01).
+- Clanes y chat (decidido 2026-11-01): clanes con solicitud que acepta líder u oficial, máximo 20,
+  persisten entre temporadas; entre miembros no hay ataques, se comparte visión y se puede reforzar
+  pueblos aliados (guarniciones de varios dueños); chat global y de clan (200 caracteres, límite de
+  envíos, últimos 100 guardados); ranking de clanes por suma de Dominio, medalla al clan ganador sin
+  Legado extra.
 - Servidor multijugador (decidido 2026-10-31):
   - un único mundo público siempre abierto; temporada de 30 días en tiempo real (×1); al terminar se
     reinicia y cada jugador vuelve a empezar con una ciudad de nivel 1 al conectarse;
@@ -54,8 +59,16 @@
 
 ## En curso
 
-- Nada. Etapa «servidor multijugador» terminada el 2026-10-31, sin commitear (los commits los hace
-  Franco).
+- Etapa «clanes y chat». Plan:
+  1. Motor: `clanId` por señor (`setClan`, registrado en el log), tropas aliadas estacionadas por
+     pueblo, misión al llegar (propio → refuerzo, aliado → estacionar, otro → batalla), defensa con
+     todos los contingentes, retirar tropas estacionadas, visión compartida, R15 permite reforzar
+     capitales aliadas, regreso automático al romperse la alianza; tests.
+  2. Servidor: tablas de clanes, miembros, solicitudes y chat; API de clanes; chat por WebSocket;
+     ranking de clanes; medalla al cerrar la temporada; tests.
+  3. Cliente: pestaña «Social» en línea (chat global/clan, clan, solicitudes), refuerzo a aliados,
+     tropas aliadas en la hoja del pueblo, ranking de clanes, salón de la fama; e2e y revisión visual.
+  4. Commit por paso.
 
 ## Hecho en la etapa del servidor (2026-10-31)
 
