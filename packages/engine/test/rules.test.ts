@@ -5,11 +5,11 @@ import {
   capitalOf,
   game,
   give,
-  innerRingTown,
   lord,
   MIN,
   neutralsBeside,
   T0,
+  publicNeutral,
   townOutOfReach,
   troops,
 } from './helpers';
@@ -144,8 +144,8 @@ describe('rule register', () => {
   });
 
   it('R11 the Throne cannot be targeted while sealed', () => {
-    const { state } = setup();
-    const inner = innerRingTown(state);
+    const state = game({ config: { throne: { enabled: true } } });
+    const inner = publicNeutral(state);
     give(state, inner, 'h1', troops(50));
     const cmd = { type: 'SEND', from: inner.id, to: state.throneTownId, troops: troops(5) };
     expectRule(execute(state, 'h1', cmd, T0), 'R11');

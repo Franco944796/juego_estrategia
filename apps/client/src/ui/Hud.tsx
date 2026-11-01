@@ -2,8 +2,8 @@ import { formatDecimal, formatDuration, formatNumber } from '../format';
 import { t, WIND_NAMES } from '../i18n';
 import { toRealMs, useGame } from '../store';
 import { useGameNow } from './hooks';
-import { CoinIcon, CrownIcon, StarIcon, WindArrow } from './icons';
-import { ownerName } from './labels';
+import { CoinIcon, CrownIcon, LevelIcon, WindArrow } from './icons';
+import { ownerName, townById } from './labels';
 
 export function Hud() {
   const view = useGame((s) => s.view);
@@ -13,12 +13,14 @@ export function Hud() {
   if (!view) return null;
   const { me, season, wind } = view;
   const real = (gameMs: number): string => formatDuration(toRealMs(clock, gameMs));
-  const throneTown = view.towns[season.throneTownId];
-  let throne = t(lang, 'throneFree');
-  if (!season.throneUnsealed) throne = t(lang, 'throneSealed', { t: real(season.throneUnsealAt - now) });
+  const throneTown = townById(view, season.throneTownId);
+  let throne: string | null = null;
+  if (throneTown && !season.throneUnsealed)
+    throne = t(lang, 'throneSealed', { t: real(season.throneUnsealAt - now) });
   else if (throneTown?.owner)
     throne = t(lang, 'throneHeld', { name: ownerName(lang, view, throneTown.owner) });
-  const gloryShare = me.nextGlory ? Math.min(1, me.glory / me.nextGlory) : 1;
+  else if (throneTown) throne = t(lang, 'throneFree');
+  const levelShare = me.nextLevelXp ? Math.min(1, me.xp / me.nextLevelXp) : 1;
   let time = t(lang, 'timeLeft', { t: real(season.endsAt - now) });
   if (season.status === 'ENDED') time = t(lang, 'seasonOver');
   else if (clock.rate === 0) time = t(lang, 'paused');
@@ -45,12 +47,12 @@ export function Hud() {
               </span>
             </span>
           </div>
-          <div className="stat" data-testid="hud-glory" title={t(lang, 'glory')}>
-            <StarIcon className="stat-icon glory" />
+          <div className="stat" data-testid="hud-level" title={t(lang, 'levelTitle')}>
+            <LevelIcon className="stat-icon level" />
             <span className="stat-text">
-              <span className="stat-value">{Math.floor(me.glory)}</span>
+              <span className="stat-value">{t(lang, 'levelShort', { n: me.level })}</span>
               <span className="meter" aria-hidden="true">
-                <span className="meter-fill" style={{ width: `${gloryShare * 100}%` }} />
+                <span className="meter-fill level" style={{ width: `${levelShare * 100}%` }} />
               </span>
             </span>
           </div>
@@ -59,7 +61,7 @@ export function Hud() {
           <span className="chip" data-testid="hud-time">
             {time}
           </span>
-          <span className="chip">{throne}</span>
+          {throne && <span className="chip">{throne}</span>}
         </div>
       </div>
       <div className="wind-rose" data-testid="hud-wind" title={t(lang, 'wind')}>

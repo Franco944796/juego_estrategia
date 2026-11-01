@@ -2,11 +2,11 @@ import { MINUTE_MS, TROOP_TYPES } from '@si/config/constants';
 import { resolveSiege } from './combat';
 import { fortification } from './economy';
 import { distance, windFactor } from './geometry';
-import { lordMods, neutralMods } from './modifiers';
+import { lordMods, neutralMods, type LordMods } from './modifiers';
 import { schedule } from './queue';
 import { addTroops, cloneTroops, subTroops, totalTroops, zeroTroops } from './troops';
 import type { BattleReport, DomainEvent, GameState, Lord, March, Town, Troops } from './types';
-import { areAllies, checkExile, getLord, openDrafts, setOwner } from './world';
+import { areAllies, checkExile, gainXp, getLord, openDrafts, setOwner } from './world';
 
 export function windShiftMs(state: GameState): number {
   return Math.round(state.config.wind.shiftEveryMin * MINUTE_MS);
@@ -28,8 +28,13 @@ export interface TravelInfo {
 }
 
 /** A march moves at the speed of its slowest troop type. */
-export function slowestSpeed(state: GameState, lordId: string, troops: Troops): number {
-  const mods = lordMods(state, lordId);
+export function slowestSpeed(
+  state: GameState,
+  lordId: string,
+  troops: Troops,
+  lordModsGiven?: LordMods,
+): number {
+  const mods = lordModsGiven ?? lordMods(state, lordId);
   let slowest = Infinity;
   for (const type of TROOP_TYPES) {
     if (troops[type] > 0) slowest = Math.min(slowest, state.config.troops[type].speed * mods.speed[type]);
@@ -45,13 +50,15 @@ export function travelInfo(
   to: Town,
   troops: Troops,
   departAt: number,
+  lordModsGiven?: LordMods,
 ): TravelInfo {
   const cfg = state.config;
+  const mods = lordModsGiven ?? lordMods(state, lordId);
   const sky = from.isleId !== to.isleId;
-  let speed = (sky ? cfg.march.skySpeed : cfg.march.landSpeed) * slowestSpeed(state, lordId, troops);
+  let speed = (sky ? cfg.march.skySpeed : cfg.march.landSpeed) * slowestSpeed(state, lordId, troops, mods);
   let factor = 1;
   if (sky) {
-    const headwindMin = Math.max(cfg.wind.headwindMin, lordMods(state, lordId).headwindMin ?? 0);
+    const headwindMin = Math.max(cfg.wind.headwindMin, mods.headwindMin ?? 0);
     factor = windFactor(from.pos, to.pos, windDirAt(state, departAt), cfg.wind.tailwindMax, headwindMin);
     speed *= factor;
   }
@@ -207,6 +214,9 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
     attacker.glory += cfg.glory.perCaptureTier * town.tier;
     attacker.stats.captures++;
   }
+  const capturedXp = captured
+    ? cfg.levels.xpPerCaptureTier * town.tier * (defenderId === null ? 1 : cfg.levels.lordCaptureMult)
+    : 0;
 
   const report: BattleReport = {
     id: state.nextReportId++,
@@ -239,6 +249,7 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
   if (captured) {
     setOwner(state, town, attacker.id, at, events);
     town.garrison = outcome.attackerSurvivors;
+    gainXp(state, attacker, capturedXp, at, events);
   }
   openDrafts(state, attacker, at, events);
   for (const lord of defenders) openDrafts(state, lord, at, events);

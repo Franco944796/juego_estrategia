@@ -9,15 +9,31 @@ export interface Vec {
   y: number;
 }
 
+/** A shore spot where one lord can appear; an isle is full when every slot is taken. */
+export interface SpawnSlot {
+  pos: Vec;
+  lordId: string | null;
+}
+
 export interface Isle {
   id: number;
+  /** 0 for the first isle, then the ring of isles around it the isle belongs to. */
   ring: number;
   pos: Vec;
   radius: number;
   /** Outline radius multipliers, only used for rendering. */
   shape: number[];
   townIds: number[];
-  hasBeacon: boolean;
+  slots: SpawnSlot[];
+  bornAt: number;
+}
+
+/** A cluster of about ten towns with its own beacon. */
+export interface Zone {
+  id: number;
+  isleId: number;
+  pos: Vec;
+  townIds: number[];
   beaconOwner: string | null;
 }
 
@@ -47,6 +63,9 @@ export interface Town {
   /** Neutral towns regenerate up to this size; 0 once a lord has owned the town. */
   neutralCap: number;
   stationed: Stationed[];
+  zoneId: number | null;
+  /** A starter town only this lord can see or target until someone owns it. */
+  privateTo: string | null;
 }
 
 export interface LordStats {
@@ -79,6 +98,10 @@ export interface Lord {
   style: string;
   /** Lords sharing a clan are allies: no attacks, shared vision, stationed reinforcements. */
   clanId: string | null;
+  /** Season level from conquest experience; each level adds troops and gold production. */
+  level: number;
+  /** Experience toward the next level. */
+  xp: number;
 }
 
 export interface March {
@@ -121,7 +144,8 @@ export type ScheduledEvent =
   | { kind: 'WIND_SHIFT'; index: number }
   | { kind: 'THRONE_UNSEAL' }
   | { kind: 'SEASON_END' }
-  | { kind: 'BOT_TURN'; lordId: string };
+  | { kind: 'BOT_TURN'; lordId: string }
+  | { kind: 'GROW_CHECK' };
 
 export interface QueueItem {
   dueAt: number;
@@ -131,8 +155,11 @@ export interface QueueItem {
 
 export type SeasonStatus = 'RUNNING' | 'ENDED';
 
+/** Bumped when the state shape changes so much that older saves cannot be loaded. */
+export const STATE_VERSION = 2;
+
 export interface GameState {
-  version: 1;
+  version: typeof STATE_VERSION;
   seed: number;
   rng: [number, number, number, number];
   config: GameConfig;
@@ -140,11 +167,12 @@ export interface GameState {
   endsAt: number;
   throneUnsealAt: number;
   throneUnsealed: boolean;
-  throneTownId: number;
+  throneTownId: number | null;
   status: SeasonStatus;
   /** Production is settled up to this instant; it only moves at commands and scheduled events. */
   accruedAt: number;
   isles: Isle[];
+  zones: Zone[];
   lanes: Lane[];
   towns: Town[];
   lords: Record<string, Lord>;
@@ -158,6 +186,10 @@ export interface GameState {
   reports: BattleReport[];
   nextReportId: number;
   standings: Standing[] | null;
+  /** When a growth check is already scheduled (daily isle cap reached), so it is not queued twice. */
+  growCheckAt: number | null;
+  /** Angle of the first ring of isles, kept so isles born later line up with it. */
+  mapSpin: number;
 }
 
 export interface LordInit {
@@ -236,7 +268,7 @@ export type DomainEvent =
   | { type: 'BATTLE'; at: number; report: BattleReport }
   | { type: 'TOWN_CAPTURED'; at: number; townId: number; from: string | null; to: string }
   | { type: 'CAPITAL_MOVED'; at: number; lordId: string; townId: number | null }
-  | { type: 'BEACON_CHANGED'; at: number; isleId: number; owner: string | null }
+  | { type: 'BEACON_CHANGED'; at: number; zoneId: number; owner: string | null }
   | { type: 'WIND_SHIFTED'; at: number; dir: number }
   | { type: 'THRONE_UNSEALED'; at: number }
   | { type: 'EDICT_DRAFT'; at: number; lordId: string; options: EdictId[] }
@@ -248,5 +280,6 @@ export type DomainEvent =
   | { type: 'MARCH_REPELLED'; at: number; march: March }
   | { type: 'MARCH_STATIONED'; at: number; march: March }
   | { type: 'CLAN_CHANGED'; at: number; lordId: string; clanId: string | null }
+  | { type: 'LEVEL_UP'; at: number; lordId: string; level: number; troops: Troops }
   | { type: 'STYLE_CHANGED'; at: number; lordId: string; style: string }
   | { type: 'SEASON_ENDED'; at: number; standings: Standing[] };

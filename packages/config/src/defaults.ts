@@ -5,22 +5,19 @@ export const defaultConfig: GameConfig = {
   meta: { gameTitle: 'Shattered Isles' },
   season: { durationMin: 360 },
   map: {
-    rings: [
-      { isles: 6, radius: 270, tiers: [2, 3] },
-      { isles: 12, radius: 540, tiers: [1, 1] },
-    ],
-    townsPerIsle: [3, 5],
-    isleRadius: [58, 78],
-    townRing: 0.55,
-    townJitter: 4,
-    angleJitter: 0.1,
-    radiusJitter: 24,
-    throneIsleRadius: 70,
-    laneNeighbors: 3,
-    maxLaneLength: 360,
-    shapePoints: 14,
-    shapeJitter: 0.14,
-    growth: { ringSpacing: 270, isleSpacing: 283, tiers: [1, 1] },
+    isle: {
+      towns: 100,
+      radius: 200,
+      shore: 70,
+      jitter: 3,
+      tierBands: [0.35, 0.7],
+      tiers: [3, 2, 1],
+      zoneSize: 10,
+    },
+    spawn: { slots: 10, privateTowns: 3, privateSpacing: 38 },
+    growth: { isleSpacing: 760, maxPerDay: 3, laneNeighbors: 2, maxLaneLength: 900 },
+    shapePoints: 18,
+    shapeJitter: 0.08,
   },
   wind: {
     shiftEveryMin: 30,
@@ -45,7 +42,8 @@ export const defaultConfig: GameConfig = {
     fortPerTier: 0.25,
     capitalFort: 1.75,
     capitalProdMult: 1.5,
-    homeIsleFort: 1.5,
+    homeFort: 1.5,
+    homeRadius: 110,
     sprawl: { freeTowns: 8, penaltyPerTown: 0.05 },
   },
   neutral: {
@@ -57,6 +55,7 @@ export const defaultConfig: GameConfig = {
   dominion: { perTier: [1, 2, 3, 4.5, 6] },
   beacon: { prodBonus: 0.25, dominionPerMin: 3, visionHops: 1 },
   throne: {
+    enabled: false,
     tier: 5,
     garrison: 240,
     unsealAtFraction: 0.3,
@@ -82,9 +81,9 @@ export const defaultConfig: GameConfig = {
     },
   },
   march: {
-    landSpeed: 35,
-    skySpeed: 45,
-    minDurationMin: 0.5,
+    landSpeed: 350,
+    skySpeed: 450,
+    minDurationMin: 0.05,
     minTroops: 1,
     maxActivePerLord: 10,
   },
@@ -98,6 +97,7 @@ export const defaultConfig: GameConfig = {
   bots: {
     thinkEveryMin: 3,
     jitterMin: 1,
+    targetsPerTown: 12,
     personalities: {
       RAIDER: {
         attackMargin: 1.15,
@@ -177,6 +177,16 @@ export const defaultConfig: GameConfig = {
     ],
   },
   rules: { capitalImmune: false },
+  levels: {
+    xpPerCaptureTier: 10,
+    lordCaptureMult: 2,
+    xpBase: 30,
+    xpGrowth: 1.25,
+    troopsBase: 9,
+    troopsPerLevel: 3,
+    goldBonusPerLevel: 0.01,
+    maxLevel: 100,
+  },
   rewards: {
     tiers: [
       { topShare: 0.05, legacy: 100 },

@@ -70,6 +70,12 @@ export const ChatIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const LevelIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 14l6-6 6 6M6 19l6-6 6 6" />
+  </Svg>
+);
+
 export const MenuIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 7h16M4 12h16M4 17h16" />

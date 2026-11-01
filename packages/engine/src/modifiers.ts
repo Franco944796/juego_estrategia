@@ -39,7 +39,30 @@ export function neutralMods(): LordMods {
   };
 }
 
-export function lordMods(state: GameState, lordId: string | null): LordMods {
+/** Memoized lordMods for loops that read many towns while ownership stays put. */
+export function modsMemo(state: GameState): (lordId: string | null) => LordMods {
+  const cache = new Map<string | null, LordMods>();
+  return (lordId) => {
+    let mods = cache.get(lordId);
+    if (!mods) {
+      mods = lordMods(state, lordId);
+      cache.set(lordId, mods);
+    }
+    return mods;
+  };
+}
+
+/** Towns per owner, counted in one pass for loops that need every lord's modifiers. */
+export function ownedCounts(state: GameState): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const town of state.towns) {
+    if (town.owner !== null) counts.set(town.owner, (counts.get(town.owner) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** `owned` skips counting the lord's towns when the caller already knows it. */
+export function lordMods(state: GameState, lordId: string | null, owned?: number): LordMods {
   const mods = neutralMods();
   if (lordId === null) return mods;
   const lord = state.lords[lordId];
@@ -62,11 +85,15 @@ export function lordMods(state: GameState, lordId: string | null): LordMods {
     mods.dominion *= e.dominion ?? 1;
     mods.winnerLosses *= e.winnerLosses ?? 1;
   }
+  mods.goldProd *= 1 + state.config.levels.goldBonusPerLevel * (lord.level - 1);
   const { freeTowns, penaltyPerTown } = state.config.towns.sprawl;
   if (penaltyPerTown > 0) {
-    let owned = 0;
-    for (const town of state.towns) if (town.owner === lordId) owned++;
-    mods.sprawl = 1 / (1 + Math.max(0, owned - freeTowns) * penaltyPerTown);
+    let count = owned;
+    if (count === undefined) {
+      count = 0;
+      for (const town of state.towns) if (town.owner === lordId) count++;
+    }
+    mods.sprawl = 1 / (1 + Math.max(0, count - freeTowns) * penaltyPerTown);
   }
   return mods;
 }

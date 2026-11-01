@@ -5,7 +5,7 @@ import { command } from '../game/session';
 import { t, TROOP_NAMES } from '../i18n';
 import { useGame } from '../store';
 import { CloseIcon, CrownIcon, ShieldIcon, TroopIcon } from './icons';
-import { isAlly, linkedIsles, ownerColor, ownerName, townLabel } from './labels';
+import { isAlly, linkedIsles, ownerColor, ownerName, townById, townLabel } from './labels';
 
 /** The player's town with the most troops that can reach `target`, if any. */
 export function bestSource(view: LordView, target: TownView): TownView | null {
@@ -25,12 +25,13 @@ export function TownSheet({ townId }: { townId: number }) {
   const startPicking = useGame((s) => s.startPicking);
   const openSend = useGame((s) => s.openSend);
   const select = useGame((s) => s.select);
-  const town = view?.towns[townId];
+  const town = view ? townById(view, townId) : undefined;
   if (!view || !town) return null;
   const mine = town.owner === view.me.id;
   const ally = !mine && isAlly(view, town.owner);
   const myStationed = town.stationed?.find((s) => s.lordId === view.me.id);
-  const isle = view.isles[town.isleId];
+  const zone = town.zoneId === null ? undefined : view.zones[town.zoneId];
+  const zoneMine = zone ? zone.townIds.filter((id) => townById(view, id)?.owner === view.me.id).length : 0;
   const source = mine ? null : bestSource(view, town);
   const gold = view.me.gold;
   const own = town.own;
@@ -103,10 +104,19 @@ export function TownSheet({ townId }: { townId: number }) {
             </span>
           </div>
         )}
-        {isle?.beaconOwner && (
-          <div className="fact">
+        {town.isPrivate && (
+          <p className="muted" data-testid="private-town">
+            {t(lang, 'privateTown')}
+          </p>
+        )}
+        {zone && (
+          <div className="fact" data-testid="zone">
             <CrownIcon size={15} />
-            <span>{t(lang, 'beacon', { name: ownerName(lang, view, isle.beaconOwner) })}</span>
+            <span>
+              {zone.beaconOwner
+                ? t(lang, 'beacon', { name: ownerName(lang, view, zone.beaconOwner) })
+                : t(lang, 'zoneProgress', { n: zoneMine, total: zone.townIds.length })}
+            </span>
           </div>
         )}
       </div>

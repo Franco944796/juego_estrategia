@@ -1,6 +1,7 @@
-import { EDICT_IDS } from '@si/config/constants';
+import { EDICT_IDS, TROOP_TYPES } from '@si/config/constants';
+import { checkGrowth } from './growth';
 import { pick, shuffle } from './rng';
-import { cloneTroops } from './troops';
+import { addTroops, cloneTroops, zeroTroops } from './troops';
 import type { DomainEvent, EdictId, GameState, Lord, LordInit, Personality, Town } from './types';
 
 /** Turns `town` into the capital of a new lord and registers the lord. */
@@ -36,6 +37,8 @@ export function foundLord(
     stats: { captures: 0, townsLost: 0, battlesWon: 0, battlesLost: 0, troopsKilled: 0, troopsLost: 0 },
     style: init.style ?? cfg.cosmetics.styles[0]?.id ?? '',
     clanId: init.clanId ?? null,
+    level: 1,
+    xp: 0,
   };
   state.lords[init.id] = lord;
   state.lordOrder.push(init.id);
@@ -56,7 +59,7 @@ export function townsOf(state: GameState, lordId: string): Town[] {
 
 const adjacencyCache = new WeakMap<GameState['lanes'], number[][]>();
 
-/** Isle adjacency lists, cached per lanes array (the lanes never change during a season). */
+/** Isle adjacency lists, cached per lanes array (growth replaces the array instead of mutating it). */
 export function isleNeighbors(state: GameState): number[][] {
   const cached = adjacencyCache.get(state.lanes);
   if (cached) return cached;
@@ -85,15 +88,21 @@ export function reachableTowns(state: GameState, from: Town): Town[] {
   return result;
 }
 
-export function recomputeBeacon(state: GameState, isleId: number, at: number, events: DomainEvent[]): void {
-  const isle = state.isles[isleId];
-  if (!isle || !isle.hasBeacon) return;
-  const owners = isle.townIds.map((id) => state.towns[id]?.owner ?? null);
+/** A zone's beacon is lit for the lord who owns every town in it. */
+export function recomputeZone(
+  state: GameState,
+  zoneId: number | null,
+  at: number,
+  events: DomainEvent[],
+): void {
+  const zone = zoneId === null ? undefined : state.zones[zoneId];
+  if (!zone) return;
+  const owners = zone.townIds.map((id) => state.towns[id]?.owner ?? null);
   const first = owners[0] ?? null;
   const lit = first !== null && owners.every((owner) => owner === first) ? first : null;
-  if (lit !== isle.beaconOwner) {
-    isle.beaconOwner = lit;
-    events.push({ type: 'BEACON_CHANGED', at, isleId, owner: lit });
+  if (lit !== zone.beaconOwner) {
+    zone.beaconOwner = lit;
+    events.push({ type: 'BEACON_CHANGED', at, zoneId: zone.id, owner: lit });
   }
 }
 
@@ -122,6 +131,7 @@ export function setOwner(
   town.carry = 0;
   town.stationed = [];
   town.neutralCap = 0;
+  town.privateTo = null;
   const wasCapital = town.isCapital;
   town.isCapital = false;
   events.push({ type: 'TOWN_CAPTURED', at, townId: town.id, from: previous, to: newOwner });
@@ -139,12 +149,13 @@ export function setOwner(
     winner.capitalId = town.id;
     events.push({ type: 'CAPITAL_MOVED', at, lordId: winner.id, townId: town.id });
   }
-  recomputeBeacon(state, town.isleId, at, events);
+  recomputeZone(state, town.zoneId, at, events);
+  checkGrowth(state, at, events);
 }
 
 /**
- * A lord with no towns and no marches in flight restarts on a free neutral town (outermost ring
- * first, lowest tier), or is eliminated when none is left.
+ * A lord with no towns and no marches in flight restarts on a free neutral town (newest isle first,
+ * lowest tier), or is eliminated when none is left.
  */
 export function checkExile(state: GameState, lordId: string, at: number, events: DomainEvent[]): void {
   const lord = getLord(state, lordId);
@@ -153,11 +164,12 @@ export function checkExile(state: GameState, lordId: string, at: number, events:
   if (state.marches.some((march) => march.owner === lordId)) return;
 
   if (state.config.exile.enabled) {
-    const ringOf = (town: Town): number => state.isles[town.isleId]?.ring ?? 0;
-    const neutral = state.towns.filter((town) => town.owner === null && !town.isThrone);
+    const neutral = state.towns.filter(
+      (town) => town.owner === null && !town.isThrone && town.privateTo === null,
+    );
     if (neutral.length > 0) {
-      const outermost = Math.max(...neutral.map(ringOf));
-      const free = neutral.filter((town) => ringOf(town) === outermost);
+      const newest = Math.max(...neutral.map((town) => town.isleId));
+      const free = neutral.filter((town) => town.isleId === newest);
       const minTier = Math.min(...free.map((town) => town.tier));
       const town = pick(
         state.rng,
@@ -171,7 +183,8 @@ export function checkExile(state: GameState, lordId: string, at: number, events:
       lord.capitalId = town.id;
       lord.exiles++;
       events.push({ type: 'LORD_EXILED', at, lordId, townId: town.id });
-      recomputeBeacon(state, town.isleId, at, events);
+      recomputeZone(state, town.zoneId, at, events);
+      checkGrowth(state, at, events);
       return;
     }
   }
@@ -229,8 +242,42 @@ export function migrateState(state: GameState): GameState {
     const lord = state.lords[id];
     if (!lord) continue;
     lord.clanId ??= null;
+    lord.level ??= 1;
+    lord.xp ??= 0;
     lord.style ??= state.config.cosmetics.styles[0]?.id ?? '';
   }
   for (const report of state.reports) report.allies ??= [];
   return state;
+}
+
+/** Experience needed to go from `level` to the next one. */
+export function xpForLevel(state: GameState, level: number): number {
+  const { xpBase, xpGrowth } = state.config.levels;
+  return Math.round(xpBase * xpGrowth ** (level - 1));
+}
+
+/** Adds conquest experience; every level reached sends troops of all three types to the capital. */
+export function gainXp(state: GameState, lord: Lord, xp: number, at: number, events: DomainEvent[]): void {
+  const cfg = state.config.levels;
+  lord.xp += xp;
+  while (lord.level < cfg.maxLevel && lord.xp >= xpForLevel(state, lord.level)) {
+    lord.xp -= xpForLevel(state, lord.level);
+    lord.level++;
+    const total = cfg.troopsBase + cfg.troopsPerLevel * lord.level;
+    const each = Math.floor(total / TROOP_TYPES.length);
+    const capital = lord.capitalId === null ? undefined : state.towns[lord.capitalId];
+    const troops = { LANCER: each, ARCHER: each, GRIFFIN: each };
+    if (capital) {
+      troops[capital.spec] += total - each * TROOP_TYPES.length;
+      capital.garrison = addTroops(capital.garrison, troops);
+    }
+    events.push({
+      type: 'LEVEL_UP',
+      at,
+      lordId: lord.id,
+      level: lord.level,
+      troops: capital ? troops : zeroTroops(),
+    });
+  }
+  if (lord.level >= cfg.maxLevel) lord.xp = 0;
 }

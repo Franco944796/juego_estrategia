@@ -11,10 +11,12 @@ import {
   config,
   game,
   give,
+  growTo,
   humans,
   lord,
   neutralsBeside,
   NO_PRODUCTION,
+  publicNeutral,
   T0,
   townAcrossLane,
   troops,
@@ -121,6 +123,47 @@ describe('bot decisions', () => {
     botTurn(state, 'b1', T0, events);
     const launched = events.find((e) => e.type === 'MARCH_LAUNCHED' && e.march.owner === 'b1');
     expect(launched).toBeDefined();
+  });
+
+  it('pushes troops stuck at the cap from an inner town toward the frontier', () => {
+    const state = duel();
+    for (const t of state.towns) if (t.owner === null) t.garrison = troops(10_000);
+    const inner = publicNeutral(state);
+    const cluster = [inner, ...neutralsBeside(state, inner).slice(0, state.config.bots.targetsPerTown + 6)];
+    for (const t of cluster) give(state, t, 'b1', troops(0));
+    inner.garrison = troops(state.config.towns.garrisonCap[inner.tier - 1] ?? 0);
+    const events: DomainEvent[] = [];
+    botTurn(state, 'b1', T0, events);
+    const moved = events.find((e) => e.type === 'MARCH_LAUNCHED' && e.march.from === inner.id);
+    if (!moved || moved.type !== 'MARCH_LAUNCHED') throw new Error('no consolidation');
+    expect(state.towns[moved.march.to]?.owner).toBe('b1');
+    expect(count(events, 'MARCH_LAUNCHED')).toBe(1);
+  });
+
+  it('judges unseen garrisons by their ceiling, not their real size', () => {
+    const fog = (hops: number): DomainEvent[] => {
+      const state = game({
+        lords: [...humans(1), warden],
+        config: {
+          ...NO_PRODUCTION,
+          vision: { hops },
+          wind: { tailwindMax: 1, headwindMin: 1 },
+          bots: { targetsPerTown: 500 },
+        },
+      });
+      growTo(state, 2);
+      for (const t of state.towns) {
+        if (t.owner !== null) continue;
+        t.garrison = troops(t.isleId === 0 ? 10_000 : 0);
+        t.neutralCap = 10_000;
+      }
+      capitalOf(state, 'b1').garrison = troops(200);
+      const events: DomainEvent[] = [];
+      botTurn(state, 'b1', T0, events);
+      return events.filter((e) => e.type === 'MARCH_LAUNCHED');
+    };
+    expect(fog(0)).toHaveLength(0);
+    expect(fog(1).length).toBeGreaterThan(0);
   });
 
   it('does nothing for a human or an eliminated lord', () => {

@@ -18,7 +18,7 @@ const preset = values.preset === 'live' ? 'live' : 'demo';
 const config = preset === 'live' ? liveConfig : defaultConfig;
 const bots = Number(values.bots);
 const seed = Number(values.seed);
-// Short demo seasons vary a lot from seed to seed; a month-long live season takes ~10 s to simulate.
+// Short demo seasons vary a lot from seed to seed; a month-long live season takes ~35 s to simulate.
 const DEFAULT_RUNS = { demo: 12, live: 3 };
 const runs = Number(values.runs ?? DEFAULT_RUNS[preset]);
 const results = Array.from({ length: runs }, (_, i) => simulateSeason(config, seed + i, bots));

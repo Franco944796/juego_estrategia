@@ -194,6 +194,14 @@ button[aria-pressed='true'] {
   color: #c77dff;
 }
 
+.stat-icon.level {
+  color: var(--good);
+}
+
+.meter-fill.level {
+  background: var(--good);
+}
+
 .stat-icon.glory {
   color: var(--accent);
 }
@@ -225,6 +233,20 @@ button[aria-pressed='true'] {
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.15);
   overflow: hidden;
+}
+
+.meter.wide {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+}
+
+.glory-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 10px;
 }
 
 .meter-fill {

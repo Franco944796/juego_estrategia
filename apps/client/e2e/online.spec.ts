@@ -1,4 +1,4 @@
-import type { LordView } from '@si/engine';
+import type { LordView, TownView } from '@si/engine';
 import { expect, test, type Page } from '@playwright/test';
 
 async function gameView(page: Page): Promise<LordView> {
@@ -6,6 +6,14 @@ async function gameView(page: Page): Promise<LordView> {
   const view = await page.evaluate(() => window.__shatteredIsles?.view() ?? null);
   if (!view) throw new Error('no view');
   return view;
+}
+
+/** The neutral town closest to `town` that the viewer can see (often one of its private towns). */
+function nearestNeutral(view: LordView, town: TownView): TownView | undefined {
+  const d = (t: TownView): number => Math.hypot(t.pos.x - town.pos.x, t.pos.y - town.pos.y);
+  return view.towns
+    .filter((t) => t.owner === null && t.isleId === town.isleId)
+    .sort((a, b) => d(a) - d(b))[0];
 }
 
 async function tapTown(page: Page, id: number): Promise<void> {
@@ -33,7 +41,7 @@ test('two players share the online world, fight neutrals and keep their session'
   ).newPage();
 
   // Repeated runs share one server, so names are unique and the world may hold earlier players.
-  const suffix = String(Date.now() % 100_000);
+  const suffix = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
   const anaName = `Ana${suffix}`;
   const boName = `Bo${suffix}`;
   const anaView = await enter(ana, anaName);
@@ -55,8 +63,8 @@ test('two players share the online world, fight neutrals and keep their session'
   await ana.getByTestId('nav-ranking').click();
 
   const capitalId = anaView.me.capitalId;
-  const capital = capitalId === null ? undefined : anaView.towns[capitalId];
-  const target = anaView.towns.find((t) => t.isleId === capital?.isleId && t.owner === null);
+  const capital = anaView.towns.find((t) => t.id === capitalId);
+  const target = capital && nearestNeutral(anaView, capital);
   if (capitalId === null || !target) throw new Error('no neutral next to the capital');
   await tapTown(ana, capitalId);
   await ana.getByTestId('send-button').click();
@@ -78,5 +86,5 @@ test('two players share the online world, fight neutrals and keep their session'
   await ana.getByTestId('enter-world').click();
   const again = await gameView(ana);
   expect(again.me.capitalId).toBe(capitalId);
-  expect(again.towns[target.id]?.owner).toBe(again.me.id);
+  expect(again.towns.find((t) => t.id === target.id)?.owner).toBe(again.me.id);
 });

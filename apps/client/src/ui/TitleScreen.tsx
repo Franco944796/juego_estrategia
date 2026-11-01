@@ -105,7 +105,7 @@ export function TitleScreen() {
   const onlineAvailable = useGame((s) => s.onlineAvailable);
   const [bots, setBots] = useState(DEMO_BOTS);
   const [hasSave] = useState(() => readSave() !== null);
-  const maxBots = Math.min(BOT_NAMES[lang].length, (defaultConfig.map.rings.at(-1)?.isles ?? 1) - 1);
+  const maxBots = Math.min(BOT_NAMES[lang].length, defaultConfig.map.spawn.slots - 1);
 
   useEffect(() => {
     void checkOnline();

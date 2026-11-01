@@ -1,6 +1,19 @@
-import type { LordView } from '@si/engine';
+import type { LordView, TownView } from '@si/engine';
 import { townName } from '../format';
 import { t, type Lang } from '../i18n';
+
+const townIndex = new WeakMap<LordView, Map<number, TownView>>();
+
+/** The view leaves out other lords' private towns, so its towns are looked up by id, never by index. */
+export function townById(view: LordView, id: number | null | undefined): TownView | undefined {
+  if (id === null || id === undefined) return undefined;
+  let index = townIndex.get(view);
+  if (!index) {
+    index = new Map(view.towns.map((town) => [town.id, town]));
+    townIndex.set(view, index);
+  }
+  return index.get(id);
+}
 
 export function townLabel(lang: Lang, view: LordView, townId: number): string {
   return townId === view.season.throneTownId ? t(lang, 'throne') : townName(townId);

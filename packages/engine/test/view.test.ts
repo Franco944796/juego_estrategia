@@ -3,23 +3,15 @@ import { advanceTo, execute } from '../src/game';
 import { hashState } from '../src/hash';
 import { view } from '../src/view';
 import { visibleIsles } from '../src/vision';
-import { recomputeBeacon } from '../src/world';
-import {
-  capitalOf,
-  game,
-  give,
-  MIN,
-  neutralsBeside,
-  T0,
-  townOutOfReach,
-  townsOnIsle,
-  troops,
-} from './helpers';
+import type { Town } from '../src/types';
+import { recomputeZone } from '../src/world';
+import { capitalOf, game, give, growTo, MIN, neutralsBeside, T0, townOutOfReach, troops } from './helpers';
 
 describe('view', () => {
   it('shows the lord, its towns and what it can see', () => {
     const state = game();
     const capital = capitalOf(state, 'h1');
+    const far = townOutOfReach(state, capital);
     const v = view(state, 'h1', T0);
     expect(v.title).toBe('Shattered Isles');
     expect(v.me).toMatchObject({
@@ -35,7 +27,6 @@ describe('view', () => {
     expect(own?.garrison).toEqual(troops(18, 14, 8));
     const neighbor = neutralsBeside(state, capital)[0];
     expect(v.towns.find((t) => t.id === neighbor?.id)?.garrison).not.toBeNull();
-    const far = townOutOfReach(state, capital);
     const farView = v.towns.find((t) => t.id === far.id);
     expect(farView?.garrison).toBeNull();
     expect(farView?.own).toBeNull();
@@ -98,10 +89,12 @@ describe('view', () => {
 
   it('widens vision from a lit beacon', () => {
     const state = game({ config: { vision: { hops: 0 } } });
+    growTo(state, 2);
     const capital = capitalOf(state, 'h1');
     expect([...visibleIsles(state, 'h1')]).toEqual([capital.isleId]);
-    for (const town of townsOnIsle(state, capital.isleId)) give(state, town, 'h1', town.garrison);
-    recomputeBeacon(state, capital.isleId, T0, []);
-    expect(visibleIsles(state, 'h1').size).toBeGreaterThan(1);
+    const zone = state.zones.find((z) => z.isleId === capital.isleId);
+    for (const id of zone?.townIds ?? []) give(state, state.towns[id] as Town, 'h1', troops(1));
+    recomputeZone(state, zone?.id ?? null, T0, []);
+    expect([...visibleIsles(state, 'h1')].sort()).toEqual([0, 1]);
   });
 });

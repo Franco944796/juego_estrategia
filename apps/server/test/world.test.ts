@@ -14,15 +14,16 @@ function setup() {
   return { store, c, w, ana, bo };
 }
 
-/** A send from Ana's capital to a neutral town on a neighboring isle. */
+/** A send from the lord's capital to the farthest neutral town anyone may target on its isle. */
 function attackAcross(w: ReturnType<typeof setup>['w'], lordId: string) {
   const state = w.gameState;
   const capital = state.towns[state.lords[lordId]?.capitalId ?? -1];
   if (!capital) throw new Error('no capital');
-  const linked = new Set(
-    state.lanes.flatMap((l) => (l.a === capital.isleId ? [l.b] : l.b === capital.isleId ? [l.a] : [])),
-  );
-  const target = state.towns.find((t) => linked.has(t.isleId) && t.owner === null && !t.isThrone);
+  const far = (t: { pos: { x: number; y: number } }): number =>
+    Math.hypot(t.pos.x - capital.pos.x, t.pos.y - capital.pos.y);
+  const target = state.towns
+    .filter((t) => t.isleId === capital.isleId && t.owner === null && t.privateTo === null)
+    .sort((a, b) => far(b) - far(a))[0];
   if (!target) throw new Error('no target');
   return w.command(lordId, {
     type: 'SEND',
@@ -79,6 +80,18 @@ describe('world service', () => {
     restarted.tick();
     restarted.tick();
     expect(seen.filter((e) => e.type === 'BATTLE' && e.report.marchId === launched.march.id)).toHaveLength(1);
+  });
+
+  it('drops a season saved by an older engine and opens a new one', () => {
+    const { store, c, w } = setup();
+    w.snapshot();
+    const saved = store.snapshot(1);
+    store.saveSnapshot(1, saved?.seq ?? 0, c.t, { ...(saved?.state as object), version: 1 });
+    const restarted = world(store, c);
+    expect(restarted.currentSeason.id).toBe(2);
+    expect(restarted.gameState.lordOrder).toEqual([]);
+    expect(store.currentSeason()?.id).toBe(2);
+    expect(store.finishedSeasons(10)).toEqual([]);
   });
 
   it('pays Legacy, archives the season and opens the next one at the end', () => {

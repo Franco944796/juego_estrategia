@@ -14,6 +14,7 @@ import {
   type Size,
   type Vec,
 } from './camera';
+import { townById } from '../ui/labels';
 import { drawScene, townRadiusPx } from './render';
 
 const TAP_SLOP_PX = 8;
@@ -69,11 +70,11 @@ function focusPoint(s: GameStore): Vec | null {
   const view = s.view;
   if (!view) return null;
   if (s.send) {
-    const a = view.towns[s.send.from];
-    const b = view.towns[s.send.to];
+    const a = townById(view, s.send.from);
+    const b = townById(view, s.send.to);
     return a && b ? { x: (a.pos.x + b.pos.x) / 2, y: (a.pos.y + b.pos.y) / 2 } : null;
   }
-  return s.selected === null ? null : (view.towns[s.selected]?.pos ?? null);
+  return s.selected === null ? null : (townById(view, s.selected)?.pos ?? null);
 }
 
 function onTap(cam: Camera, size: Size, p: Vec): void {
@@ -124,7 +125,7 @@ export function MapCanvas() {
       if (view) {
         if (placedFor !== view.season.startsAt) {
           extent = mapExtent(view);
-          const capital = view.me.capitalId === null ? undefined : view.towns[view.me.capitalId];
+          const capital = townById(view, view.me.capitalId);
           cam = startCamera(size, capital ? capital.pos : { x: 0, y: 0 }, extent);
           placedFor = view.season.startsAt;
           isleCount = view.isles.length;
@@ -252,7 +253,8 @@ export function MapCanvas() {
 
     window.__shatteredIsles = {
       townScreen: (id) => {
-        const town = useGame.getState().view?.towns[id];
+        const current = useGame.getState().view;
+        const town = current ? townById(current, id) : undefined;
         if (!town) return null;
         const rect = canvas.getBoundingClientRect();
         const s = worldToScreen(cam, size, town.pos);

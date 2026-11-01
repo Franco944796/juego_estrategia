@@ -1,5 +1,13 @@
 import { defaultConfig } from '@si/config';
-import { advanceTo, createGame, execute, type GameState, type LordInit, type LordView } from '@si/engine';
+import {
+  advanceTo,
+  createGame,
+  execute,
+  growIsle,
+  type GameState,
+  type LordInit,
+  type LordView,
+} from '@si/engine';
 import { expect, test, type Page } from '@playwright/test';
 
 const DEMO = new URL('../../../demo/shattered-isles.html', import.meta.url).href;
@@ -27,7 +35,7 @@ async function load(page: Page, state: GameState, gameNow: number): Promise<Lord
       localStorage.setItem(key, save);
       localStorage.setItem('shattered-isles:tutorial-done', '1');
     },
-    [SAVE_KEY, JSON.stringify({ version: 1, state, gameNow, speed: 1 })] as const,
+    [SAVE_KEY, JSON.stringify({ version: 2, state, gameNow, speed: 1 })] as const,
   );
   await page.reload();
   await page.getByTestId('continue-game').click();
@@ -118,11 +126,10 @@ test('incoming attack, marches and the defense report', async ({ page }) => {
 
 test('enemy town and a flight between isles', async ({ page }) => {
   const state = newState();
+  growIsle(state, 0, []);
   const view = await load(page, state, 0);
-  const capital = view.towns[view.me.capitalId ?? -1];
-  const lanes = view.lanes.filter((l) => l.a === capital?.isleId || l.b === capital?.isleId);
-  const otherIsle = lanes.map((l) => (l.a === capital?.isleId ? l.b : l.a)).find((id) => id !== 0);
-  const target = view.towns.find((t) => t.isleId === otherIsle);
+  const capital = view.towns.find((t) => t.id === view.me.capitalId);
+  const target = view.towns.find((t) => t.isleId === 1);
   if (!capital || !target) throw new Error('no target');
   const point = await bringIntoView(page, target.id);
   await page.mouse.click(point.x, point.y);

@@ -10,6 +10,7 @@ import {
   previewSend,
   setClan,
   setStyle,
+  STATE_VERSION,
   view,
   type Command,
   type DomainEvent,
@@ -76,6 +77,12 @@ export class WorldService {
     const row = this.store.currentSeason() ?? this.newSeasonRow(this.opts.now());
     this.season = { id: row.id, startsAt: row.startsAt, endsAt: row.endsAt };
     const snap = this.store.snapshot(row.id);
+    if (snap && (snap.state as GameState).version !== STATE_VERSION) {
+      // Saved by an older engine with another map: it cannot be replayed, so a new season starts.
+      this.store.abandonSeason(row.id);
+      this.load();
+      return;
+    }
     if (snap) {
       // A snapshot keeps the config its season started with; keys added since come from the current one.
       const saved = snap.state as GameState;

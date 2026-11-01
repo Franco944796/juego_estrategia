@@ -7,13 +7,6 @@ const fraction = z.number().min(0).max(1);
 const count = z.number().int().min(1);
 const intNonNegative = z.number().int().nonnegative();
 
-const intRange = z
-  .tuple([count, count])
-  .refine(([min, max]) => min <= max, { message: 'range minimum is above its maximum' });
-const numberRange = z
-  .tuple([positive, positive])
-  .refine(([min, max]) => min <= max, { message: 'range minimum is above its maximum' });
-
 function perTroop<T extends z.ZodType>(value: T) {
   return z.object({ LANCER: value, ARCHER: value, GRIFFIN: value });
 }
@@ -58,19 +51,26 @@ export const gameConfigSchema = z
     meta: z.object({ gameTitle: z.string().min(1) }),
     season: z.object({ durationMin: positive }),
     map: z.object({
-      rings: z.array(z.object({ isles: count, radius: positive, tiers: intRange })).min(1),
-      townsPerIsle: intRange,
-      isleRadius: numberRange,
-      townRing: fraction,
-      townJitter: nonNegative,
-      angleJitter: nonNegative,
-      radiusJitter: nonNegative,
-      throneIsleRadius: positive,
-      laneNeighbors: count,
-      maxLaneLength: positive,
+      isle: z.object({
+        towns: count,
+        radius: positive,
+        shore: positive,
+        jitter: nonNegative,
+        /** Radius fractions that split an isle into tier bands, inside out. */
+        tierBands: z.array(fraction),
+        /** Tier of each band, inside out; one more entry than tierBands. */
+        tiers: z.array(count),
+        zoneSize: count,
+      }),
+      spawn: z.object({ slots: count, privateTowns: intNonNegative, privateSpacing: positive }),
+      growth: z.object({
+        isleSpacing: positive,
+        maxPerDay: intNonNegative,
+        laneNeighbors: count,
+        maxLaneLength: positive,
+      }),
       shapePoints: z.number().int().min(3),
       shapeJitter: fraction,
-      growth: z.object({ ringSpacing: positive, isleSpacing: positive, tiers: intRange }),
     }),
     wind: z.object({
       shiftEveryMin: positive,
@@ -91,7 +91,8 @@ export const gameConfigSchema = z
       fortPerTier: nonNegative,
       capitalFort: z.number().min(1),
       capitalProdMult: positive,
-      homeIsleFort: z.number().min(1),
+      homeFort: z.number().min(1),
+      homeRadius: positive,
       sprawl: z.object({ freeTowns: intNonNegative, penaltyPerTown: nonNegative }),
     }),
     neutral: z.object({
@@ -107,6 +108,7 @@ export const gameConfigSchema = z
       visionHops: intNonNegative,
     }),
     throne: z.object({
+      enabled: z.boolean(),
       tier: count,
       garrison: intNonNegative,
       unsealAtFraction: fraction,
@@ -148,6 +150,7 @@ export const gameConfigSchema = z
     bots: z.object({
       thinkEveryMin: positive,
       jitterMin: nonNegative,
+      targetsPerTown: count,
       personalities: z.object({
         RAIDER: personality,
         BUILDER: personality,
@@ -166,6 +169,16 @@ export const gameConfigSchema = z
       lordColors: z.array(z.string().regex(/^#[0-9a-f]{6}$/i)).min(1),
     }),
     rules: z.object({ capitalImmune: z.boolean() }),
+    levels: z.object({
+      xpPerCaptureTier: positive,
+      lordCaptureMult: z.number().min(1),
+      xpBase: positive,
+      xpGrowth: z.number().min(1),
+      troopsBase: intNonNegative,
+      troopsPerLevel: intNonNegative,
+      goldBonusPerLevel: nonNegative,
+      maxLevel: count,
+    }),
     rewards: z.object({
       tiers: z.array(z.object({ topShare: z.number().gt(0).max(1), legacy: intNonNegative })).min(1),
     }),
@@ -191,10 +204,11 @@ export const gameConfigSchema = z
     if (c.towns.upgradeCost.length !== tiers - 1) {
       ctx.addIssue({ code: 'custom', message: `towns.upgradeCost needs ${tiers - 1} entries` });
     }
-    for (const ring of c.map.rings) {
-      if (ring.tiers[1] > tiers) {
-        ctx.addIssue({ code: 'custom', message: 'map.rings tiers exceed towns.maxTier' });
-      }
+    if (c.map.isle.tiers.length !== c.map.isle.tierBands.length + 1) {
+      ctx.addIssue({ code: 'custom', message: 'map.isle.tiers needs one entry more than tierBands' });
+    }
+    if (c.map.isle.tiers.some((tier) => tier > tiers)) {
+      ctx.addIssue({ code: 'custom', message: 'map.isle tiers exceed towns.maxTier' });
     }
     if (c.throne.tier > tiers || c.lords.capitalTier > tiers) {
       ctx.addIssue({ code: 'custom', message: 'throne or capital tier exceeds towns.maxTier' });
@@ -206,9 +220,7 @@ export const gameConfigSchema = z
     if (c.cosmetics.styles[0]?.cost !== 0) {
       ctx.addIssue({ code: 'custom', message: 'the first cosmetic style is the free default' });
     }
-    if (c.map.growth.tiers[1] > tiers) {
-      ctx.addIssue({ code: 'custom', message: 'map.growth tiers exceed towns.maxTier' });
-    }
+
     const thresholds = c.edicts.gloryThresholds;
     if (thresholds.some((t, i) => i > 0 && t <= (thresholds[i - 1] ?? 0))) {
       ctx.addIssue({ code: 'custom', message: 'edicts.gloryThresholds must be ascending' });

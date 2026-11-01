@@ -8,7 +8,7 @@ import {
   type TroopType,
 } from '@si/engine';
 import { formatNumber } from '../format';
-import { isAlly, linkedIsles, NEUTRAL_COLOR, ownerColor } from '../ui/labels';
+import { isAlly, linkedIsles, NEUTRAL_COLOR, ownerColor, townById } from '../ui/labels';
 import { worldToScreen, type Camera, type Size, type Vec } from './camera';
 
 export interface SceneInput {
@@ -160,7 +160,7 @@ function lanes(ctx: CanvasRenderingContext2D, input: SceneInput, sourceIsle: num
 }
 
 function isles(ctx: CanvasRenderingContext2D, input: SceneInput): void {
-  const { view, cam, size, time } = input;
+  const { view, cam, size } = input;
   for (const isle of view.isles) {
     const c = worldToScreen(cam, size, isle.pos);
     const r = isle.radius * cam.zoom;
@@ -169,26 +169,50 @@ function isles(ctx: CanvasRenderingContext2D, input: SceneInput): void {
     ctx.fillStyle = '#4f3b2c';
     ctx.fill();
     islePath(ctx, c, r, isle.shape);
-    ctx.fillStyle = isle.ring === 0 ? '#9d86cf' : '#5b8f3e';
+    ctx.fillStyle = '#5b8f3e';
     ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = isle.ring === 0 ? '#3f2f6b' : '#2c4a1d';
+    ctx.strokeStyle = '#2c4a1d';
     ctx.stroke();
-    if (!isle.hasBeacon) continue;
-    const bx = c.x + r * 0.7;
-    const by = c.y - r * 0.62;
-    ctx.strokeStyle = '#2b2118';
-    ctx.lineWidth = Math.max(2, r * 0.05);
-    ctx.beginPath();
-    ctx.moveTo(bx, by + r * 0.22);
-    ctx.lineTo(bx, by);
-    ctx.stroke();
-    circle(ctx, { x: bx, y: by }, Math.max(3, r * 0.07));
-    if (isle.beaconOwner) {
+  }
+}
+
+/** Lit zones glow in their owner's color; every zone has a beacon post at its centre. */
+function zones(ctx: CanvasRenderingContext2D, input: SceneInput): void {
+  const { view, cam, size, time } = input;
+  const glow = TOWN_RADIUS * 1.9 * cam.zoom;
+  const post = Math.max(7, 16 * cam.zoom);
+  for (const zone of view.zones) {
+    const c = worldToScreen(cam, size, zone.pos);
+    if (c.x < -200 || c.y < -200 || c.x > size.width + 200 || c.y > size.height + 200) continue;
+    const owner = zone.beaconOwner;
+    if (owner) {
       ctx.save();
-      ctx.shadowColor = ownerColor(view, isle.beaconOwner);
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = ownerColor(view, owner);
+      ctx.beginPath();
+      for (const id of zone.townIds) {
+        const town = townById(view, id);
+        if (!town) continue;
+        const p = worldToScreen(cam, size, town.pos);
+        ctx.moveTo(p.x + glow, p.y);
+        ctx.arc(p.x, p.y, glow, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.strokeStyle = '#2b2118';
+    ctx.lineWidth = Math.max(1.5, post * 0.18);
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y + post * 0.5);
+    ctx.lineTo(c.x, c.y - post * 0.5);
+    ctx.stroke();
+    circle(ctx, { x: c.x, y: c.y - post * 0.5 }, Math.max(2.5, post * 0.28));
+    if (owner) {
+      ctx.save();
+      ctx.shadowColor = ownerColor(view, owner);
       ctx.shadowBlur = 12 + Math.sin(time / 300) * 4;
-      ctx.fillStyle = ownerColor(view, isle.beaconOwner);
+      ctx.fillStyle = ownerColor(view, owner);
       ctx.fill();
       ctx.restore();
     } else {
@@ -201,8 +225,8 @@ function isles(ctx: CanvasRenderingContext2D, input: SceneInput): void {
 function marches(ctx: CanvasRenderingContext2D, input: SceneInput): void {
   const { view, cam, size, time, gameNow } = input;
   for (const m of view.marches) {
-    const from = view.towns[m.from];
-    const to = view.towns[m.to];
+    const from = townById(view, m.from);
+    const to = townById(view, m.to);
     if (!from || !to) continue;
     const span = Math.max(1, m.arriveAt - m.departAt);
     const progress = Math.min(1, Math.max(0, (gameNow - m.departAt) / span));
@@ -381,7 +405,14 @@ function towns(ctx: CanvasRenderingContext2D, input: SceneInput, targets: Set<nu
     ctx.lineWidth = 2;
     ctx.strokeStyle = INK;
     ctx.stroke();
-    if (town.owner === view.me.id) {
+    if (town.isPrivate) {
+      ctx.setLineDash([2, 3]);
+      circle(ctx, p, rr + 3);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (town.owner === view.me.id) {
       circle(ctx, p, rr + 3);
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = '#ffffff';
@@ -445,11 +476,12 @@ export function targetsFrom(view: LordView, source: TownView): Set<number> {
 export function drawScene(ctx: CanvasRenderingContext2D, input: SceneInput): void {
   const { view } = input;
   const sourceId = input.picking ? input.selected : input.sendFrom;
-  const source = sourceId === null ? undefined : view.towns[sourceId];
+  const source = townById(view, sourceId);
   sky(ctx, input.size);
   windStreaks(ctx, input);
   lanes(ctx, input, source ? source.isleId : null);
   isles(ctx, input);
+  zones(ctx, input);
   marches(ctx, input);
   towns(ctx, input, input.picking && source ? targetsFrom(view, source) : null);
 }

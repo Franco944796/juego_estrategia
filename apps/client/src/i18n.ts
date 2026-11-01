@@ -4,7 +4,7 @@ export type Lang = 'es' | 'en';
 export const LANGS: Lang[] = ['es', 'en'];
 
 const es = {
-  tagline: 'El cielo se partió en islas. El Trono espera dueño.',
+  tagline: 'El cielo se partió en islas. Cada faro espera dueño.',
   newSeason: 'Nueva temporada',
   continue: 'Continuar',
   rivals: 'Rivales',
@@ -41,6 +41,8 @@ const es = {
   cap: 'tope {n}',
   defense: 'Defensa ×{n}',
   beacon: 'Faro de {name}',
+  zoneProgress: 'Faro de la zona: {n} de {total} pueblos tuyos',
+  privateTown: 'Solo vos ves este pueblo hasta conquistarlo',
   sendTroops: 'Enviar tropas',
   attack: 'Atacar',
   upgrade: 'Mejorar a nivel {n} · {cost} oro',
@@ -88,7 +90,6 @@ const es = {
   chooseEdict: 'Elegí un edicto para el resto de la temporada',
   yourEdicts: 'Tus edictos',
   noEdicts: 'Todavía ninguno.',
-  nextEdict: 'Próximo edicto con {n} de gloria',
   allEdicts: 'No quedan edictos por ganar.',
   gloryHelp: 'La gloria sube al vencer tropas enemigas y conquistar pueblos.',
   menuTitle: 'Menú',
@@ -104,13 +105,13 @@ const es = {
     'Lanceros vencen a Grifos, Grifos a Arqueros y Arqueros a Lanceros. Gana el lado con más poder; el empate es del defensor.',
   help4: 'Entre islas el viento cambia la velocidad: a favor ×2, en contra ×0,5. Queda fijo al salir.',
   help5:
-    'Si conquistás toda una isla se enciende su faro. El Trono del Cielo se abre a mitad de camino y da mucho Dominio.',
+    'Cada isla se divide en zonas de unos 10 pueblos. Si conquistás una zona entera se enciende su faro: más producción y Dominio.',
   help6: 'Gana quien junte más Dominio al final. Se suma minuto a minuto por lo que tenés.',
   tut1: 'Esta es tu capital. Tocala.',
   tut2: 'Tocá «Enviar tropas» y elegí un pueblo gris de tu isla.',
   tut3: 'Elegí cuántas tropas mandar y tocá «Enviar».',
   tut4: 'Entre islas manda el viento: a favor vas el doble de rápido, en contra a la mitad. La rosa de arriba muestra hacia dónde sopla y cuándo cambia.',
-  tut5: 'Con oro mejorás pueblos. Conquistá toda tu isla para encender su faro.',
+  tut5: 'Con oro mejorás pueblos. Conquistá una zona entera para encender su faro.',
   next: 'Seguir',
   skip: 'Saltar',
   play: '¡A jugar!',
@@ -214,12 +215,18 @@ const es = {
   allyDefended: 'Ayudaste a defender {town}',
   allyLost: 'Tu aliado perdió {town}',
   hallClan: 'Clan ganador: {name} [{tag}]',
+  levelShort: 'Nv {n}',
+  gloryProgress: 'Gloria {n} de {goal}',
+  levelTitle: 'Nivel del señor',
+  toastLevelUp: '¡Nivel {n}! +{troops} tropas en tu capital y +1 % de oro',
+  help7:
+    'Conquistar pueblos da experiencia, el doble si eran de otro jugador. Cada nivel suma tropas a tu capital y +1 % de oro.',
 };
 
 export type MessageKey = keyof typeof es;
 
 const en: Record<MessageKey, string> = {
-  tagline: 'The sky shattered into isles. The Throne awaits a lord.',
+  tagline: 'The sky shattered into isles. Every beacon awaits a lord.',
   newSeason: 'New season',
   continue: 'Continue',
   rivals: 'Rivals',
@@ -256,6 +263,8 @@ const en: Record<MessageKey, string> = {
   cap: 'cap {n}',
   defense: 'Defense ×{n}',
   beacon: "{name}'s beacon",
+  zoneProgress: 'Zone beacon: {n} of {total} towns yours',
+  privateTown: 'Only you see this town until you conquer it',
   sendTroops: 'Send troops',
   attack: 'Attack',
   upgrade: 'Upgrade to tier {n} · {cost} gold',
@@ -303,7 +312,6 @@ const en: Record<MessageKey, string> = {
   chooseEdict: 'Choose an edict for the rest of the season',
   yourEdicts: 'Your edicts',
   noEdicts: 'None yet.',
-  nextEdict: 'Next edict at {n} glory',
   allEdicts: 'No edicts left to earn.',
   gloryHelp: 'Glory grows when you defeat enemy troops and conquer towns.',
   menuTitle: 'Menu',
@@ -320,13 +328,13 @@ const en: Record<MessageKey, string> = {
   help4:
     'Between isles the wind changes speed: tailwind ×2, headwind ×0.5. It is locked when the march departs.',
   help5:
-    'Conquer a whole isle to light its beacon. The Sky Throne opens partway through and grants a lot of Dominion.',
+    'Each isle is split into zones of about 10 towns. Conquer a whole zone to light its beacon: more production and Dominion.',
   help6: 'Whoever holds the most Dominion at the end wins. It adds up every minute from what you hold.',
   tut1: 'This is your capital. Tap it.',
   tut2: 'Tap “Send troops” and pick a grey town on your isle.',
   tut3: 'Choose how many troops to send and tap “Send”.',
   tut4: 'Between isles the wind rules: a tailwind doubles your speed, a headwind halves it. The rose above shows where it blows and when it shifts.',
-  tut5: 'Spend gold to upgrade towns. Conquer your whole isle to light its beacon.',
+  tut5: 'Spend gold to upgrade towns. Conquer a whole zone to light its beacon.',
   next: 'Next',
   skip: 'Skip',
   play: 'Play!',
@@ -430,6 +438,12 @@ const en: Record<MessageKey, string> = {
   allyDefended: 'You helped hold {town}',
   allyLost: 'Your ally lost {town}',
   hallClan: 'Winning clan: {name} [{tag}]',
+  levelShort: 'Lv {n}',
+  gloryProgress: 'Glory {n} of {goal}',
+  levelTitle: 'Lord level',
+  toastLevelUp: 'Level {n}! +{troops} troops at your capital and +1% gold',
+  help7:
+    'Conquering towns gives experience, double if they belonged to another player. Each level adds troops to your capital and +1% gold.',
 };
 
 const dictionaries: Record<Lang, Record<MessageKey, string>> = { es, en };
@@ -525,6 +539,7 @@ export const RULE_TEXT: Record<Lang, Record<string, string>> = {
     TOO_MANY_MARCHES: 'Demasiadas marchas en curso',
     NO_DRAFT: 'Ese edicto no está disponible',
     CAPITAL_IMMUNE: 'Las capitales no se pueden atacar',
+    UNKNOWN_TOWN: 'No ves ese pueblo',
   },
   en: {
     BAD_COMMAND: 'Invalid order',
@@ -542,6 +557,7 @@ export const RULE_TEXT: Record<Lang, Record<string, string>> = {
     TOO_MANY_MARCHES: 'Too many marches under way',
     NO_DRAFT: 'That edict is not on offer',
     CAPITAL_IMMUNE: 'Capitals cannot be attacked',
+    UNKNOWN_TOWN: 'You cannot see that town',
   },
 };
 
@@ -581,6 +597,7 @@ export const SERVER_TEXT: Record<Lang, Record<string, string>> = {
     NO_REQUEST: 'Esa solicitud ya no existe',
     NOT_MEMBER: 'No estás en un clan',
     NO_CLAN: 'Ese clan ya no existe',
+    WORLD_FULL: 'Todas las islas están llenas. Pronto nace una nueva: probá más tarde.',
   },
   en: {
     BAD_NAME: 'The name must have 2 to 20 characters',
@@ -598,6 +615,7 @@ export const SERVER_TEXT: Record<Lang, Record<string, string>> = {
     NO_REQUEST: 'That request is gone',
     NOT_MEMBER: 'You are not in a clan',
     NO_CLAN: 'That clan no longer exists',
+    WORLD_FULL: 'Every isle is full. A new one is born soon: try again later.',
   },
 };
 

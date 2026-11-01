@@ -22,7 +22,7 @@
   idioma del dispositivo, código y docs en inglés, comunicación en español.
 - `ESTADO.md` reemplaza a PLAN.md y PROGRESS.md del prompt.
 - Node: lo instala Franco con pacman (`sudo pacman -S --needed nodejs npm pnpm`).
-- Git: Claude hace commits locales por hito; el push lo hace Franco (decidido 2026-11-01).
+- Git: los commits y el push los hace Franco; Claude no commitea (decidido de nuevo el 2026-11-01).
 - Clanes y chat (decidido 2026-11-01): clanes con solicitud que acepta líder u oficial, máximo 20,
   persisten entre temporadas; entre miembros no hay ataques, se comparte visión y se puede reforzar
   pueblos aliados (guarniciones de varios dueños); chat global y de clan (200 caracteres, límite de
@@ -59,7 +59,43 @@
 
 ## En curso
 
-- Nada. Etapa «clanes y chat» terminada el 2026-11-01.
+- Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
+
+## Hecho en la etapa «islas grandes» (2026-11-01, demo y en línea)
+
+- Marchas ×10 (tierra 350, aire 450, mínimo 0,05 min); sin Trono (`throne.enabled: false`, se puede
+  reactivar por config).
+- El mundo empieza con 1 isla de 100 ciudades en espiral (nivel 3 al centro, después 2 y 1), 10 zonas
+  con faro propio y 10 lugares de aparición en la costa (`packages/engine/src/mapgen.ts`).
+- Cada jugador aparece con capital nueva + 3 ciudades privadas que solo él ve y ataca hasta que
+  tienen dueño (`spawn.ts`; R14 `UNKNOWN_TOWN`; la vista las oculta a los demás).
+- Isla nueva cuando la última está llena o sin ciudades públicas neutrales, máximo 3 cada 24 h
+  (`growth.ts`, evento `GROW_CHECK`); si no hay lugar, `WORLD_FULL`.
+- Defensa extra cerca de la capital por radio (`towns.homeFort` / `homeRadius`); exilio en la isla
+  más nueva; bots limitados a objetivos cercanos y a sus pueblos más fuertes (simulación en línea de
+  ~150 s a ~35 s por temporada).
+- Servidor: una temporada guardada con `STATE_VERSION` viejo se marca `abandoned` y arranca otra.
+  Demo: las partidas guardadas viejas se ignoran.
+- Cliente: `townById`, faros por zona (brillo del dueño), pueblos privados con borde punteado, ficha
+  con progreso del faro de la zona, HUD sin Trono, textos de ayuda.
+- Verificado: 176 tests unitarios (cobertura del motor 99,6 % de líneas), 14 de Playwright, revisión
+  visual del mapa en celular y escritorio. Simulador: demo 9/10, en línea 9/10.
+- Decisión pendiente para Franco: los bots casi no encienden faros de zona (demo 0,44 de los
+  señores; en línea el primero a los ~6 días). Opciones: zonas más chicas o bonus de defensa en zonas
+  con faro.
+- Para ver el mapa nuevo en el mundo de prueba: `rm apps/server/data/shattered-isles.db` y
+  `pnpm serve` (igual el servidor descarta solo la temporada vieja).
+
+## Economía más rápida y niveles del señor (2026-11-01)
+
+- Mundo en línea: producción ÷5 respecto de la demo (antes ÷20, o sea ×4), costos de mejora ×10,
+  botín ×5, Trono con 600 tropas. Simulador: 10/11 objetivos (tensión PvP 0,40 en el borde).
+- Niveles del señor (demo y en línea): experiencia por conquista = 10 × nivel del pueblo, ×2 si era
+  de otro señor; curva 30 × 1,25^(n−1); cada nivel da 9 + 3 × nivel tropas a la capital (repartidas
+  entre los tres tipos) y +1 % de oro sobre la base. Se reinicia con la temporada.
+- HUD: oro, Dominio y nivel (con barra de experiencia); la gloria pasó al panel de Edictos.
+- La temporada en curso del servidor conserva su configuración: para ver la economía nueva en el
+  mundo de prueba hay que reiniciarlo (borrar `apps/server/data/shattered-isles.db`).
 
 ## Hecho en la etapa de clanes y chat (2026-11-01)
 
@@ -113,12 +149,26 @@
 
 ## Pendiente
 
-1. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
+Pedidos de Franco del 2026-11-01 (sin preguntas hechas todavía; preguntar al empezar cada uno):
+
+1. Ciudades sin tope de tropas: se generan sin parar y se acumulan.
+2. Muros: defensa propia de cada ciudad aparte de las tropas (ej.: nivel 1 = 25 de defensa, con 0
+   tropas hacen falta 26 para conquistarla si el atacante tiene 0 puntos en «ataque»).
+3. Árbol de habilidades: 1 punto por nivel del señor para repartir; oro (+5 % por punto), tropas
+   (+5 % por punto) y ataque (efecto a definir).
+4. Matar tropas enemigas da bastante experiencia y oro; se pierde un 10 % de las tropas totales
+   muertas en el ataque (regla de la liga 1, la única que existe por ahora).
+5. Agrupar tropas: al tocar una ciudad, elegir de qué ciudades recibir tropas, con las cercanas
+   preseleccionadas.
+6. Marchas más lentas según la distancia entre ciudades.
+7. Juego en 3D, con ciudades como chozas bien detalladas; por ahora una sola isla para probar
+   (Franco agrega más cuando todo funcione).
+8. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
    `sudo firewall-cmd --add-port=8787/tcp` (con `--permanent` para que quede).
-2. Subir el repo a GitHub (acción de Franco): `git remote add origin
-https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main`. Repo público con
-   licencia PolyForm Noncommercial 1.0.0 (`LICENSE.md`, copyright Franco944796).
-3. Varias ligas con ascensos y descensos entre temporadas.
+9. Subir el repo a GitHub (acción de Franco): `git remote add origin
+https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main`. Repo público
+   con licencia PolyForm Noncommercial 1.0.0 (`LICENSE.md`, copyright Franco944796).
+10. Varias ligas con ascensos y descensos entre temporadas.
 
 ## Comandos
 

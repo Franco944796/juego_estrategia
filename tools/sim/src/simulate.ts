@@ -18,8 +18,6 @@ export interface SeasonMetrics {
   medianFirstCaptureMin: number;
   medianFirstBeaconMin: number | null;
   beaconLordShare: number;
-  throneFirstMin: number | null;
-  throneChanges: number;
   midSeasonMedianTowns: number;
   edictsPerLord: number;
   upgradesPerLord: number;
@@ -27,6 +25,10 @@ export interface SeasonMetrics {
   eliminations: number;
   /** Winner's Dominion over everyone's Dominion. */
   winnerShare: number;
+  /** Median lord level at the end of the season. */
+  medianLevel: number;
+  /** Isles at the end: a new one is born when the newest is full or fully conquered. */
+  islesAtEnd: number;
   runtimeMs: number;
 }
 
@@ -67,8 +69,6 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
   let tense = 0;
   let captures = 0;
   let pvpCaptures = 0;
-  let throneChanges = 0;
-  let throneFirst: number | null = null;
   let edicts = 0;
   let upgrades = 0;
   let exiles = 0;
@@ -95,10 +95,6 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
         captures++;
         if (e.from !== null) pvpCaptures++;
         if (!firstCapture.has(e.to)) firstCapture.set(e.to, minutes(e.at));
-        if (e.townId === state.throneTownId) {
-          throneChanges++;
-          throneFirst ??= minutes(e.at);
-        }
         break;
       case 'MARCH_LAUNCHED': {
         const duration = (e.march.arriveAt - e.march.departAt) / MINUTE_MS;
@@ -147,14 +143,14 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
     medianFirstCaptureMin: median([...firstCapture.values()]),
     medianFirstBeaconMin: firstBeacon.size > 0 ? median([...firstBeacon.values()]) : null,
     beaconLordShare: firstBeacon.size / bots,
-    throneFirstMin: throneFirst,
-    throneChanges,
     midSeasonMedianTowns: median(midTowns),
     edictsPerLord: edicts / bots,
     upgradesPerLord: upgrades / bots,
     exiles,
     eliminations,
     winnerShare: total > 0 ? (standings[0]?.dominion ?? 0) / total : 0,
+    medianLevel: median(state.lordOrder.map((id) => state.lords[id]?.level ?? 1)),
+    islesAtEnd: state.isles.length,
     runtimeMs: performance.now() - started,
   };
 }
@@ -181,27 +177,25 @@ export interface Target {
 export const TARGETS: Record<'demo' | 'live', Target[]> = {
   demo: [
     { key: 'medianFirstCaptureMin', label: 'First capture per lord (game min, median)', max: 10, digits: 1 },
-    { key: 'medianLandMin', label: 'Land march (game min, median)', min: 1, max: 3, digits: 2 },
-    { key: 'medianSkyMin', label: 'Sky march (game min, median)', min: 4, max: 12, digits: 2 },
+    { key: 'medianLandMin', label: 'Land march (game min, median)', min: 0.1, max: 0.3, digits: 2 },
+    { key: 'medianSkyMin', label: 'Sky march (game min, median)', min: 0.4, max: 1.2, digits: 2 },
     { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
     { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
     { key: 'medianFirstBeaconMin', label: 'First beacon (game min, median)', max: 90, digits: 0 },
     { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
     { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
-    { key: 'throneChanges', label: 'Throne captures per season', min: 2, max: 6, digits: 1 },
     { key: 'edictsPerLord', label: 'Edicts per lord', min: 3, digits: 1 },
     { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
   ],
   live: [
     { key: 'medianFirstCaptureMin', label: 'First capture per lord (min, median)', max: 60, digits: 1 },
-    { key: 'medianLandMin', label: 'Land march (min, median)', min: 1, max: 3, digits: 2 },
-    { key: 'medianSkyMin', label: 'Sky march (min, median)', min: 4, max: 12, digits: 2 },
+    { key: 'medianLandMin', label: 'Land march (min, median)', min: 0.1, max: 0.3, digits: 2 },
+    { key: 'medianSkyMin', label: 'Sky march (min, median)', min: 0.4, max: 1.2, digits: 2 },
     { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
     { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
     { key: 'medianFirstBeaconMin', label: 'First beacon (min, median)', max: 1440, digits: 0 },
     { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
     { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
-    { key: 'throneChanges', label: 'Throne captures per season', min: 4, max: 30, digits: 1 },
     { key: 'edictsPerLord', label: 'Edicts per lord', min: 3, digits: 1 },
     { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
   ],
@@ -232,7 +226,8 @@ export function renderReport(runs: SeasonMetrics[], header: string, targets: Tar
     ['Captures per season', 'captures', 0],
     ['PvP captures per season', 'pvpCaptures', 0],
     ['Upgrades per lord', 'upgradesPerLord', 1],
-    ['Throne first taken (game min)', 'throneFirstMin', 0],
+    ['Lord level at season end (median)', 'medianLevel', 1],
+    ['Isles at season end', 'islesAtEnd', 1],
     ['Exiles per season', 'exiles', 1],
     ['Eliminations per season', 'eliminations', 1],
     ['Runtime per season (ms)', 'runtimeMs', 0],

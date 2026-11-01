@@ -1,5 +1,6 @@
 import { defaultConfig, withOverrides, type DeepPartial, type GameConfig } from '@si/config';
 import { createGame } from '../src/game';
+import { growIsle } from '../src/growth';
 import { isleNeighbors } from '../src/world';
 import type { GameState, LordInit, Town, Troops, TroopType } from '../src/types';
 
@@ -61,31 +62,45 @@ export function townsOnIsle(state: GameState, isleId: number): Town[] {
   return (state.isles[isleId]?.townIds ?? []).map((id) => state.towns[id] as Town);
 }
 
-/** Neutral towns on the same isle as `town`. */
+/** Neutral towns anyone may target on the same isle as `town`, nearest first. */
 export function neutralsBeside(state: GameState, town: Town): Town[] {
-  return townsOnIsle(state, town.isleId).filter((t) => t.owner === null);
+  const d = (t: Town): number => Math.hypot(t.pos.x - town.pos.x, t.pos.y - town.pos.y);
+  return townsOnIsle(state, town.isleId)
+    .filter((t) => t.owner === null && t.privateTo === null && !t.isThrone)
+    .sort((a, b) => d(a) - d(b) || a.id - b.id);
 }
 
-/** A town on an isle one lane away from `town`'s isle (never the Throne isle). */
+/** Grows the map to at least `count` isles; a season starts with one, but many tests need lanes. */
+export function growTo(state: GameState, count: number): void {
+  while (state.isles.length < count) growIsle(state, state.accruedAt, []);
+}
+
+/** A town on an isle one lane away from `town`'s isle (grown on demand). */
 export function townAcrossLane(state: GameState, town: Town): Town {
-  const isleId = (isleNeighbors(state)[town.isleId] ?? []).find((id) => id !== 0);
+  growTo(state, 2);
+  const isleId = (isleNeighbors(state)[town.isleId] ?? [])[0];
   const target = isleId === undefined ? undefined : townsOnIsle(state, isleId)[0];
   if (!target) throw new Error('no linked isle');
   return target;
 }
 
-/** A town on an isle with no lane to `town`'s isle. */
+/** A town on an isle with no lane to `town`'s isle (the map grows until there is one). */
 export function townOutOfReach(state: GameState, town: Town): Town {
-  const linked = new Set([town.isleId, ...(isleNeighbors(state)[town.isleId] ?? [])]);
-  const target = state.towns.find((t) => !linked.has(t.isleId));
-  if (!target) throw new Error('every isle is linked');
-  return target;
+  for (let tries = 0; tries < 30; tries++) {
+    const linked = new Set([town.isleId, ...(isleNeighbors(state)[town.isleId] ?? [])]);
+    const target = state.towns.find((t) => !linked.has(t.isleId));
+    if (target) return target;
+    growIsle(state, state.accruedAt, []);
+  }
+  throw new Error('every isle is linked');
 }
 
-/** A town on an inner-ring isle, which always has a lane to the Throne isle. */
-export function innerRingTown(state: GameState): Town {
-  const target = state.towns.find((t) => state.isles[t.isleId]?.ring === 1);
-  if (!target) throw new Error('no inner ring');
+/** A neutral town that anyone may target. */
+export function publicNeutral(state: GameState, isleId = 0): Town {
+  const target = townsOnIsle(state, isleId).find(
+    (t) => t.owner === null && t.privateTo === null && !t.isThrone,
+  );
+  if (!target) throw new Error('no public neutral town');
   return target;
 }
 

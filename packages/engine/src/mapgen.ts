@@ -1,18 +1,20 @@
 import { TROOP_TYPES } from '@si/config/constants';
 import { distance } from './geometry';
-import { nextFloat, nextInt, nextRange, type RngState } from './rng';
+import { nextFloat, nextInt, type RngState } from './rng';
 import { splitGarrison } from './troops';
-import type { GameConfig, Isle, Lane, Town, Vec } from './types';
+import type { GameConfig, Isle, Lane, Town, TroopType, Vec, Zone } from './types';
 
 const TAU = Math.PI * 2;
+/** Successive towns turn by this angle, which spreads them evenly over the disc (sunflower layout). */
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+/** Isles per ring around the first one grow by this many per ring (6, 12, 18…). */
+const ISLES_PER_RING = 6;
 
-export interface World {
+export interface MapParts {
   isles: Isle[];
   towns: Town[];
+  zones: Zone[];
   lanes: Lane[];
-  throneTownId: number;
-  /** Isle id of each lord's starting isle, in the order the lords were given. */
-  lordIsles: number[];
 }
 
 function jitter(rng: RngState, amount: number): number {
@@ -25,13 +27,13 @@ function isleShape(rng: RngState, cfg: GameConfig): number[] {
   return points;
 }
 
-function makeTown(
+export function neutralTown(
   id: number,
   isleId: number,
   pos: Vec,
   tier: number,
+  spec: TroopType,
   cfg: GameConfig,
-  spec: Town['spec'],
 ): Town {
   const garrisonSize = cfg.neutral.garrison[tier - 1] ?? 0;
   return {
@@ -47,160 +49,174 @@ function makeTown(
     isThrone: false,
     neutralCap: garrisonSize,
     stationed: [],
+    zoneId: null,
+    privateTo: null,
   };
 }
 
-function placeTowns(
-  rng: RngState,
-  cfg: GameConfig,
-  isle: Isle,
-  tiers: [number, number],
-  towns: Town[],
-): void {
-  const count = nextInt(rng, cfg.map.townsPerIsle[0], cfg.map.townsPerIsle[1]);
-  const ringRadius = isle.radius * cfg.map.townRing;
-  const spots: Vec[] = [];
-  // With four or more towns one sits in the middle, so the ring keeps its spacing.
-  const onRing = count >= 4 ? count - 1 : count;
-  if (count >= 4) spots.push({ x: isle.pos.x, y: isle.pos.y });
-  const start = nextFloat(rng) * TAU;
-  for (let j = 0; j < onRing; j++) {
-    const a = start + (j * TAU) / onRing;
-    spots.push({ x: isle.pos.x + Math.cos(a) * ringRadius, y: isle.pos.y + Math.sin(a) * ringRadius });
+/** Where the n-th isle goes: the first in the middle, then rings of 6, 12, 18… isles around it. */
+export function islePosition(cfg: GameConfig, index: number, spin: number): { pos: Vec; ring: number } {
+  if (index === 0) return { pos: { x: 0, y: 0 }, ring: 0 };
+  let ring = 1;
+  let first = 1;
+  while (index >= first + ISLES_PER_RING * ring) {
+    first += ISLES_PER_RING * ring;
+    ring++;
   }
-  const specOffset = nextInt(rng, 0, TROOP_TYPES.length - 1);
-  spots.forEach((spot, j) => {
-    const pos = {
-      x: spot.x + jitter(rng, cfg.map.townJitter),
-      y: spot.y + jitter(rng, cfg.map.townJitter),
-    };
-    const spec = TROOP_TYPES[(specOffset + j) % TROOP_TYPES.length] ?? 'LANCER';
-    const town = makeTown(towns.length, isle.id, pos, nextInt(rng, tiers[0], tiers[1]), cfg, spec);
-    towns.push(town);
-    isle.townIds.push(town.id);
+  const count = ISLES_PER_RING * ring;
+  const angle = spin + ((index - first) / count) * TAU;
+  const r = ring * cfg.map.growth.isleSpacing;
+  return { pos: { x: Math.cos(angle) * r, y: Math.sin(angle) * r }, ring };
+}
+
+/**
+ * Zones of about `size` towns as annular sectors: one in the middle, then rings of 3, 6, 9… outward.
+ * `members` must come sorted by distance from the isle centre (the spiral order).
+ */
+function buildZones(isle: Isle, members: Town[], size: number, zones: Zone[]): void {
+  const count = Math.max(1, Math.ceil(members.length / size));
+  const layers: number[] = [];
+  for (let left = count, k = 0; left > 0; k++) {
+    const z = Math.min(left, k === 0 ? 1 : 3 * k);
+    layers.push(z);
+    left -= z;
+  }
+  const per = members.length / count;
+  let next = 0;
+  let made = 0;
+  layers.forEach((z, layer) => {
+    const end = Math.round((made + z) * per);
+    // Each layer starts its sectors at a different angle so the borders do not line up.
+    const angle = (t: Town): number =>
+      (Math.atan2(t.pos.y - isle.pos.y, t.pos.x - isle.pos.x) + Math.PI + layer * 0.9) % TAU;
+    const ring = members.slice(next, end).sort((a, b) => angle(a) - angle(b) || a.id - b.id);
+    for (let j = 0; j < z; j++) {
+      const chunk = ring.slice(Math.round((j * ring.length) / z), Math.round(((j + 1) * ring.length) / z));
+      const zone: Zone = {
+        id: zones.length,
+        isleId: isle.id,
+        pos: {
+          x: chunk.reduce((sum, t) => sum + t.pos.x, 0) / chunk.length,
+          y: chunk.reduce((sum, t) => sum + t.pos.y, 0) / chunk.length,
+        },
+        townIds: chunk.map((t) => t.id).sort((a, b) => a - b),
+        beaconOwner: null,
+      };
+      for (const t of chunk) t.zoneId = zone.id;
+      zones.push(zone);
+    }
+    next = end;
+    made += z;
   });
 }
 
-/** Appends a ring of isles (with their towns) at `radius` around the Throne; returns the new isles. */
-export function addRing(
-  cfg: GameConfig,
-  rng: RngState,
-  isles: Isle[],
-  towns: Town[],
-  ring: number,
-  radius: number,
-  count: number,
-  tiers: [number, number],
-): Isle[] {
-  const added: Isle[] = [];
-  const offset = (nextFloat(rng) * TAU) / count;
-  for (let k = 0; k < count; k++) {
-    const angle = offset + (k * TAU) / count + jitter(rng, cfg.map.angleJitter);
-    const r = radius + jitter(rng, cfg.map.radiusJitter);
-    const isle: Isle = {
-      id: isles.length,
-      ring,
-      pos: { x: Math.cos(angle) * r, y: Math.sin(angle) * r },
-      radius: nextRange(rng, cfg.map.isleRadius[0], cfg.map.isleRadius[1]),
-      shape: isleShape(rng, cfg),
-      townIds: [],
-      hasBeacon: true,
-      beaconOwner: null,
-    };
-    isles.push(isle);
-    added.push(isle);
-    placeTowns(rng, cfg, isle, tiers, towns);
-  }
-  return added;
-}
-
-export function buildLanes(cfg: GameConfig, isles: Isle[]): Lane[] {
-  const n = isles.length;
-  const key = (a: number, b: number): number => (a < b ? a * n + b : b * n + a);
-  const lanes = new Map<number, Lane>();
-  const add = (a: number, b: number): void => {
-    lanes.set(key(a, b), { a: Math.min(a, b), b: Math.max(a, b) });
-  };
-
-  const ringIsles = isles.filter((isle) => isle.ring > 0);
-  for (const isle of ringIsles) if (isle.ring === 1) add(0, isle.id);
-  for (const isle of ringIsles) {
-    const nearest = ringIsles
-      .filter((other) => other.id !== isle.id)
-      .map((other) => ({ id: other.id, d: distance(isle.pos, other.pos) }))
-      .filter((c) => c.d <= cfg.map.maxLaneLength)
-      .sort((p, q) => p.d - q.d || p.id - q.id)
-      .slice(0, cfg.map.laneNeighbors);
-    for (const c of nearest) add(isle.id, c.id);
-  }
-
-  // Kruskal pass so the graph is always connected, even with sparse or far isles.
-  const parent = isles.map((isle) => isle.id);
-  const find = (x: number): number => {
-    let r = x;
-    while (parent[r] !== r) r = parent[r] as number;
-    return r;
-  };
-  const union = (a: number, b: number): boolean => {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra === rb) return false;
-    parent[ra] = rb;
-    return true;
-  };
-  for (const lane of lanes.values()) union(lane.a, lane.b);
-  const pairs: { a: number; b: number; d: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const a = isles[i] as Isle;
-      const b = isles[j] as Isle;
-      pairs.push({ a: a.id, b: b.id, d: distance(a.pos, b.pos) });
+/** Links a new isle to its nearest isles; a far isle still gets one lane, so the map stays connected. */
+function linkIsle(cfg: GameConfig, isle: Isle, isles: Isle[], lanes: Lane[]): void {
+  const others = isles
+    .filter((o) => o.id !== isle.id)
+    .map((o) => ({ id: o.id, d: distance(o.pos, isle.pos) }))
+    .sort((p, q) => p.d - q.d || p.id - q.id);
+  others.forEach((o, i) => {
+    if (i === 0 || (i < cfg.map.growth.laneNeighbors && o.d <= cfg.map.growth.maxLaneLength)) {
+      lanes.push({ a: Math.min(o.id, isle.id), b: Math.max(o.id, isle.id) });
     }
-  }
-  pairs.sort((p, q) => p.d - q.d || p.a - q.a || p.b - q.b);
-  for (const p of pairs) if (union(p.a, p.b)) add(p.a, p.b);
-
-  return [...lanes.values()].sort((p, q) => p.a - q.a || p.b - q.b);
+  });
+  lanes.sort((p, q) => p.a - q.a || p.b - q.b);
 }
 
-export function generateWorld(cfg: GameConfig, rng: RngState, lordCount: number): World {
-  const isles: Isle[] = [];
-  const towns: Town[] = [];
-
-  const throneIsle: Isle = {
-    id: 0,
-    ring: 0,
-    pos: { x: 0, y: 0 },
-    radius: cfg.map.throneIsleRadius,
+/**
+ * Adds a big isle: `map.isle.towns` neutral towns on a sunflower spiral (higher tiers inside), split into
+ * zones, with `map.spawn.slots` shore spots where lords appear.
+ */
+export function addIsle(cfg: GameConfig, rng: RngState, parts: MapParts, spin: number, at: number): Isle {
+  const id = parts.isles.length;
+  const { pos, ring } = islePosition(cfg, id, spin);
+  const { radius: R, shore, towns: n, tierBands, tiers, zoneSize } = cfg.map.isle;
+  const isle: Isle = {
+    id,
+    ring,
+    pos,
+    radius: R + shore + cfg.map.spawn.privateSpacing,
     shape: isleShape(rng, cfg),
     townIds: [],
-    hasBeacon: false,
-    beaconOwner: null,
+    slots: [],
+    bornAt: at,
   };
-  isles.push(throneIsle);
-  const throneSpec = TROOP_TYPES[nextInt(rng, 0, TROOP_TYPES.length - 1)] ?? 'LANCER';
-  const throne = makeTown(0, 0, { x: 0, y: 0 }, cfg.throne.tier, cfg, throneSpec);
-  throne.isThrone = true;
-  throne.garrison = splitGarrison(cfg.throne.garrison, throneSpec, cfg.neutral.mainShare);
-  throne.neutralCap = cfg.throne.garrison;
-  towns.push(throne);
-  throneIsle.townIds.push(throne.id);
-
-  cfg.map.rings.forEach((ring, ringIndex) => {
-    addRing(cfg, rng, isles, towns, ringIndex + 1, ring.radius, ring.isles, ring.tiers);
-  });
-
-  const outerRing = cfg.map.rings.length;
-  const outer = isles.filter((isle) => isle.ring === outerRing);
-  if (lordCount > outer.length) {
-    throw new Error(`the map has ${outer.length} outer isles for ${lordCount} lords`);
+  const turn = nextFloat(rng) * TAU;
+  const specOffset = nextInt(rng, 0, TROOP_TYPES.length - 1);
+  const created: Town[] = [];
+  for (let i = 0; i < n; i++) {
+    const r = R * Math.sqrt((i + 0.5) / n);
+    const a = turn + i * GOLDEN_ANGLE;
+    const band = tierBands.findIndex((b) => r / R < b);
+    const tier = tiers[band < 0 ? tiers.length - 1 : band] ?? 1;
+    const spec = TROOP_TYPES[(specOffset + i) % TROOP_TYPES.length] ?? 'LANCER';
+    const townPos = {
+      x: pos.x + Math.cos(a) * r + jitter(rng, cfg.map.isle.jitter),
+      y: pos.y + Math.sin(a) * r + jitter(rng, cfg.map.isle.jitter),
+    };
+    const town = neutralTown(parts.towns.length, id, townPos, tier, spec, cfg);
+    parts.towns.push(town);
+    created.push(town);
+    isle.townIds.push(town.id);
   }
-  const start = nextInt(rng, 0, outer.length - 1);
-  const lordIsles: number[] = [];
-  for (let l = 0; l < lordCount; l++) {
-    const isle = outer[(start + Math.floor((l * outer.length) / lordCount)) % outer.length] as Isle;
-    lordIsles.push(isle.id);
+  buildZones(isle, created, zoneSize, parts.zones);
+  const slotTurn = nextFloat(rng) * TAU;
+  const slotRadius = R + shore / 2;
+  for (let k = 0; k < cfg.map.spawn.slots; k++) {
+    const a = slotTurn + (k / cfg.map.spawn.slots) * TAU;
+    isle.slots.push({
+      pos: { x: pos.x + Math.cos(a) * slotRadius, y: pos.y + Math.sin(a) * slotRadius },
+      lordId: null,
+    });
   }
+  parts.isles.push(isle);
+  if (id > 0) linkIsle(cfg, isle, parts.isles, parts.lanes);
+  return isle;
+}
 
-  return { isles, towns, lanes: buildLanes(cfg, isles), throneTownId: throne.id, lordIsles };
+/** Spots for a lord's starter towns around its shore slot: nearest first along the shore, then outward. */
+export function starterSpots(cfg: GameConfig, isle: Isle, slot: Vec, count: number): Vec[] {
+  const dx = slot.x - isle.pos.x;
+  const dy = slot.y - isle.pos.y;
+  const r = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx);
+  const step = cfg.map.spawn.privateSpacing;
+  const span = Math.ceil(Math.sqrt(count)) + 1;
+  const spots: { r: number; a: number; d: number }[] = [];
+  for (let layer = 0; layer <= span; layer++) {
+    for (let o = -span; o <= span; o++) {
+      if (layer === 0 && o === 0) continue;
+      const rr = r + layer * step;
+      spots.push({ r: rr, a: angle + (o * step) / rr, d: layer * layer + o * o });
+    }
+  }
+  return spots
+    .sort((p, q) => p.d - q.d)
+    .slice(0, count)
+    .map((p) => ({ x: isle.pos.x + Math.cos(p.a) * p.r, y: isle.pos.y + Math.sin(p.a) * p.r }));
+}
+
+/** The first isle of a season; with the Throne enabled its central town becomes the Throne. */
+export function generateWorld(
+  cfg: GameConfig,
+  rng: RngState,
+  startsAt: number,
+): MapParts & { throneTownId: number | null; spin: number } {
+  const parts: MapParts = { isles: [], towns: [], zones: [], lanes: [] };
+  const spin = nextFloat(rng) * TAU;
+  addIsle(cfg, rng, parts, spin, startsAt);
+  let throneTownId: number | null = null;
+  const center = parts.towns[0];
+  if (cfg.throne.enabled && center) {
+    center.isThrone = true;
+    center.tier = cfg.throne.tier;
+    center.garrison = splitGarrison(cfg.throne.garrison, center.spec, cfg.neutral.mainShare);
+    center.neutralCap = cfg.throne.garrison;
+    const zone = parts.zones.find((z) => z.id === center.zoneId);
+    if (zone) zone.townIds = zone.townIds.filter((id) => id !== center.id);
+    center.zoneId = null;
+    throneTownId = center.id;
+  }
+  return { ...parts, throneTownId, spin };
 }

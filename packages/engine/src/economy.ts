@@ -1,5 +1,6 @@
 import { MINUTE_MS } from '@si/config/constants';
-import { lordMods, type LordMods } from './modifiers';
+import { distance } from './geometry';
+import { lordMods, ownedCounts, type LordMods } from './modifiers';
 import { cloneTroops, totalTroops } from './troops';
 import type { GameState, Town, Troops, TroopType } from './types';
 
@@ -10,8 +11,8 @@ export interface TownRates {
 }
 
 export function beaconLitFor(state: GameState, town: Town): boolean {
-  const isle = state.isles[town.isleId];
-  return !!isle && isle.hasBeacon && isle.beaconOwner !== null && isle.beaconOwner === town.owner;
+  const zone = town.zoneId === null ? undefined : state.zones[town.zoneId];
+  return !!zone && zone.beaconOwner !== null && zone.beaconOwner === town.owner;
 }
 
 export function townRates(state: GameState, town: Town, mods?: LordMods): TownRates {
@@ -67,12 +68,13 @@ export function dominionRates(state: GameState): Map<string, number> {
   for (const town of state.towns) {
     if (town.owner !== null) bump(town.owner, cfg.dominion.perTier[town.tier - 1] ?? 0);
   }
-  for (const isle of state.isles) {
-    if (isle.hasBeacon && isle.beaconOwner !== null) bump(isle.beaconOwner, cfg.beacon.dominionPerMin);
+  for (const zone of state.zones) {
+    if (zone.beaconOwner !== null) bump(zone.beaconOwner, cfg.beacon.dominionPerMin);
   }
-  const throne = state.towns[state.throneTownId];
+  const throne = state.throneTownId === null ? undefined : state.towns[state.throneTownId];
   if (throne?.owner) bump(throne.owner, cfg.throne.dominionPerMin);
-  for (const [id, value] of rates) rates.set(id, value * lordMods(state, id).dominion);
+  const owned = ownedCounts(state);
+  for (const [id, value] of rates) rates.set(id, value * lordMods(state, id, owned.get(id) ?? 0).dominion);
   return rates;
 }
 
@@ -85,10 +87,11 @@ export function accrueTo(state: GameState, t: number): void {
   const dtMin = elapsedMin(state, t);
   if (dtMin <= 0) return;
   const mods = new Map<string, LordMods>();
+  const owned = ownedCounts(state);
   for (const town of state.towns) {
     let m: LordMods | undefined;
     if (town.owner !== null) {
-      m = mods.get(town.owner) ?? lordMods(state, town.owner);
+      m = mods.get(town.owner) ?? lordMods(state, town.owner, owned.get(town.owner) ?? 0);
       mods.set(town.owner, m);
     }
     const rates = townRates(state, town, m);
@@ -156,7 +159,7 @@ export function respecCost(state: GameState, town: Town): number {
   return state.config.towns.respecCostPerTier * town.tier;
 }
 
-export function fortification(state: GameState, town: Town): number {
+export function fortification(state: GameState, town: Town, ownerMods?: LordMods): number {
   const cfg = state.config;
   let fort = 1 + cfg.towns.fortPerTier * (town.tier - 1);
   if (town.isCapital) fort *= cfg.towns.capitalFort;
@@ -164,7 +167,7 @@ export function fortification(state: GameState, town: Town): number {
   if (town.owner !== null && !town.isCapital) {
     const capitalId = state.lords[town.owner]?.capitalId;
     const capital = capitalId === null || capitalId === undefined ? undefined : state.towns[capitalId];
-    if (capital?.isleId === town.isleId) fort *= cfg.towns.homeIsleFort;
+    if (capital && distance(capital.pos, town.pos) <= cfg.towns.homeRadius) fort *= cfg.towns.homeFort;
   }
-  return fort * lordMods(state, town.owner).fort;
+  return fort * (ownerMods ?? lordMods(state, town.owner)).fort;
 }

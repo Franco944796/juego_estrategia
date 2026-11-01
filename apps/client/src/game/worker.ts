@@ -33,7 +33,7 @@ function postView(s: GameState): void {
 }
 
 function postSave(s: GameState): void {
-  const save: Save = { version: 1, state: s, gameNow, speed };
+  const save: Save = { version: 2, state: s, gameNow, speed };
   scope.postMessage({ type: 'save', save });
   lastSave = performance.now();
 }

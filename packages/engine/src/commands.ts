@@ -108,6 +108,9 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       if (!fitsIn(command.troops, available)) {
         return fail('R08', 'NOT_ENOUGH_TROOPS', 'not enough troops in the town');
       }
+      if (to.privateTo !== null && to.privateTo !== lordId) {
+        return fail('R14', 'UNKNOWN_TOWN', 'that town is not visible to this lord');
+      }
       if (from.id === to.id) return fail('R09', 'SAME_TOWN', 'target is the source');
       if (!islesLinked(state, from.isleId, to.isleId)) {
         return fail('R10', 'UNREACHABLE', 'target isle has no lane to the source isle');

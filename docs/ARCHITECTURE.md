@@ -27,13 +27,19 @@ computeStandings(state, now): Standing[]
 hashState(state): string
 ```
 
-`GameState` is a plain JSON-serializable object. It changes only inside `execute` and `advanceTo`.
+`GameState` is a plain JSON-serializable object. It changes only inside `execute`, `advanceTo`,
+`joinLord`, `setStyle` and `setClan`. Growth appends isles, towns and zones, so ids stay stable; the
+lanes array is replaced (never mutated) because the isle adjacency cache is keyed by it.
+
+`view` leaves out other lords' private towns, so `LordView.towns` is sorted by id but not indexed by
+it: the client looks towns up with `townById` (`apps/client/src/ui/labels.ts`).
 
 ## Time and determinism
 
 - The engine never reads a clock and never calls `Math.random`. Callers pass `now` (game
   milliseconds); randomness comes from a xoshiro128** generator whose state lives in `GameState.rng`.
-- Scheduled events (march arrivals, wind shifts, Throne unseal, season end, bot turns) sit in a
+- Scheduled events (march arrivals, wind shifts, Throne unseal, isle growth checks, season end, bot
+  turns) sit in a
   min-heap ordered by `(dueAt, seq)`. Two arrivals in the same millisecond resolve one after the
   other, in scheduling order.
 - **Production is settled only at commands and scheduled events** (`accrueTo`). `advanceTo` does not
@@ -73,7 +79,9 @@ bots) is a pure function of the seed and the human commands. A bot reads only wh
   `season_log` (every accepted join, command and style change with its time) and `snapshots` (the
   whole state every 5 minutes and at season close). On start the server loads the last snapshot and
   replays the log after it; determinism makes the rebuilt state identical (tested, including a
-  restart in the middle of a march).
+  restart in the middle of a march). A snapshot whose `version` differs from the engine's
+  `STATE_VERSION` cannot be replayed: that season is marked `abandoned` (no rewards, not in the hall
+  of fame) and a new one starts.
 - A timer wakes the world at the next scheduled engine event (at most once a second). When the season
   ends, `rollover` pays Legacy by rank band (`rewards.ts`), archives the standings, opens the next
   season at the old end time and creates a fresh map; players rejoin when they connect.

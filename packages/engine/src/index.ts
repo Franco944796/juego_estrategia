@@ -1,6 +1,7 @@
 export * from './types';
 export { advanceTo, computeStandings, createGame, execute } from './game';
-export { expandMap, joinLord, outerRing, setStyle, type JoinResult } from './join';
+export { joinLord, setStyle, type JoinResult } from './join';
+export { growIsle, isleConquered, isleFull } from './growth';
 export { setClan } from './alliances';
 export { areAllies, migrateState } from './world';
 export { validateCommand, type Validation } from './commands';

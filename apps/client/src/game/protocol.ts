@@ -16,7 +16,7 @@ export interface NewGameOptions {
 }
 
 export interface Save {
-  version: 1;
+  version: 2;
   state: GameState;
   gameNow: number;
   speed: number;

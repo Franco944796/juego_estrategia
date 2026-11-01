@@ -51,7 +51,7 @@ export function readSave(): Save | null {
   if (!raw) return null;
   try {
     const save = JSON.parse(raw) as Save;
-    return save.version === 1 && save.state.status === 'RUNNING' ? save : null;
+    return save.version === 2 && save.state.status === 'RUNNING' ? save : null;
   } catch {
     return null;
   }
@@ -327,6 +327,12 @@ function notify(events: DomainEvent[]): void {
         }
         break;
       }
+      case 'LEVEL_UP':
+        if (e.lordId === me) {
+          const troops = e.troops.LANCER + e.troops.ARCHER + e.troops.GRIFFIN;
+          pushToast(t(lang, 'toastLevelUp', { n: e.level, troops }), 'good');
+        }
+        break;
       case 'MARCH_STATIONED': {
         const target = view.towns.find((x) => x.id === e.march.to);
         if (target?.owner === me && e.march.owner !== me) {
@@ -338,7 +344,7 @@ function notify(events: DomainEvent[]): void {
         break;
       }
       case 'BEACON_CHANGED': {
-        const before = view.isles.find((i) => i.id === e.isleId)?.beaconOwner;
+        const before = view.zones[e.zoneId]?.beaconOwner;
         if (e.owner === me) pushToast(t(lang, 'toastBeacon'), 'good');
         else if (before === me) pushToast(t(lang, 'toastBeaconLost'), 'bad');
         break;

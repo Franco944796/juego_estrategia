@@ -7,7 +7,7 @@ import { RULE_TEXT, t, TROOP_NAMES, type Lang } from '../i18n';
 import { toRealMs, useGame, type Clock } from '../store';
 import { useGameNow } from './hooks';
 import { CloseIcon, TroopIcon } from './icons';
-import { linkedIsles, townLabel } from './labels';
+import { linkedIsles, townById, townLabel } from './labels';
 
 const PREVIEW_DEBOUNCE_MS = 120;
 
@@ -49,8 +49,8 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
   const tutorial = useGame((s) => s.tutorial);
   const setTutorial = useGame((s) => s.setTutorial);
   const now = useGameNow();
-  const source = view?.towns[from];
-  const target = view?.towns[to];
+  const source = view ? townById(view, from) : undefined;
+  const target = view ? townById(view, to) : undefined;
   // From a clanmate's town the player can only move the troops it stationed there.
   const available: Troops =
     (source?.owner === view?.me.id

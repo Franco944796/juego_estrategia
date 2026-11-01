@@ -1,4 +1,4 @@
-import type { LordView } from '@si/engine';
+import type { LordView, TownView } from '@si/engine';
 import { expect, test, type Page } from '@playwright/test';
 
 const DEMO = new URL('../../../demo/shattered-isles.html', import.meta.url).href;
@@ -8,6 +8,14 @@ async function gameView(page: Page): Promise<LordView> {
   const view = await page.evaluate(() => window.__shatteredIsles?.view() ?? null);
   if (!view) throw new Error('no view');
   return view;
+}
+
+/** The neutral town closest to `town` that the viewer can see (often one of its private towns). */
+function nearestNeutral(view: LordView, town: TownView): TownView | undefined {
+  const d = (t: TownView): number => Math.hypot(t.pos.x - town.pos.x, t.pos.y - town.pos.y);
+  return view.towns
+    .filter((t) => t.owner === null && t.isleId === town.isleId)
+    .sort((a, b) => d(a) - d(b))[0];
 }
 
 async function tapTown(page: Page, id: number, touch: boolean): Promise<void> {
@@ -38,8 +46,8 @@ test('plays the opening, wins a battle and fits the screen', async ({ page }, te
   const view = await gameView(page);
   const capitalId = view.me.capitalId;
   if (capitalId === null) throw new Error('no capital');
-  const capital = view.towns[capitalId];
-  const target = view.towns.find((t) => t.isleId === capital?.isleId && t.owner === null);
+  const capital = view.towns.find((t) => t.id === capitalId);
+  const target = capital && nearestNeutral(view, capital);
   if (!capital || !target) throw new Error('no neutral town next to the capital');
 
   await expect(page.getByTestId('tutorial')).toHaveAttribute('data-step', '0');

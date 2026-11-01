@@ -27,8 +27,8 @@ test('found a clan, accept a member, chat and rank clans', async ({ browser }) =
   const bo = await (
     await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, locale: 'es-AR' })
   ).newPage();
-  const suffix = String(Date.now() % 100_000);
-  const tag = `C${suffix.slice(-3)}`;
+  const suffix = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+  const tag = suffix.slice(-4);
   await enter(ana, `Ana${suffix}`);
   await enter(bo, `Bo${suffix}`);
 

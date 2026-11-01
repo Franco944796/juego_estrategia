@@ -2,18 +2,24 @@ import type { PersonalityConfig } from '@si/config';
 import { applyCommand } from './commands';
 import { resolveBattle, type BattleOutcome } from './combat';
 import { fortification, townRates, upgradeCost } from './economy';
+import { distance } from './geometry';
 import { travelInfo, type TravelInfo } from './marches';
-import { lordMods, neutralMods, type LordMods } from './modifiers';
+import { modsMemo, neutralMods, type LordMods } from './modifiers';
 import { addTroops, scaleTroops, splitGarrison, totalTroops, zeroTroops } from './troops';
 import type { DomainEvent, GameState, Lord, Town, Troops } from './types';
 import { visibleIsles } from './vision';
-import { islesLinked, reachableTowns, townsOf } from './world';
+import { isleNeighbors, islesLinked, townsOf } from './world';
+
+/** Only the strongest towns are weighed as attack sources, so big realms keep turns cheap. */
+const SOURCES_PER_ATTACK = 4;
 
 interface Turn {
   state: GameState;
   lord: Lord;
   p: PersonalityConfig;
   mods: LordMods;
+  /** Lord modifiers memoized for the turn: the bot's own sends never change who owns what. */
+  modsOf: (lordId: string | null) => LordMods;
   now: number;
   events: DomainEvent[];
   visible: Set<number>;
@@ -27,11 +33,13 @@ interface Turn {
 export function botTurn(state: GameState, lordId: string, now: number, events: DomainEvent[]): void {
   const lord = state.lords[lordId];
   if (!lord || !lord.alive || !lord.personality) return;
+  const modsOf = modsMemo(state);
   const turn: Turn = {
     state,
     lord,
     p: state.config.bots.personalities[lord.personality],
-    mods: lordMods(state, lordId),
+    mods: modsOf(lordId),
+    modsOf,
     now,
     events,
     visible: visibleIsles(state, lordId),
@@ -72,13 +80,13 @@ function knownGarrison(turn: Turn, town: Town): Troops {
 
 function predictAttack(turn: Turn, attackers: Troops, target: Town, defenders: Troops): BattleOutcome {
   const state = turn.state;
-  const defense = target.owner === null ? neutralMods() : lordMods(state, target.owner);
+  const defense = target.owner === null ? neutralMods() : turn.modsOf(target.owner);
   return resolveBattle(state.config, {
     attacker: attackers,
     defender: defenders,
     attackMults: turn.mods.attack,
     defenseMults: defense.defense,
-    fort: fortification(state, target),
+    fort: fortification(state, target, turn.modsOf(target.owner)),
     attackerLossMult: turn.mods.winnerLosses,
     defenderLossMult: defense.winnerLosses,
   });
@@ -98,13 +106,13 @@ function defend(turn: Turn): void {
     const arriving = state.marches
       .filter((m) => m.owner === lord.id && m.to === town.id && m.arriveAt <= threat.arriveAt)
       .reduce((sum, m) => addTroops(sum, m.troops), zeroTroops());
-    const enemy = lordMods(state, threat.owner);
+    const enemy = turn.modsOf(threat.owner);
     const outcome = resolveBattle(state.config, {
       attacker: threat.troops,
       defender: addTroops(town.garrison, arriving),
       attackMults: enemy.attack,
       defenseMults: turn.mods.defense,
-      fort: fortification(state, town),
+      fort: fortification(state, town, turn.mods),
       attackerLossMult: enemy.winnerLosses,
       defenderLossMult: turn.mods.winnerLosses,
     });
@@ -116,7 +124,7 @@ function defend(turn: Turn): void {
       if (!islesLinked(state, from.isleId, town.isleId)) continue;
       const troops = spare(turn, from);
       if (totalTroops(troops) === 0) continue;
-      const travel = travelInfo(state, lord.id, from, town, troops, now);
+      const travel = travelInfo(state, lord.id, from, town, troops, now, turn.mods);
       if (now + travel.durationMs >= threat.arriveAt) continue;
       if (!best || travel.durationMs < best.travel.durationMs) best = { from, troops, travel };
     }
@@ -153,13 +161,64 @@ function targetValue(turn: Turn, to: Town): number {
   const { state, lord, p } = turn;
   const cfg = state.config;
   let value = (cfg.dominion.perTier[to.tier - 1] ?? 0) * (to.owner === null ? 1 : p.lordAggression);
-  const isle = state.isles[to.isleId];
-  const completesIsle =
-    isle?.hasBeacon === true &&
-    isle.townIds.every((id) => id === to.id || state.towns[id]?.owner === lord.id);
-  if (completesIsle) value += cfg.beacon.dominionPerMin;
+  const zone = to.zoneId === null ? undefined : state.zones[to.zoneId];
+  if (zone) {
+    // Worth more the closer it brings the lord to lighting the zone's beacon.
+    const owned = zone.townIds.filter((id) => id === to.id || state.towns[id]?.owner === lord.id).length;
+    value += cfg.beacon.dominionPerMin * 3 * (owned / zone.townIds.length) ** 2;
+  }
   if (to.isThrone) value += cfg.throne.dominionPerMin * p.throneDesire;
   return value;
+}
+
+/** Up to `limit` towns on `isles` that pass `accept`, nearest to `from` first. */
+function nearest(
+  state: GameState,
+  from: Town,
+  isles: number[],
+  limit: number,
+  accept: (to: Town) => boolean,
+): Town[] {
+  const best: { to: Town; d: number }[] = [];
+  for (const isleId of isles) {
+    for (const id of state.isles[isleId]?.townIds ?? []) {
+      const to = state.towns[id] as Town;
+      if (to.id === from.id || !accept(to)) continue;
+      const d = distance(from.pos, to.pos);
+      if (best.length === limit && d >= (best[limit - 1]?.d ?? Infinity)) continue;
+      let i = Math.min(best.length, limit - 1);
+      best[i] = { to, d };
+      while (i > 0 && (best[i - 1]?.d ?? 0) > d) {
+        best[i] = best[i - 1] as { to: Town; d: number };
+        best[i - 1] = { to, d };
+        i--;
+      }
+    }
+  }
+  return best.map((p) => p.to);
+}
+
+function seenBy(lordId: string, town: Town): boolean {
+  return town.privateTo === null || town.privateTo === lordId;
+}
+
+/**
+ * The nearest towns `from` could attack (big isles hold too many towns to weigh them all), plus a few
+ * on each linked isle so bots still look across the lanes.
+ */
+function targetsNear(turn: Turn, from: Town): Town[] {
+  const { state, lord } = turn;
+  const capitalImmune = state.config.rules.capitalImmune;
+  const limit = state.config.bots.targetsPerTown;
+  const accept = (to: Town): boolean =>
+    to.owner !== lord.id &&
+    seenBy(lord.id, to) &&
+    !(to.isThrone && !state.throneUnsealed) &&
+    !(to.isCapital && capitalImmune);
+  const across = (isleNeighbors(state)[from.isleId] ?? []).flatMap((isleId) =>
+    nearest(state, from, [isleId], Math.ceil(limit / 4), accept),
+  );
+  return [...nearest(state, from, [from.isleId], limit, accept), ...across];
 }
 
 function attack(turn: Turn): void {
@@ -168,19 +227,20 @@ function attack(turn: Turn): void {
   if (slots <= 0) return;
   const options: { from: Town; to: Town; troops: Troops; score: number }[] = [];
 
-  for (const from of townsOf(state, lord.id)) {
-    if (turn.busy.has(from.id)) continue;
-    const troops = spare(turn, from);
-    if (totalTroops(troops) < p.minAttackTroops) continue;
-    for (const to of reachableTowns(state, from)) {
-      if (to.owner === lord.id || turn.targeted.has(to.id)) continue;
-      if (to.isThrone && !state.throneUnsealed) continue;
-      if (to.isCapital && state.config.rules.capitalImmune) continue;
+  const sources = townsOf(state, lord.id)
+    .filter((from) => !turn.busy.has(from.id))
+    .map((from) => ({ from, troops: spare(turn, from) }))
+    .filter((x) => totalTroops(x.troops) >= p.minAttackTroops)
+    .sort((a, b) => totalTroops(b.troops) - totalTroops(a.troops) || a.from.id - b.from.id)
+    .slice(0, slots * SOURCES_PER_ATTACK);
+  for (const { from, troops } of sources) {
+    for (const to of targetsNear(turn, from)) {
+      if (turn.targeted.has(to.id)) continue;
       const value = targetValue(turn, to);
       if (value <= 0) continue;
       const outcome = predictAttack(turn, troops, to, knownGarrison(turn, to));
       if (outcome.attackerPower < outcome.defenderPower * p.attackMargin) continue;
-      const travel = travelInfo(state, lord.id, from, to, troops, now);
+      const travel = travelInfo(state, lord.id, from, to, troops, now, turn.mods);
       if (travel.sky && travel.windFactor < p.minWindFactor) continue;
       options.push({ from, to, troops, score: value / travel.durationMs });
     }
@@ -194,33 +254,41 @@ function attack(turn: Turn): void {
   }
 }
 
-/** How exposed a town is: foreign towns in reach, plus the Throne for lords who want it. */
+/** How exposed a town is: foreign towns among its nearest neighbors, plus the Throne for lords who want it. */
 function frontierScore(turn: Turn, town: Town): number {
   const { state, lord, p } = turn;
-  let score = reachableTowns(state, town).filter((t) => t.owner !== lord.id).length;
-  const throneIsle = state.towns[state.throneTownId]?.isleId;
+  const reach = [town.isleId, ...(isleNeighbors(state)[town.isleId] ?? [])];
+  const around = nearest(state, town, reach, state.config.bots.targetsPerTown, (t) => seenBy(lord.id, t));
+  let score = around.filter((t) => t.owner !== lord.id).length;
+  const throneIsle = state.throneTownId === null ? undefined : state.towns[state.throneTownId]?.isleId;
   if (state.throneUnsealed && throneIsle !== undefined && islesLinked(state, town.isleId, throneIsle)) {
     score += p.throneDesire;
   }
   return score;
 }
 
-/** Towns stuck at their cap push their spare troops one lane toward the frontier. */
+/** Towns stuck at their cap push their spare troops to the most exposed of their nearest own towns. */
 function consolidate(turn: Turn): void {
   const { state, lord, p } = turn;
-  const mine = townsOf(state, lord.id);
-  if (mine.length < 2) return;
-  const scores = new Map(mine.map((t) => [t.id, frontierScore(turn, t)]));
-  const scoreOf = (t: Town): number => scores.get(t.id) ?? 0;
+  const scores = new Map<number, number>();
+  const scoreOf = (t: Town): number => {
+    let score = scores.get(t.id);
+    if (score === undefined) {
+      score = frontierScore(turn, t);
+      scores.set(t.id, score);
+    }
+    return score;
+  };
 
-  for (const from of mine) {
+  for (const from of townsOf(state, lord.id)) {
     if (marchSlots(turn) <= 0) return;
     if (turn.busy.has(from.id)) continue;
     const cap = state.config.towns.garrisonCap[from.tier - 1] ?? 0;
     if (totalTroops(from.garrison) < cap) continue;
+    const reach = [from.isleId, ...(isleNeighbors(state)[from.isleId] ?? [])];
+    const near = nearest(state, from, reach, state.config.bots.targetsPerTown, (t) => t.owner === lord.id);
     let best: Town | null = null;
-    for (const t of mine) {
-      if (t.id === from.id || !islesLinked(state, from.isleId, t.isleId)) continue;
+    for (const t of near) {
       if (scoreOf(t) <= scoreOf(from)) continue;
       if (!best || scoreOf(t) > scoreOf(best)) best = t;
     }

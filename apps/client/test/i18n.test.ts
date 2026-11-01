@@ -32,7 +32,7 @@ describe('i18n', () => {
     for (const lang of ['es', 'en'] as const) {
       for (const type of TROOP_TYPES) expect(TROOP_NAMES[lang][type]).toBeTruthy();
       for (const id of EDICT_IDS) expect(EDICT_TEXT[lang][id].name).toBeTruthy();
-      expect(Object.keys(RULE_TEXT[lang])).toHaveLength(15);
+      expect(Object.keys(RULE_TEXT[lang])).toHaveLength(16);
       for (const style of defaultConfig.cosmetics.styles) expect(STYLE_NAMES[lang][style.id]).toBeTruthy();
       expect(Object.keys(SERVER_TEXT[lang]).sort()).toEqual(Object.keys(SERVER_TEXT.es).sort());
       expect(WIND_NAMES[lang]).toHaveLength(8);

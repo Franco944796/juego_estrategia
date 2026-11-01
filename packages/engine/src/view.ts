@@ -10,6 +10,7 @@ import {
   upgradeCost,
 } from './economy';
 import { computeStandings } from './game';
+import { modsMemo } from './modifiers';
 import { windIndexAt, windShiftMs } from './marches';
 import { cloneTroops } from './troops';
 import type {
@@ -24,9 +25,10 @@ import type {
   Troops,
   TroopType,
   Vec,
+  Zone,
 } from './types';
 import { visibleIsles } from './vision';
-import { areAllies } from './world';
+import { areAllies, xpForLevel } from './world';
 
 export interface OwnTownInfo {
   goldPerMin: number;
@@ -45,6 +47,9 @@ export interface TownView {
   owner: string | null;
   isCapital: boolean;
   isThrone: boolean;
+  /** A starter town only the viewer sees until someone owns it. */
+  isPrivate: boolean;
+  zoneId: number | null;
   fort: number;
   /** Null when the garrison is out of sight. */
   garrison: Troops | null;
@@ -95,6 +100,10 @@ export interface MeView {
   stats: LordStats;
   activeMarches: number;
   clanId: string | null;
+  level: number;
+  xp: number;
+  /** Experience the next level needs; null at the top level. */
+  nextLevelXp: number | null;
 }
 
 export interface LordSummary {
@@ -105,6 +114,7 @@ export interface LordSummary {
   alive: boolean;
   style: string;
   clanId: string | null;
+  level: number;
 }
 
 export interface SeasonView {
@@ -112,7 +122,7 @@ export interface SeasonView {
   endsAt: number;
   throneUnsealAt: number;
   throneUnsealed: boolean;
-  throneTownId: number;
+  throneTownId: number | null;
   status: SeasonStatus;
   capitalImmune: boolean;
 }
@@ -123,7 +133,9 @@ export interface LordView {
   me: MeView;
   lords: LordSummary[];
   isles: Isle[];
+  zones: Zone[];
   lanes: Lane[];
+  /** Sorted by id, without other lords' private starter towns, so it is not indexed by id. */
   towns: TownView[];
   marches: MarchView[];
   wind: WindView;
@@ -139,8 +151,14 @@ export function view(state: GameState, lordId: string, now: number): LordView {
   if (!lord) throw new Error(`unknown lord ${lordId}`);
   const t = Math.min(Math.max(now, state.accruedAt), state.endsAt);
   const visible = visibleIsles(state, lordId);
+  const modsOf = modsMemo(state);
 
-  const towns: TownView[] = state.towns.map((town) => {
+  const hidden = (townId: number): boolean => {
+    const owner = state.towns[townId]?.privateTo ?? null;
+    return owner !== null && owner !== lordId;
+  };
+  const towns: TownView[] = state.towns.flatMap((town) => {
+    if (hidden(town.id)) return [];
     const mine = town.owner === lordId;
     let own: OwnTownInfo | null = null;
     if (mine) {
@@ -153,7 +171,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
         respecCost: respecCost(state, town),
       };
     }
-    return {
+    const seen: TownView = {
       id: town.id,
       isleId: town.isleId,
       pos: { x: town.pos.x, y: town.pos.y },
@@ -162,7 +180,9 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       owner: town.owner,
       isCapital: town.isCapital,
       isThrone: town.isThrone,
-      fort: fortification(state, town),
+      isPrivate: town.privateTo === lordId,
+      zoneId: town.zoneId,
+      fort: fortification(state, town, modsOf(town.owner)),
       garrison: mine || visible.has(town.isleId) ? cloneTroops(projectedGarrison(state, town, t)) : null,
       stationed:
         mine || visible.has(town.isleId)
@@ -170,6 +190,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
           : null,
       own,
     };
+    return [seen];
   });
 
   const isleOf = (townId: number): number => state.towns[townId]?.isleId ?? -1;
@@ -178,8 +199,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       (m) =>
         m.owner === lordId ||
         state.towns[m.to]?.owner === lordId ||
-        visible.has(isleOf(m.from)) ||
-        visible.has(isleOf(m.to)),
+        (!hidden(m.to) && (visible.has(isleOf(m.from)) || visible.has(isleOf(m.to)))),
     )
     .map((m) => {
       const mine = m.owner === lordId;
@@ -232,6 +252,9 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       stats: { ...lord.stats },
       activeMarches: state.marches.filter((m) => m.owner === lordId).length,
       clanId: lord.clanId,
+      level: lord.level,
+      xp: lord.xp,
+      nextLevelXp: lord.level < cfg.levels.maxLevel ? xpForLevel(state, lord.level) : null,
     },
     lords: state.lordOrder.flatMap((id) => {
       const l = state.lords[id];
@@ -245,6 +268,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
               alive: l.alive,
               style: l.style,
               clanId: l.clanId,
+              level: l.level,
             },
           ]
         : [];
@@ -253,7 +277,13 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       ...isle,
       pos: { x: isle.pos.x, y: isle.pos.y },
       shape: [...isle.shape],
-      townIds: [...isle.townIds],
+      townIds: isle.townIds.filter((id) => !hidden(id)),
+      slots: isle.slots.map((slot) => ({ pos: { x: slot.pos.x, y: slot.pos.y }, lordId: slot.lordId })),
+    })),
+    zones: state.zones.map((zone) => ({
+      ...zone,
+      pos: { x: zone.pos.x, y: zone.pos.y },
+      townIds: [...zone.townIds],
     })),
     lanes: state.lanes.map((lane) => ({ a: lane.a, b: lane.b })),
     towns,

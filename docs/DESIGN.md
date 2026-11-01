@@ -1,7 +1,7 @@
 # Shattered Isles — Game Design
 
 Original real-time conquest game for phones and desktop browsers. The sky-realm shattered into floating
-isles; each season the Sky Throne stands empty and lords race to claim it. Lore never affects mechanics.
+isles; each season lords race to light the beacons of their zones. Lore never affects mechanics.
 
 All numbers below are defaults from `packages/config` (the config is authoritative; balance changes are
 logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
@@ -18,15 +18,20 @@ logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
 
 ## 2. World
 
-- **Isles** sit on concentric rings around the central **Throne isle** (`map.rings`). Each isle has 3–5
-  **towns** (`map.townsPerIsle`). The Throne isle holds a single town, the Throne.
-- **Sky lanes** link isles: every isle connects to its `map.laneNeighbors` nearest isles within
-  `map.maxLaneLength`, inner-ring isles connect to the Throne isle, and a spanning tree guarantees that
-  the graph is connected.
+- A season starts with **one big isle** of `map.isle.towns` (100) neutral towns laid on a spiral, higher
+  tiers toward the middle (`map.isle.tierBands`, `map.isle.tiers`: tier 3 inside, then 2, then 1).
+- Each isle is split into **zones** of about `map.isle.zoneSize` (10) towns: one in the middle, then
+  rings of 3, 6, 9… sectors. Every zone has its own beacon (§7).
+- Each isle has `map.spawn.slots` (10) **shore slots**. A lord appears on a free slot with a new
+  capital and `map.spawn.privateTowns` (3) tier-1 neutral towns beside it that only that lord sees and
+  may attack until someone owns them. Lords go to the newest isle with a free slot.
+- **A new isle is born** when the newest isle is full (every slot taken) or fully conquered (every
+  public town owned), at most `map.growth.maxPerDay` (3) per 24 game hours, not counting the first. New
+  isles go in rings of 6, 12, 18… around the first, `map.growth.isleSpacing` apart.
+- **Sky lanes** link each new isle to its `map.growth.laneNeighbors` nearest isles within
+  `map.growth.maxLaneLength` (always at least one, so the map stays connected). Lanes are never removed.
 - A march may target any town on **the same isle** or on an isle **joined by a lane** to the origin's
   isle.
-- Lords start on the outer ring, each with a tier-2 capital on its own isle. The other towns start
-  neutral; their tier grows toward the center (`map.rings[].tiers`).
 
 ## 3. Wind
 
@@ -37,7 +42,8 @@ logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
   the travel direction and the wind:
   - `c ≥ 0`: `factor = 1 + (wind.tailwindMax − 1) · c` → tailwind ×2;
   - `c < 0`: `factor = 1 + (1 − wind.headwindMin) · c` → headwind ×0.5; crosswind ×1.
-- Inside an isle the wind does not apply.
+- Inside an isle the wind does not apply. With a single isle at the start of a season, the wind only
+  matters once the second isle is born.
 - The factor is **locked when the march departs**; later shifts do not change its arrival time.
 
 ## 4. Troops
@@ -94,11 +100,13 @@ A march moves at the speed of its slowest type.
 
 ## 7. Beacons, Throne and Dominion
 
-- **Beacon.** A lord who owns every town of an isle lights its beacon: +25% production on that isle, +`beacon.dominionPerMin` Dominion and wider vision. Losing any town of the isle puts it out.
-- **Sky Throne.** Sealed until `throne.unsealAtFraction` (30%) of the season; until then it cannot be
-  targeted. Its holder earns `throne.dominionPerMin` (25) Dominion per minute on top of the town's own.
+- **Beacon.** A lord who owns every town of a zone lights its beacon: +25% production in that zone, +`beacon.dominionPerMin` Dominion and `beacon.visionHops` more lanes of vision from that isle. Losing
+  any town of the zone puts it out. Capitals and private towns belong to no zone.
+- **Sky Throne** (off by default, `throne.enabled`). When on, the middle town of the first isle is the
+  Throne: sealed until `throne.unsealAtFraction` (30%) of the season, then its holder earns
+  `throne.dominionPerMin` (25) Dominion per minute on top of the town's own.
 - **Dominion** accrues every game minute: `dominion.perTier[tier]` per owned town, plus lit beacons,
-  plus the Throne, times edicts. The season ranking sorts by Dominion, then glory, then lord id.
+  plus the Throne if any, times edicts. The season ranking sorts by Dominion, then glory, then lord id.
 
 ## 8. Glory and edicts
 
@@ -120,18 +128,30 @@ A march moves at the speed of its slowest type.
 | Legend       | Dominion ×1.15                     |
 | Veterans     | Winner losses ×0.8                 |
 
+## 8b. Lord levels
+
+- Capturing a town gives experience: `levels.xpPerCaptureTier` (10) × the town's tier, doubled
+  (`levels.lordCaptureMult`) when the town belonged to another lord.
+- Level n → n+1 needs `round(levels.xpBase (30) × levels.xpGrowth (1.25)^(n−1))` experience; up to
+  `levels.maxLevel` (100). Levels reset with the season.
+- Each new level sends `levels.troopsBase (9) + levels.troopsPerLevel (3) × level` troops to the
+  capital, split evenly between the three types (the remainder goes to the capital's type), and
+  raises gold production by `levels.goldBonusPerLevel` (1% of the base per level gained: 200 gold
+  becomes 202 at level 2, 204 at level 3).
+
 ## 9. Vision
 
 - Everyone sees the political map: owners, tiers, specializations, beacons and the wind.
-- Garrison sizes are visible on isles where the lord owns a town and on isles one lane away (two with a
-  lit beacon on the origin isle).
+- Garrison sizes are visible on isles where the lord or a clanmate owns a town and on isles one lane
+  away (two from an isle with a lit friendly beacon).
+- Another lord's private towns are hidden altogether (and so are marches toward them).
 - A lord sees its own marches, every march targeting its towns, and other marches whose origin or target
   isle is visible.
 
 ## 10. Exile and season end
 
 - A lord with no towns and no marches in flight is **exiled**: it restarts on a free neutral town (the
-  outermost ring that still has one, lowest tier) with `exile.troops`, keeping gold, Dominion, glory and
+  newest isle that still has a public one, lowest tier) with `exile.troops`, keeping gold, Dominion, glory and
   edicts. With no neutral town left it is eliminated.
 - At the season end every command is rejected and the final ranking is frozen.
 
@@ -140,18 +160,18 @@ A march moves at the speed of its slowest type.
 The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same rules, in real time.
 
 - **One public world, one league.** A season lasts 30 days. At the end the ranking is frozen, rewards
-  are paid and a new season starts with a fresh map. Players join whenever they connect and start
-  with a tier-1 capital on a free outer isle.
-- **The map grows.** When no outer isle is free, a new ring of neutral isles is added outside; lanes
-  are only ever added, never removed.
+  are paid and a new season starts with a fresh map. Players join whenever they connect and appear on
+  a shore slot with a tier-1 capital and their private towns (§2). When every isle is full and today's
+  isles are spent, joining fails with `WORLD_FULL` until the next isle is born.
 - **Capitals cannot be attacked** (`rules.capitalImmune`); there are no shields. A march whose target
-  became a capital on the way returns home (`MARCH_REPELLED`).
-- **Snowball brakes:** the other towns on your capital's isle get ×`towns.homeIsleFort` (3)
-  fortification, and owning more than `towns.sprawl.freeTowns` (6) towns divides the production of all
+  became a capital on the way (an exiled lord restarting there) returns home (`MARCH_REPELLED`).
+- **Snowball brakes:** your towns within `towns.homeRadius` (110) of your capital get
+  ×`towns.homeFort` (3) fortification, and owning more than `towns.sprawl.freeTowns` (6) towns divides the production of all
   your towns by `1 + towns.sprawl.penaltyPerTown (0.1) × extra towns`. The demo uses the same brakes,
   milder: ×1.5, and −5% per town beyond 8.
-- **Economy:** production ÷20 and costs ×5 versus the demo, so towns grow over weeks; marches still
-  take minutes and the wind shifts every 3 hours.
+- **Economy:** production ÷5, upgrade and respecialization costs ×10 and plunder ×5 versus the
+  demo, so towns grow over weeks; marches take seconds to a couple of minutes and the wind shifts
+  every 3 hours.
 - **Rewards by final rank:** top 5% → 100 Legacy, top 25% → 50, top 50% → 25, everyone else who
   played → 10 (`rewards.tiers`; each cut-off rounds up and holds at least one player). Legacy is
   permanent and only buys town styles (`cosmetics.styles`); it never changes the rules of a season.
@@ -184,27 +204,29 @@ Every command is validated by the engine; each rule has a passing and a violatin
 | R08 | Troops sent do not exceed the garrison, per type.                                 |
 | R09 | Target differs from source.                                                       |
 | R10 | Target is on the same isle or on an isle joined by a lane.                        |
-| R11 | The Throne cannot be targeted while sealed.                                       |
+| R11 | The Throne (when enabled) cannot be targeted while sealed.                        |
 | R12 | Active marches per lord stay below `march.maxActivePerLord`.                      |
 | R13 | An edict can be chosen only from the pending draft.                               |
-| R14 | Command payloads have the right shape (unknown ids and types are rejected).       |
+| R14 | Command payloads have the right shape; another lord's private town is unknown.    |
 | R15 | With `rules.capitalImmune`, another lord's capital cannot be targeted.            |
 
 ## 13. Bots
 
 Each bot thinks every `bots.thinkEveryMin` game minutes (with seeded jitter) through the same command
-API as players, and reads only what its vision allows (unseen garrisons are estimated from tier).
+API as players, and reads only what its vision allows (unseen garrisons are estimated from tier). It
+weighs only the `bots.targetsPerTown` (12) nearest targets of each town, plus a few on each linked
+isle, from its strongest towns.
 
 | Personality | Behavior                                                                      |
 | ----------- | ----------------------------------------------------------------------------- |
 | Raider      | Attacks at low margins, favors griffins and tailwinds, keeps little gold.     |
-| Builder     | Upgrades first, attacks only with a wide margin, completes isles for beacons. |
+| Builder     | Upgrades first, attacks only with a wide margin, completes zones for beacons. |
 | Warden      | Reinforces threatened towns, conquers neutrals, rarely attacks lords.         |
-| Climber     | Builds up and goes for the Throne once it is unsealed.                        |
+| Climber     | Builds up and goes for the Throne (when enabled) once it is unsealed.         |
 
 Turn order: choose a pending edict → reinforce threatened towns → spend gold on upgrades → launch the
 best attack (value ÷ travel time, predicted power ratio above the personality margin) → move surplus
-troops toward the frontier.
+troops from towns stuck at the cap to the most exposed of their nearest own towns.
 
 ## 14. Demo (single player)
 

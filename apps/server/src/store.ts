@@ -202,6 +202,11 @@ export class Store {
     return { id: Number(info.lastInsertRowid), seed, startsAt, endsAt };
   }
 
+  /** Closes a season without results; the hall of fame and rewards skip it. */
+  abandonSeason(id: number): void {
+    this.db.prepare("UPDATE seasons SET status = 'abandoned' WHERE id = ?").run(id);
+  }
+
   finishSeason(id: number, results: unknown): void {
     this.db
       .prepare("UPDATE seasons SET status = 'finished', results = ? WHERE id = ?")

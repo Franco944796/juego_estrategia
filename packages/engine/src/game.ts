@@ -2,10 +2,12 @@ import { MINUTE_MS, PERSONALITIES, WIND_DIRECTIONS } from '@si/config/constants'
 import { botTurn } from './bots';
 import { applyCommand } from './commands';
 import { accrueTo, projectedDominion } from './economy';
+import { checkGrowth, growIsle } from './growth';
 import { generateWorld } from './mapgen';
 import { arriveMarch, windShiftMs } from './marches';
 import { heapPeek, heapPop, schedule } from './queue';
 import { nextFloat, nextInt, seedRng } from './rng';
+import { STATE_VERSION } from './types';
 import type {
   CreateGameParams,
   DomainEvent,
@@ -15,7 +17,7 @@ import type {
   QueueItem,
   Standing,
 } from './types';
-import { foundLord, recomputeBeacon } from './world';
+import { openIsle, spawnLord } from './spawn';
 
 export function createGame(params: CreateGameParams): GameState {
   const cfg = params.config;
@@ -23,12 +25,12 @@ export function createGame(params: CreateGameParams): GameState {
     throw new Error('lord ids must be unique');
   }
   const rng = seedRng(params.seed);
-  const world = generateWorld(cfg, rng, params.lords.length);
+  const world = generateWorld(cfg, rng, params.startsAt);
   const durationMs = Math.round(cfg.season.durationMin * MINUTE_MS);
   const startsAt = params.startsAt;
 
   const state: GameState = {
-    version: 1,
+    version: STATE_VERSION,
     seed: params.seed >>> 0,
     rng,
     config: cfg,
@@ -40,6 +42,7 @@ export function createGame(params: CreateGameParams): GameState {
     status: 'RUNNING',
     accruedAt: startsAt,
     isles: world.isles,
+    zones: world.zones,
     lanes: world.lanes,
     towns: world.towns,
     lords: {},
@@ -52,20 +55,20 @@ export function createGame(params: CreateGameParams): GameState {
     reports: [],
     nextReportId: 1,
     standings: null,
+    growCheckAt: null,
+    mapSpin: world.spin,
   };
 
   let botIndex = 0;
-  params.lords.forEach((init, i) => {
-    const isle = state.isles[world.lordIsles[i] ?? -1];
-    const town = isle ? state.towns[isle.townIds[0] ?? -1] : undefined;
-    if (!town) throw new Error('no starting town for a lord');
+  for (const init of params.lords) {
     let personality: Personality | null = null;
     if (init.isBot) {
       personality = init.personality ?? PERSONALITIES[botIndex % PERSONALITIES.length] ?? 'RAIDER';
       botIndex++;
     }
-    foundLord(state, init, town, personality);
-  });
+    // Lords given at creation always fit: extra isles here skip the daily cap.
+    spawnLord(state, init, openIsle(state) ?? growIsle(state, startsAt, []), personality);
+  }
 
   const shiftMs = windShiftMs(state);
   const windows = Math.max(1, Math.ceil(durationMs / shiftMs));
@@ -77,12 +80,12 @@ export function createGame(params: CreateGameParams): GameState {
     state.windDirs.push(dir);
     schedule(state, startsAt + k * shiftMs, { kind: 'WIND_SHIFT', index: k });
   }
-  schedule(state, state.throneUnsealAt, { kind: 'THRONE_UNSEAL' });
+  if (state.throneTownId !== null) schedule(state, state.throneUnsealAt, { kind: 'THRONE_UNSEAL' });
   schedule(state, state.endsAt, { kind: 'SEASON_END' });
   for (const id of state.lordOrder) {
     if (state.lords[id]?.isBot) scheduleFirstBotTurn(state, id, startsAt);
   }
-  for (const isle of state.isles) recomputeBeacon(state, isle.id, startsAt, []);
+  checkGrowth(state, startsAt, []);
   return state;
 }
 
@@ -125,6 +128,10 @@ function processEvent(state: GameState, item: QueueItem, events: DomainEvent[]):
       state.marches = [];
       state.standings = computeStandings(state, at);
       events.push({ type: 'SEASON_ENDED', at, standings: state.standings });
+      return;
+    case 'GROW_CHECK':
+      state.growCheckAt = null;
+      checkGrowth(state, at, events);
       return;
     case 'BOT_TURN': {
       const lord = state.lords[ev.lordId];

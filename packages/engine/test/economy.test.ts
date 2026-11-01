@@ -14,9 +14,10 @@ import {
 } from '../src/economy';
 import { lordMods } from '../src/modifiers';
 import { totalTroops } from '../src/troops';
-import type { DomainEvent } from '../src/types';
-import { recomputeBeacon } from '../src/world';
-import { capitalOf, game, give, lord, MIN, neutralsBeside, T0, townsOnIsle, troops } from './helpers';
+import { distance } from '../src/geometry';
+import type { DomainEvent, Town } from '../src/types';
+import { recomputeZone } from '../src/world';
+import { capitalOf, game, give, lord, MIN, neutralsBeside, T0, troops } from './helpers';
 
 describe('production', () => {
   it('pays gold and trains the specialization of an owned town', () => {
@@ -94,24 +95,39 @@ describe('production', () => {
 });
 
 describe('beacons, Throne and dominion', () => {
-  it('lights a beacon for a lord owning the whole isle', () => {
+  it('lights a zone beacon for a lord owning every town of the zone', () => {
     const state = game();
-    const capital = capitalOf(state, 'h1');
+    const zone = state.zones[0];
+    if (!zone) throw new Error('no zone');
+    const towns = zone.townIds.map((id) => state.towns[id] as Town);
     const events: DomainEvent[] = [];
-    for (const town of townsOnIsle(state, capital.isleId)) give(state, town, 'h1', town.garrison);
-    recomputeBeacon(state, capital.isleId, T0, events);
-    expect(events).toEqual([{ type: 'BEACON_CHANGED', at: T0, isleId: capital.isleId, owner: 'h1' }]);
-    expect(townRates(state, capital).gold).toBeCloseTo(3.5 * 1.5 * 1.25, 12);
-    const isleTowns = townsOnIsle(state, capital.isleId);
-    const perTier = isleTowns.reduce((sum, t) => sum + (state.config.dominion.perTier[t.tier - 1] ?? 0), 0);
+    for (const town of towns) give(state, town, 'h1', town.garrison);
+    recomputeZone(state, zone.id, T0, events);
+    expect(events).toEqual([{ type: 'BEACON_CHANGED', at: T0, zoneId: zone.id, owner: 'h1' }]);
+    const first = towns[0] as Town;
+    const plain = (state.config.towns.goldPerMin[first.tier - 1] ?? 0) * lordMods(state, 'h1').sprawl;
+    expect(townRates(state, first).gold).toBeCloseTo(plain * 1.25, 12);
+    expect(townRates(state, capitalOf(state, 'h1')).gold).toBeCloseTo(
+      3.5 * 1.5 * lordMods(state, 'h1').sprawl,
+      12,
+    );
+    const perTier = [capitalOf(state, 'h1'), ...towns].reduce(
+      (sum, t) => sum + (state.config.dominion.perTier[t.tier - 1] ?? 0),
+      0,
+    );
     expect(dominionRates(state).get('h1')).toBeCloseTo(perTier + 3, 12);
-    recomputeBeacon(state, capital.isleId, T0, events);
+    recomputeZone(state, zone.id, T0, events);
+    recomputeZone(state, null, T0, events);
     expect(events).toHaveLength(1);
+    give(state, first, 'h2', first.garrison);
+    recomputeZone(state, zone.id, T0, events);
+    expect(events.at(-1)).toEqual({ type: 'BEACON_CHANGED', at: T0, zoneId: zone.id, owner: null });
   });
 
   it('pays Throne dominion to its holder', () => {
-    const state = game();
-    const throne = state.towns[state.throneTownId];
+    const state = game({ config: { throne: { enabled: true } } });
+    expect(game().throneTownId).toBeNull();
+    const throne = state.towns[state.throneTownId ?? -1];
     if (!throne) throw new Error('no throne');
     give(state, throne, 'h1', troops(1));
     expect(dominionRates(state).get('h1')).toBeCloseTo(2 + 6 + 25, 12);
@@ -145,9 +161,10 @@ describe('costs and fortification', () => {
     expect(fortification(state, capital)).toBeCloseTo(1.25 * 1.75, 12);
     lord(state, 'h1').edicts = ['BULWARKS'];
     expect(fortification(state, capital)).toBeCloseTo(1.25 * 1.75 * 1.1, 12);
-    const throne = state.towns[state.throneTownId];
+    const crowned = game({ config: { throne: { enabled: true } } });
+    const throne = crowned.towns[crowned.throneTownId ?? -1];
     if (!throne) throw new Error('no throne');
-    expect(fortification(state, throne)).toBeCloseTo(2, 12);
+    expect(fortification(crowned, throne)).toBeCloseTo(2, 12);
   });
 
   it('combines every edict effect', () => {
@@ -175,17 +192,23 @@ describe('costs and fortification', () => {
 });
 
 describe('snowball brakes', () => {
-  it('fortifies the other towns of the capital isle', () => {
-    const state = game({ config: { towns: { homeIsleFort: 3 } } });
+  it('fortifies the towns near the capital', () => {
+    const state = game({ config: { towns: { homeFort: 3 } } });
     const capital = capitalOf(state, 'h1');
-    const [home] = neutralsBeside(state, capital);
-    if (!home) throw new Error('no neutral');
+    const near = (t: Town): number => distance(t.pos, capital.pos);
+    const radius = state.config.towns.homeRadius;
+    const home = neutralsBeside(state, capital).find((t) => near(t) <= radius);
+    const away = neutralsBeside(state, capital).find((t) => near(t) > radius);
+    if (!home || !away) throw new Error('no neutral');
     const neutralFort = fortification(state, home);
     give(state, home, 'h1', troops(1));
     expect(fortification(state, home)).toBeCloseTo(neutralFort * 3, 12);
     expect(fortification(state, capital)).toBeCloseTo(1.25 * 1.75, 12);
     give(state, home, 'h2', troops(1));
     expect(fortification(state, home)).toBeCloseTo(neutralFort, 12);
+    const awayFort = fortification(state, away);
+    give(state, away, 'h1', troops(1));
+    expect(fortification(state, away)).toBeCloseTo(awayFort, 12);
   });
 
   it('slows the production of lords with many towns', () => {

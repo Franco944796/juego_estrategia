@@ -12,6 +12,7 @@ import {
   capitalOf,
   game,
   give,
+  growTo,
   humans,
   lord,
   MIN,
@@ -19,7 +20,6 @@ import {
   NO_PRODUCTION,
   T0,
   townAcrossLane,
-  townsOnIsle,
   troops,
 } from './helpers';
 
@@ -43,6 +43,7 @@ function firstNeutral(state: GameState, town: Town): Town {
 
 const LAND = defaultConfig.march.landSpeed;
 const SKY = defaultConfig.march.skySpeed;
+const MIN_DURATION = defaultConfig.march.minDurationMin;
 
 describe('travel', () => {
   it('walks inside an isle at land speed, ignoring the wind', () => {
@@ -50,7 +51,7 @@ describe('travel', () => {
     const capital = capitalOf(state, 'h1');
     const target = firstNeutral(state, capital);
     const march = send(state, 'h1', capital, target, troops(10));
-    const minutes = Math.max(0.5, distance(capital.pos, target.pos) / LAND);
+    const minutes = Math.max(MIN_DURATION, distance(capital.pos, target.pos) / LAND);
     expect(march.arriveAt - march.departAt).toBe(Math.round(minutes * MIN));
     expect(march.sky).toBe(false);
     expect(march.windFactor).toBe(1);
@@ -64,8 +65,8 @@ describe('travel', () => {
     const griffins = travelInfo(state, 'h1', capital, target, troops(0, 0, 8), T0);
     const mixed = travelInfo(state, 'h1', capital, target, troops(1, 0, 8), T0);
     const dist = distance(capital.pos, target.pos);
-    expect(griffins.durationMs).toBe(Math.round(Math.max(0.5, dist / (LAND * 1.3)) * MIN));
-    expect(mixed.durationMs).toBe(Math.round(Math.max(0.5, dist / LAND) * MIN));
+    expect(griffins.durationMs).toBe(Math.round(Math.max(MIN_DURATION, dist / (LAND * 1.3)) * MIN));
+    expect(mixed.durationMs).toBe(Math.round(Math.max(MIN_DURATION, dist / LAND) * MIN));
     lord(state, 'h1').edicts = ['SWIFT_WINGS'];
     const swift = travelInfo(state, 'h1', capital, target, troops(0, 0, 8), T0);
     expect(swift.durationMs).toBeLessThanOrEqual(griffins.durationMs);
@@ -82,7 +83,7 @@ describe('travel', () => {
       expect(info.sky).toBe(true);
       expect(info.windFactor).toBe(factor);
       expect(info.durationMs).toBe(
-        Math.round(Math.max(0.5, distance(capital.pos, target.pos) / (SKY * factor)) * MIN),
+        Math.round(Math.max(MIN_DURATION, distance(capital.pos, target.pos) / (SKY * factor)) * MIN),
       );
     }
     expect(windDirAt(state, later)).toBe(state.windDirs[1]);
@@ -193,7 +194,7 @@ describe('arrivals', () => {
     expect(events).toEqual([]);
   });
 
-  it('moves the capital when it falls and lights a beacon when an isle is completed', () => {
+  it('moves the capital when it falls and lights a beacon when a zone is completed', () => {
     const state = game({ config: NO_PRODUCTION });
     const capital = capitalOf(state, 'h1');
     const [x, y] = neutralsBeside(state, capital);
@@ -211,17 +212,16 @@ describe('arrivals', () => {
     expect(lord(state, 'h1').stats.townsLost).toBe(1);
 
     x.garrison = troops(0);
-    for (const t of neutralsBeside(state, capital)) give(state, t, 'h2', troops(1));
+    const zone = state.zones[x.zoneId ?? -1];
+    if (!zone) throw new Error('no zone');
+    for (const id of zone.townIds) if (id !== x.id) give(state, state.towns[id] as Town, 'h2', troops(1));
     const last = send(state, 'h2', capital, x, troops(50), march.arriveAt);
     const more = advanceTo(state, last.arriveAt);
-    const isle = state.isles[capital.isleId];
-    const allMine = townsOnIsle(state, capital.isleId).every((t) => t.owner === 'h2');
-    expect(allMine).toBe(true);
-    expect(isle?.beaconOwner).toBe('h2');
+    expect(zone.beaconOwner).toBe('h2');
     expect(more).toContainEqual({
       type: 'BEACON_CHANGED',
       at: last.arriveAt,
-      isleId: capital.isleId,
+      zoneId: zone.id,
       owner: 'h2',
     });
   });
@@ -237,7 +237,7 @@ describe('exile and elimination', () => {
     return { events: advanceTo(state, march.arriveAt), at: march.arriveAt };
   }
 
-  it('restarts a lord without towns on a free outer town', () => {
+  it('restarts a lord without towns on a free public town of the newest isle', () => {
     const state = game({ config: NO_PRODUCTION });
     const { events } = conquer(state);
     const exiled = events.find((e) => e.type === 'LORD_EXILED');
@@ -246,26 +246,22 @@ describe('exile and elimination', () => {
     expect(town?.owner).toBe('h1');
     expect(town?.isCapital).toBe(true);
     expect(town?.garrison).toEqual(state.config.exile.troops);
-    expect(state.isles[town?.isleId ?? -1]?.ring).toBe(state.config.map.rings.length);
+    expect(town?.isleId).toBe(state.isles.length - 1);
+    expect(town?.privateTo).toBeNull();
     expect(lord(state, 'h1')).toMatchObject({ alive: true, exiles: 1, capitalId: exiled.townId });
   });
 
-  it('falls back to an inner ring when the outer ring is full', () => {
-    const state = game({ config: NO_PRODUCTION });
-    const outer = state.config.map.rings.length;
-    for (const town of state.towns) {
-      if (town.owner === null && state.isles[town.isleId]?.ring === outer) give(state, town, 'h2', troops(1));
-    }
-    const capital = capitalOf(state, 'h1');
-    const base = townsOnIsle(state, capital.isleId).find((t) => t.owner === 'h2');
-    if (!base) throw new Error('no base');
-    base.garrison = troops(300);
-    capital.garrison = troops(0);
-    const march = send(state, 'h2', base, capital, troops(100));
-    const exiled = advanceTo(state, march.arriveAt).find((e) => e.type === 'LORD_EXILED');
+  it('falls back to an older isle when the newest has no free town', () => {
+    const state = game({ config: { ...NO_PRODUCTION, map: { growth: { maxPerDay: 1 } } } });
+    growTo(state, 2);
+    for (const id of state.isles[1]?.townIds ?? []) give(state, state.towns[id] as Town, 'h2', troops(1));
+    const { events } = conquer(state);
+    expect(events.some((e) => e.type === 'MAP_EXPANDED')).toBe(false);
+    expect(state.isles).toHaveLength(2);
+    const exiled = events.find((e) => e.type === 'LORD_EXILED');
     if (!exiled || exiled.type !== 'LORD_EXILED') throw new Error('not exiled');
     const town = state.towns[exiled.townId];
-    expect(state.isles[town?.isleId ?? -1]?.ring).toBe(outer - 1);
+    expect(town?.isleId).toBe(0);
     expect(town?.isThrone).toBe(false);
   });
 
@@ -279,6 +275,25 @@ describe('exile and elimination', () => {
     expect(events.some((e) => e.type === 'LORD_EXILED')).toBe(false);
     const later = advanceTo(state, probe.arriveAt);
     expect(later.some((e) => e.type === 'LORD_EXILED')).toBe(true);
+  });
+
+  it('makes the first town taken by a lord without a capital its new capital', () => {
+    const state = game({ config: NO_PRODUCTION });
+    const capital = capitalOf(state, 'h1');
+    const prize = neutralsBeside(state, capital).at(-1) as Town;
+    prize.garrison = troops(0);
+    const raid = send(state, 'h1', capital, prize, troops(5));
+    const { at } = conquer(state);
+    expect(at).toBeLessThan(raid.arriveAt);
+    expect(lord(state, 'h1').capitalId).toBeNull();
+    const events = advanceTo(state, raid.arriveAt);
+    expect(prize).toMatchObject({ owner: 'h1', isCapital: true });
+    expect(events).toContainEqual({
+      type: 'CAPITAL_MOVED',
+      at: raid.arriveAt,
+      lordId: 'h1',
+      townId: prize.id,
+    });
   });
 
   it('eliminates the lord when exile is off', () => {
@@ -297,7 +312,7 @@ describe('season clock', () => {
     const events = advanceTo(state, state.endsAt);
     const shifts = events.filter((e) => e.type === 'WIND_SHIFTED');
     expect(shifts).toHaveLength(state.windDirs.length - 1);
-    expect(events.filter((e) => e.type === 'THRONE_UNSEALED')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'THRONE_UNSEALED')).toHaveLength(0);
     const end = events.at(-1);
     expect(end?.type).toBe('SEASON_ENDED');
     expect(state.status).toBe('ENDED');

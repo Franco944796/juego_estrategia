@@ -7,7 +7,7 @@ import { abandonGame, command, loadClanRanking, rememberLang, setSpeed, SPEEDS }
 import { EDICT_TEXT, LANGS, t, type Lang, type MessageKey } from '../i18n';
 import { toRealMs, useGame, type Panel } from '../store';
 import { useGameNow } from './hooks';
-import { CloseIcon } from './icons';
+import { CloseIcon, StarIcon } from './icons';
 import { Profile } from './Profile';
 import { SocialPanel } from './Social';
 import { ownerName, townLabel } from './labels';
@@ -207,8 +207,20 @@ function RankingPanel({ view, lang }: { view: LordView; lang: Lang }) {
 
 function EdictsPanel({ view, lang }: { view: LordView; lang: Lang }) {
   const { me } = view;
+  const gloryShare = me.nextGlory ? Math.min(1, me.glory / me.nextGlory) : 1;
   return (
     <div className="edicts">
+      <div className="glory-row" data-testid="glory">
+        <StarIcon className="stat-icon glory" />
+        <span>
+          {me.nextGlory === null
+            ? t(lang, 'glory') + ' ' + Math.floor(me.glory)
+            : t(lang, 'gloryProgress', { n: Math.floor(me.glory), goal: me.nextGlory })}
+        </span>
+        <span className="meter wide" aria-hidden="true">
+          <span className="meter-fill" style={{ width: `${gloryShare * 100}%` }} />
+        </span>
+      </div>
       {me.draft && (
         <>
           <p>
@@ -232,9 +244,8 @@ function EdictsPanel({ view, lang }: { view: LordView; lang: Lang }) {
       )}
       <p className="muted">
         {me.nextGlory !== null && me.edicts.length < EDICT_IDS.length
-          ? t(lang, 'nextEdict', { n: me.nextGlory })
-          : t(lang, 'allEdicts')}{' '}
-        · {t(lang, 'gloryHelp')}
+          ? t(lang, 'gloryHelp')
+          : t(lang, 'allEdicts')}
       </p>
       <h3>{t(lang, 'yourEdicts')}</h3>
       {me.edicts.length === 0 ? (
@@ -258,7 +269,7 @@ function MenuPanel({ lang }: { lang: Lang }) {
   const setLang = useGame((s) => s.setLang);
   const online = useGame((s) => s.mode === 'online');
   const [confirming, setConfirming] = useState(false);
-  const help: MessageKey[] = ['help1', 'help2', 'help3', 'help4', 'help5', 'help6'];
+  const help: MessageKey[] = ['help1', 'help2', 'help3', 'help4', 'help7', 'help5', 'help6'];
   return (
     <div className="menu">
       {online && <Profile />}
