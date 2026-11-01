@@ -1,0 +1,61 @@
+import { useEffect } from 'react';
+import { savedLang, watchVisibility } from './game/session';
+import { MapCanvas } from './map/MapCanvas';
+import { useGame } from './store';
+import { BottomNav } from './ui/BottomNav';
+import { Hud } from './ui/Hud';
+import { EndScreen, PickBanner, TopStack } from './ui/Overlays';
+import { PanelView } from './ui/Panels';
+import { SendSheet } from './ui/SendSheet';
+import { TitleScreen } from './ui/TitleScreen';
+import { TownSheet } from './ui/TownSheet';
+
+function Drawer() {
+  const panel = useGame((s) => s.panel);
+  const send = useGame((s) => s.send);
+  const selected = useGame((s) => s.selected);
+  const picking = useGame((s) => s.picking);
+  if (panel) return <PanelView panel={panel} />;
+  if (send) return <SendSheet key={`${send.from}-${send.to}`} from={send.from} to={send.to} />;
+  if (selected !== null && !picking) return <TownSheet townId={selected} />;
+  return null;
+}
+
+function GameScreen() {
+  const ready = useGame((s) => s.view !== null);
+  const picking = useGame((s) => s.picking);
+  return (
+    <div className="game">
+      <MapCanvas />
+      {ready && (
+        <>
+          <div className="overlay-top">
+            <Hud />
+            <TopStack />
+          </div>
+          {picking && <PickBanner />}
+          <Drawer />
+          <BottomNav />
+          <EndScreen />
+        </>
+      )}
+    </div>
+  );
+}
+
+export function App() {
+  const screen = useGame((s) => s.screen);
+  const lang = useGame((s) => s.lang);
+
+  useEffect(() => {
+    const stored = savedLang();
+    if (stored) useGame.getState().setLang(stored);
+    return watchVisibility();
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
+  return screen === 'title' ? <TitleScreen /> : <GameScreen />;
+}
