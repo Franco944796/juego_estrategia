@@ -2,6 +2,7 @@ import { formatNumber } from '../format';
 import { abandonGame, finishTutorial, startNewGame } from '../game/session';
 import { t, type MessageKey } from '../i18n';
 import { useGame } from '../store';
+import { leagueName } from './labels';
 import { bandLabel } from './Profile';
 
 const TUTORIAL: MessageKey[] = ['tut1', 'tut2', 'tut3', 'tut4', 'tut5'];
@@ -145,6 +146,27 @@ export function SeasonNews() {
               })
             : t(lang, 'seasonNoReward')}
         </p>
+        {news.move && (
+          <p
+            className={
+              news.move.to > news.move.from ? 'tone-good' : news.move.to < news.move.from ? 'tone-bad' : ''
+            }
+          >
+            <strong data-testid="league-move">
+              {t(
+                lang,
+                news.move.to > news.move.from
+                  ? 'moveUp'
+                  : news.move.to < news.move.from
+                    ? 'moveDown'
+                    : 'moveStay',
+                {
+                  name: leagueName(lang, news.move.to),
+                },
+              )}
+            </strong>
+          </p>
+        )}
         <ol className="end-ranking">
           {news.top.slice(0, 5).map((row) => (
             <li key={row.lordId}>

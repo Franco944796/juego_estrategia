@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { formatNumber } from '../format';
 import { equipStyle, leaveOnline, loadHall, refreshProfile, unlockStyle } from '../game/session';
 import { STYLE_NAMES, t, type MessageKey } from '../i18n';
+import { leagueName } from './labels';
 import { useGame } from '../store';
 
 const BANDS: MessageKey[] = ['band0', 'band1', 'band2', 'band3'];
@@ -42,6 +43,10 @@ export function Profile() {
       <h3>{t(lang, 'profile')}</h3>
       <p>
         <strong>{profile.name}</strong> ·{' '}
+        <span data-testid="my-league">
+          {t(lang, 'yourLeague', { name: leagueName(lang, profile.league) })}
+        </span>{' '}
+        ·{' '}
         {t(lang, 'legacyBalance', {
           n: formatNumber(profile.legacy, lang),
           total: formatNumber(profile.legacyTotal, lang),
@@ -86,6 +91,7 @@ export function Profile() {
             <li key={m.season} className="report">
               {t(lang, 'medalLine', {
                 season: m.season,
+                league: leagueName(lang, m.league ?? 0),
                 rank: m.rank,
                 of: m.of,
                 band: bandLabel(lang, m.tier),
@@ -107,7 +113,9 @@ export function Profile() {
         </button>
       </div>
 
-      <h3>{t(lang, 'hallTitle')}</h3>
+      <h3>
+        {t(lang, 'hallTitle')} · {leagueName(lang, profile.league)}
+      </h3>
       {!hall || hall.seasons.length === 0 ? (
         <p className="muted">{t(lang, 'noHall')}</p>
       ) : (

@@ -1,3 +1,4 @@
+import { defaultConfig } from '@si/config';
 import { GEAR_EFFECTS } from '@si/config/constants';
 import type { Item, LordView, MarchView, TownView } from '@si/engine';
 import { townName } from '../format';
@@ -75,4 +76,10 @@ export function mergeGroups(marches: MarchView[]): (MarchView & { legs: number }
     merged.push(row);
   }
   return merged;
+}
+
+/** «Plata», «Gold»… for a league index. */
+export function leagueName(lang: Lang, league: number): string {
+  const id = defaultConfig.leagues[league]?.id ?? 'BRONZE';
+  return t(lang, `league${id}` as 'leagueBRONZE');
 }

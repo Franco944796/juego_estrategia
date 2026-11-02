@@ -301,7 +301,7 @@ export async function buyItem(slot: GearSlot, rarity: Rarity): Promise<Item | nu
 export const equipStyle = (style: string): Promise<void> => styleAction(api.equip, style);
 
 export function loadHall(): Promise<HallResponse> {
-  return api.hall();
+  return api.hall(useGame.getState().profile?.league ?? 0);
 }
 
 export function leaveOnline(): void {

@@ -5,7 +5,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import type { GameConfig } from '@si/config';
 import { GEAR_SLOTS, RARITIES, SKILL_IDS } from '@si/config/constants';
 import type { Command, DomainEvent, GameState } from '@si/engine';
-import type { PublicAccount, ServerMessage } from '@si/protocol';
+import type { ClanRankingRow, PublicAccount, ServerMessage } from '@si/protocol';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { WebSocket } from 'ws';
 import { z } from 'zod';
@@ -15,7 +15,8 @@ import type { WorldService } from './world';
 
 export interface AppOptions {
   store: Store;
-  world: WorldService;
+  /** One world per league, lowest first (index = `Account.league`). */
+  worlds: WorldService[];
   config: GameConfig;
   now: () => number;
   /** Built client to serve at `/`, if present. */
@@ -102,6 +103,7 @@ function publicAccount(a: Account): PublicAccount {
     style: a.style,
     medals: a.medals,
     items: a.items,
+    league: a.league,
   };
 }
 
@@ -147,8 +149,30 @@ function visibleTo(lordId: string, state: GameState): (e: DomainEvent) => boolea
   };
 }
 
+/** Clans ranked by their members' Dominion summed over every league. */
+function clanRanking(worlds: WorldService[]): ClanRankingRow[] {
+  const totals = new Map<string, ClanRankingRow>();
+  for (const world of worlds) {
+    for (const row of world.clanRanking()) {
+      const sum = totals.get(row.clanId);
+      if (sum) {
+        sum.dominion += row.dominion;
+        sum.members += row.members;
+      } else totals.set(row.clanId, { ...row });
+    }
+  }
+  return [...totals.values()]
+    .sort((a, b) => b.dominion - a.dominion || (a.clanId < b.clanId ? -1 : 1))
+    .map((row, i) => ({ ...row, rank: i + 1 }));
+}
+
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
-  const { store, world, config } = opts;
+  const { store, worlds, config } = opts;
+  const lowest = worlds[0];
+  if (!lowest) throw new Error('at least one league world is needed');
+  /** The world an account plays in: the one of its league. */
+  const worldOf = (accountId: string): WorldService =>
+    worlds[store.account(accountId)?.league ?? 0] ?? lowest;
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 16 * 1024 });
   await app.register(fastifyWebsocket);
 
@@ -160,7 +184,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   };
 
   const sockets = new Map<WebSocket, string>();
-  const clans = new ClanService(store, world, opts.now, (accountIds) => {
+  const clanWorlds = { setClan: (id: string, clanId: string | null) => worldOf(id).setClan(id, clanId) };
+  const clans = new ClanService(store, clanWorlds, opts.now, (accountIds) => {
     for (const [socket, id] of sockets) {
       if (!accountIds.includes(id)) continue;
       send(socket, { type: 'clanChanged' });
@@ -168,7 +193,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     }
   });
 
-  app.get('/api/health', async () => ({ ok: true, season: world.currentSeason }));
+  app.get('/api/health', async () => ({ ok: true, season: lowest.currentSeason }));
 
   app.post('/api/session', async (req, reply) => {
     const body = sessionBody.safeParse(req.body);
@@ -184,8 +209,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (!account) return reply.code(401).send({ error: 'UNAUTHORIZED' });
     return {
       account: publicAccount(account),
-      joined: world.hasJoined(account.id),
-      season: world.currentSeason,
+      joined: worldOf(account.id).hasJoined(account.id),
+      season: worldOf(account.id).currentSeason,
       clan: clans.myClan(account.id),
     };
   });
@@ -193,6 +218,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   app.post('/api/join', async (req, reply) => {
     const account = bearer(req);
     if (!account) return reply.code(401).send({ error: 'UNAUTHORIZED' });
+    const world = worldOf(account.id);
     const result = world.join(account);
     if (!result.ok) return reply.code(409).send({ error: result.code });
     return { ok: true, season: world.currentSeason };
@@ -223,7 +249,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     account.legacy -= price;
     account.items.push(item);
     store.saveAccount(account);
-    world.grantItem(account.id, item);
+    worldOf(account.id).grantItem(account.id, item);
     return { account: publicAccount(account), item };
   });
 
@@ -236,23 +262,27 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     }
     account.style = body.data.style;
     store.saveAccount(account);
-    world.setStyle(account.id, account.style);
+    worldOf(account.id).setStyle(account.id, account.style);
     return { account: publicAccount(account) };
   });
 
-  app.get('/api/hall', async () => ({
-    current: world.currentSeason,
-    seasons: store.finishedSeasons(HALL_SEASONS).map((s) => {
-      const results = s.results as { standings?: unknown[]; clans?: unknown[] } | null;
-      return {
-        id: s.id,
-        startsAt: s.startsAt,
-        endsAt: s.endsAt,
-        top: (results?.standings ?? []).slice(0, HALL_TOP),
-        clans: (results?.clans ?? []).slice(0, HALL_TOP),
-      };
-    }),
-  }));
+  app.get('/api/hall', async (req) => {
+    const asked = Number((req.query as { league?: string }).league ?? 0);
+    const world = worlds[Number.isInteger(asked) ? asked : 0] ?? lowest;
+    return {
+      current: world.currentSeason,
+      seasons: store.finishedSeasons(HALL_SEASONS, world.league).map((s) => {
+        const results = s.results as { standings?: unknown[]; clans?: unknown[] } | null;
+        return {
+          id: s.id,
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+          top: (results?.standings ?? []).slice(0, HALL_TOP),
+          clans: (results?.clans ?? []).slice(0, HALL_TOP),
+        };
+      }),
+    };
+  });
 
   const send = (socket: WebSocket, message: ServerMessage): void => {
     if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
@@ -273,6 +303,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const rate = opts.rate ?? 1;
   const clock = () => ({ gameNow: opts.now(), rate, speed: 1, timeScale: rate });
   const pushView = (socket: WebSocket, lordId: string): void => {
+    const world = worldOf(lordId);
     if (world.hasJoined(lordId)) send(socket, { type: 'view', view: world.view(lordId), clock: clock() });
   };
 
@@ -304,15 +335,17 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const msg = socketMessage.safeParse(parsed);
       if (!msg.success) return;
       if (msg.data.type === 'command') {
-        const result = world.command(account.id, msg.data.command as Command);
+        const result = worldOf(account.id).command(account.id, msg.data.command as Command);
         send(socket, { type: 'result', id: msg.data.id, error: result.ok ? null : result.error });
         pushView(socket, account.id);
       } else if (msg.data.type === 'preview') {
         const { id, from, to, troops } = msg.data;
-        send(socket, { type: 'preview', id, preview: world.preview(account.id, from, to, troops) });
+        const preview = worldOf(account.id).preview(account.id, from, to, troops);
+        send(socket, { type: 'preview', id, preview });
       } else if (msg.data.type === 'previewGroup') {
         const { id, from, to } = msg.data;
-        send(socket, { type: 'previewGroup', id, preview: world.previewGroup(account.id, from, to) });
+        const preview = worldOf(account.id).previewGroup(account.id, from, to);
+        send(socket, { type: 'previewGroup', id, preview });
       } else {
         postChat(account.id, msg.data.channel, msg.data.text);
       }
@@ -356,7 +389,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return { clans: store.clans(q, CLAN_SEARCH_LIMIT) };
   });
 
-  app.get('/api/clans/ranking', async () => ({ ranking: world.clanRanking().slice(0, HALL_TOP) }));
+  app.get('/api/clans/ranking', async () => ({ ranking: clanRanking(worlds).slice(0, HALL_TOP) }));
 
   app.get('/api/clans/:id', async (req, res) => {
     const account = bearer(req);
@@ -401,26 +434,34 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     );
   });
 
-  const offEvents = world.onEvents((events) => {
-    for (const [socket, lordId] of sockets) {
-      const mine = eventsFor(lordId, events, world.gameState);
-      if (mine.length > 0) send(socket, { type: 'events', events: mine });
-      pushView(socket, lordId);
-    }
-  });
-  const offSeason = world.onSeason((finished, results, next) => {
-    for (const [socket, lordId] of sockets) {
-      const reward = results.rewards.find((r) => r.lordId === lordId) ?? null;
-      send(socket, { type: 'season', finished, next, reward, top: results.standings.slice(0, HALL_TOP) });
-    }
-  });
+  const offEvents = worlds.map((world) =>
+    world.onEvents((events) => {
+      for (const [socket, lordId] of sockets) {
+        if (!world.hasJoined(lordId)) continue;
+        const mine = eventsFor(lordId, events, world.gameState);
+        if (mine.length > 0) send(socket, { type: 'events', events: mine });
+        pushView(socket, lordId);
+      }
+    }),
+  );
+  // Each league tells its own players: those who played the season and those who now belong to it.
+  const offSeason = worlds.map((world) =>
+    world.onSeason((finished, results, next) => {
+      for (const [socket, lordId] of sockets) {
+        const move = results.moves.find((m) => m.lordId === lordId) ?? null;
+        if (!move && store.account(lordId)?.league !== world.league) continue;
+        const reward = results.rewards.find((r) => r.lordId === lordId) ?? null;
+        const top = results.standings.slice(0, HALL_TOP);
+        send(socket, { type: 'season', finished, next, reward, top, move });
+      }
+    }),
+  );
   const viewTimer = setInterval(() => {
     for (const [socket, lordId] of sockets) pushView(socket, lordId);
   }, opts.viewEveryMs ?? DEFAULT_VIEW_EVERY_MS);
   app.addHook('onClose', async () => {
     clearInterval(viewTimer);
-    offEvents();
-    offSeason();
+    for (const off of [...offEvents, ...offSeason]) off();
   });
 
   if (opts.clientDir && existsSync(opts.clientDir)) {

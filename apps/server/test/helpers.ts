@@ -16,8 +16,16 @@ export function clock(start = T0): Clock {
   return c;
 }
 
-export function world(store: Store, c: Clock): WorldService {
-  return new WorldService({ store, config, now: c.now, random: () => 0.25, snapshotEveryMs: 5 * MIN });
+export function world(store: Store, c: Clock, league = 0, firstStartsAt?: number): WorldService {
+  return new WorldService({
+    store,
+    config,
+    now: c.now,
+    random: () => 0.25,
+    snapshotEveryMs: 5 * MIN,
+    league,
+    firstStartsAt,
+  });
 }
 
 export function account(store: Store, name: string, c: Clock): Account {

@@ -172,6 +172,20 @@ export const gameConfigSchema = z
     rules: z.object({ capitalImmune: z.boolean() }),
     /** Lord levels: from level L the next one needs `xpBase` times the town level scale of L. */
     levels: z.object({ xpBase: positive, maxLevel: count }),
+    /**
+     * Online leagues, lowest first, each its own world. At the season end the top `promoteShare` of
+     * the ranking go up one league and the bottom `relegateShare` go down one; Legacy is × `legacyMult`.
+     */
+    leagues: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          legacyMult: positive,
+          promoteShare: fraction,
+          relegateShare: fraction,
+        }),
+      )
+      .min(1),
     rewards: z.object({
       tiers: z.array(z.object({ topShare: z.number().gt(0).max(1), legacy: intNonNegative })).min(1),
     }),
@@ -203,6 +217,9 @@ export const gameConfigSchema = z
     const minLevels = c.gear.dropOdds.map((row) => row.minLevel);
     if (minLevels.some((m, i) => i > 0 && m <= (minLevels[i - 1] ?? 0))) {
       ctx.addIssue({ code: 'custom', message: 'gear.dropOdds must ascend by minLevel' });
+    }
+    if (c.leagues[0]?.relegateShare !== 0 || c.leagues.at(-1)?.promoteShare !== 0) {
+      ctx.addIssue({ code: 'custom', message: 'nobody leaves the lowest league down or the top one up' });
     }
     const shares = c.rewards.tiers.map((tier) => tier.topShare);
     if (shares.some((s, i) => i > 0 && s <= (shares[i - 1] ?? 0)) || shares.at(-1) !== 1) {

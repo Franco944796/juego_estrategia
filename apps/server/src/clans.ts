@@ -16,7 +16,8 @@ const fail = <T>(status: number, error: string): ClanResult<T> => ({ ok: false, 
 export class ClanService {
   constructor(
     private readonly store: Store,
-    private readonly world: WorldService,
+    /** Applies a clan change to the world the account plays in. */
+    private readonly world: Pick<WorldService, 'setClan'>,
     private readonly now: () => number,
     /** Tells the given accounts that their clan view changed. */
     private readonly notify: (accountIds: string[]) => void,

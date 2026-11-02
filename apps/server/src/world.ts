@@ -25,7 +25,7 @@ import {
   type Standing,
 } from '@si/engine';
 import type { ClanRankingRow, Reward, SeasonSummary, StandingRow } from '@si/protocol';
-import { computeRewards } from './rewards';
+import { computeRewards, leagueMoves } from './rewards';
 import type { Account, Store } from './store';
 
 export interface WorldOptions {
@@ -35,12 +35,18 @@ export interface WorldOptions {
   /** Only used to pick each season's seed. */
   random: () => number;
   snapshotEveryMs: number;
+  /** Index into `config.leagues`: each league is its own world (0, the lowest, by default). */
+  league?: number;
+  /** Start of the first season when the league has none yet (to line it up with the others). */
+  firstStartsAt?: number;
 }
 
 export interface SeasonResults {
   standings: StandingRow[];
   rewards: Reward[];
   clans: ClanRankingRow[];
+  /** Every player's league before and after the season. */
+  moves: { lordId: string; from: number; to: number }[];
 }
 
 type EventListener = (events: DomainEvent[]) => void;
@@ -76,9 +82,14 @@ export class WorldService {
     return this.opts.store;
   }
 
+  get league(): number {
+    return this.opts.league ?? 0;
+  }
+
   private load(): void {
-    const row = this.store.currentSeason() ?? this.newSeasonRow(this.opts.now());
-    this.season = { id: row.id, startsAt: row.startsAt, endsAt: row.endsAt };
+    const row =
+      this.store.currentSeason(this.league) ?? this.newSeasonRow(this.opts.firstStartsAt ?? this.opts.now());
+    this.season = { id: row.id, startsAt: row.startsAt, endsAt: row.endsAt, league: this.league };
     const snap = this.store.snapshot(row.id);
     if (snap && (snap.state as GameState).version !== STATE_VERSION) {
       // Saved by an older engine with another map: it cannot be replayed, so a new season starts.
@@ -116,7 +127,7 @@ export class WorldService {
   private newSeasonRow(startsAt: number): { id: number; seed: number; startsAt: number; endsAt: number } {
     const seed = Math.floor(this.opts.random() * SEED_RANGE);
     const endsAt = startsAt + Math.round(this.opts.config.season.durationMin * MINUTE_MS);
-    return this.store.createSeason(seed, startsAt, endsAt);
+    return this.store.createSeason(seed, startsAt, endsAt, this.league);
   }
 
   private log(
@@ -291,7 +302,13 @@ export class WorldService {
   private rollover(): void {
     const finished = this.season;
     const standings = this.state.standings ?? [];
-    const rewards = computeRewards(standings, this.opts.config.rewards.tiers);
+    const leagues = this.opts.config.leagues;
+    const rewards = computeRewards(
+      standings,
+      this.opts.config.rewards.tiers,
+      leagues[this.league]?.legacyMult ?? 1,
+    );
+    const moves = leagueMoves(standings, this.league, leagues);
     const results: SeasonResults = {
       standings: standings.map((s) => ({
         rank: s.rank,
@@ -303,6 +320,7 @@ export class WorldService {
       })),
       rewards,
       clans: this.clanRanking(standings).slice(0, CLANS_KEPT),
+      moves,
     };
     const next = this.store.transaction(() => {
       const winner = results.clans[0];
@@ -320,14 +338,16 @@ export class WorldService {
           of: standings.length,
           tier: reward.tier,
           legacy: reward.legacy,
+          league: this.league,
         });
+        account.league = moves.find((m) => m.lordId === account.id)?.to ?? account.league;
         this.store.saveAccount(account);
       }
       this.store.saveSnapshot(finished.id, this.lastSeq, finished.endsAt, this.state);
       this.store.finishSeason(finished.id, results);
       return this.newSeasonRow(finished.endsAt);
     });
-    this.season = { id: next.id, startsAt: next.startsAt, endsAt: next.endsAt };
+    this.season = { id: next.id, startsAt: next.startsAt, endsAt: next.endsAt, league: this.league };
     this.state = createGame({
       seed: next.seed,
       config: this.opts.config,

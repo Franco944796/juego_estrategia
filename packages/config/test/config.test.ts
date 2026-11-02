@@ -35,6 +35,14 @@ describe('config', () => {
         },
       },
     ],
+    [
+      'a lowest league that relegates',
+      { leagues: [{ id: 'X', legacyMult: 1, promoteShare: 0, relegateShare: 0.5 }] },
+    ],
+    [
+      'a top league that promotes',
+      { leagues: [{ id: 'X', legacyMult: 1, promoteShare: 0.5, relegateShare: 0 }] },
+    ],
     ['drop odds without four weights', { gear: { dropOdds: [{ minLevel: 1, weights: [1, 1] }] } }],
     ['isle tiers that do not match the bands', { map: { isle: { tiers: [3, 2] } } }],
     ['isle tiers above the maximum', { map: { isle: { tiers: [101, 2, 1] } } }],

@@ -174,6 +174,11 @@ export const defaultConfig: GameConfig = {
   },
   rules: { capitalImmune: true },
   levels: { xpBase: 50, maxLevel: 100 },
+  leagues: [
+    { id: 'BRONZE', legacyMult: 1, promoteShare: 1, relegateShare: 0 },
+    { id: 'SILVER', legacyMult: 1.5, promoteShare: 0.5, relegateShare: 0 },
+    { id: 'GOLD', legacyMult: 2, promoteShare: 0, relegateShare: 0.5 },
+  ],
   rewards: {
     tiers: [
       { topShare: 0.05, legacy: 100 },

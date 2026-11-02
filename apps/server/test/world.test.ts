@@ -134,7 +134,7 @@ describe('world service', () => {
     expect(restarted.gameState.lords[ana.id]).toMatchObject({ items: [sword], gear: { WEAPON: 'sword' } });
   });
 
-  it('adds the equipment columns to a database made before them', () => {
+  it('adds the equipment and league columns to a database made before them', () => {
     const path = `${mkdtempSync(join(tmpdir(), 'si-'))}/old.db`;
     const old = new DatabaseSync(path);
     old.exec(
@@ -143,10 +143,43 @@ describe('world service', () => {
     old.exec(
       "INSERT INTO accounts (id, token_hash, name, styles, style, created_at) VALUES ('a', 'h', 'Ana', '[]', 'classic', 1)",
     );
+    old.exec(
+      'CREATE TABLE seasons (id INTEGER PRIMARY KEY AUTOINCREMENT, seed INTEGER NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, status TEXT NOT NULL, results TEXT)',
+    );
+    old.exec("INSERT INTO seasons (seed, starts_at, ends_at, status) VALUES (1, 0, 10, 'running')");
     old.close();
     const store = new Store(path);
-    expect(store.account('a')).toMatchObject({ items: [], gear: {} });
+    expect(store.account('a')).toMatchObject({ items: [], gear: {}, league: 0 });
+    // The seasons of the one world before leagues belong to the lowest league.
+    expect(store.currentSeason(0)?.id).toBe(1);
+    expect(store.currentSeason(1)).toBeNull();
     store.close();
+  });
+
+  it('moves players between leagues at the season end and pays Legacy by league', () => {
+    const store = new Store(':memory:');
+    const c = clock();
+    const bronze = world(store, c, 0);
+    const silver = world(store, c, 1, bronze.currentSeason.startsAt);
+    expect(silver.currentSeason).toMatchObject({ league: 1, endsAt: bronze.currentSeason.endsAt });
+    const ana = account(store, 'ana', c);
+    const bo = account(store, 'bo', c);
+    for (const a of [ana, bo]) {
+      a.league = 1;
+      store.saveAccount(a);
+      expect(silver.join(a)).toEqual({ ok: true });
+    }
+    expect(bronze.hasJoined(ana.id)).toBe(false);
+    c.t = T0 + 120 * MIN + 1;
+    bronze.tick();
+    silver.tick();
+    const leagues = [store.account(ana.id), store.account(bo.id)].map((a) => a?.league).sort();
+    expect(leagues).toEqual([1, 2]);
+    const legacy = [store.account(ana.id), store.account(bo.id)].map((a) => a?.legacy).sort();
+    expect(legacy).toEqual([15, 150]);
+    expect(store.account(ana.id)?.medals[0]?.league).toBe(1);
+    expect(store.finishedSeasons(5, 1)).toHaveLength(1);
+    expect(store.finishedSeasons(5, 0)).toHaveLength(1);
   });
 
   it('catches up on several missed season ends', () => {

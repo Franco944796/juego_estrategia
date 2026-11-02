@@ -10,7 +10,7 @@ import { CloseIcon } from './icons';
 import { LordProfile } from './LordProfile';
 import { Profile } from './Profile';
 import { SocialPanel } from './Social';
-import { mergeGroups, ownerName, townLabel } from './labels';
+import { leagueName, mergeGroups, ownerName, townLabel } from './labels';
 
 function PanelFrame({ title, children, testid }: { title: string; children: ReactNode; testid: string }) {
   const lang = useGame((s) => s.lang);
@@ -326,9 +326,12 @@ const TITLES: Record<Panel, MessageKey> = {
 export function PanelView({ panel }: { panel: Panel }) {
   const view = useGame((s) => s.view);
   const lang = useGame((s) => s.lang);
+  const league = useGame((s) => (s.mode === 'online' ? (s.profile?.league ?? null) : null));
   if (!view) return null;
+  let title = panel === 'profile' ? view.me.name : t(lang, TITLES[panel]);
+  if (panel === 'ranking' && league !== null) title += ` · ${leagueName(lang, league)}`;
   return (
-    <PanelFrame title={panel === 'profile' ? view.me.name : t(lang, TITLES[panel])} testid={`panel-${panel}`}>
+    <PanelFrame title={title} testid={`panel-${panel}`}>
       {panel === 'marches' && <MarchesPanel view={view} lang={lang} />}
       {panel === 'reports' && <ReportsPanel view={view} lang={lang} />}
       {panel === 'ranking' && <RankingPanel view={view} lang={lang} />}

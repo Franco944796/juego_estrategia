@@ -80,6 +80,7 @@ test('two players share the online world, fight neutrals and keep their session'
   await ana.getByTestId('nav-menu').click();
   await expect(ana.getByTestId('profile')).toBeVisible();
   await expect(ana.getByTestId('recovery-code')).not.toBeEmpty();
+  await expect(ana.getByTestId('my-league')).toContainText('Bronce');
   await ana.screenshot({ path: test.info().outputPath('online-profile.png') });
 
   await ana.reload();

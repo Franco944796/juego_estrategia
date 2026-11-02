@@ -61,6 +61,28 @@
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
 
+## Hecho en la etapa «ligas» (2026-11-02, en línea)
+
+Decisiones de Franco (vigentes):
+
+- 3 ligas (Bronce, Plata, Oro), cada una con su mundo, mapa y ranking, en el mismo servidor. Todos
+  empiezan en Bronce. Solo en línea; la demo es liga 1.
+- Al terminar la temporada: Bronce → sube el 100 % de los que jugaron; Plata → sube el mejor 50 %,
+  el resto se queda (no se baja de Plata); Oro → se queda el mejor 50 %, el peor 50 % baja a Plata.
+- Reglas de juego iguales en las tres (recuperación 90 % fija en todas).
+- Legado por puesto: Plata ×1,5, Oro ×2.
+- Faros de zona en la demo: se deja como está (0,63); sale de pendientes.
+
+Mías (avisadas): temporadas de las tres ligas sincronizadas (empiezan y terminan juntas); quien no
+juega una temporada conserva su liga; chat global y clanes compartidos entre ligas (aliados solo
+dentro del mismo mundo); salón de la fama por liga.
+
+Hecho: un `WorldService` por liga (`league` en cuentas y temporadas, con migración), rutas por
+liga, `leagueMoves` y Legado ×liga en `rewards.ts`, medallas con liga; cliente con liga en la cuenta,
+el ranking, el salón de la fama y el aviso de fin de temporada. Verificado: 218 tests, 24 de
+Playwright, revisión visual de la cuenta. Para empezar de cero: borrar
+`apps/server/data/shattered-isles.db` (igual migra sola: la temporada vieja pasa a Bronce).
+
 ## Mundo en línea más rápido (2026-11-02)
 
 - Franco pidió ×5 de oro y tropas en lo que prueba en el celular (`pnpm serve`): el preset en línea
@@ -280,16 +302,18 @@ Hecho:
 
 Preguntar a Franco los detalles al empezar cada uno:
 
-1. Probar el 3D en el celular (Franco) y ajustar lo que haga falta; volver a prender las islas
-   (`map.growth.enabled`) cuando todo funcione, mejorando antes que los bots crucen a islas nuevas.
-2. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
-   `sudo firewall-cmd --add-port=8787/tcp` (con `--permanent` para que quede).
-3. Subir el repo a GitHub (acción de Franco): `git remote add origin
-https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main`. Repo público
-   con licencia PolyForm Noncommercial 1.0.0 (`LICENSE.md`, copyright Franco944796).
-4. Varias ligas con ascensos y descensos (en ligas superiores, «atacante» y «defensor» con puntos).
+1. Bots que crucen a islas nuevas; después volver a prender el nacimiento de islas
+   (`map.growth.enabled`).
+2. Equipo nuevo (pedido 2026-11-02): más oro al matar tropas (atacando y defendiendo) y un % del oro
+   invertido que se recupera al perder una ciudad (ej.: invertidos 10T con el máximo, 50 %, se
+   recuperan 5T).
+3. Poder (pedido 2026-11-02): ciudades y tropas con un valor de «poder» por señor. Atacar a alguien
+   con el doble o más de tu poder da ×2 de exp; atacar a alguien con «64 % menos» de tu poder da 50 %
+   menos de exp; no se puede atacar a quien tiene «65 % de tu poder o menos». Aclarar al empezar: los
+   dos umbrales se superponen (64 % menos = 36 % de tu poder, que ya queda prohibido).
 
-- Decisión pendiente: faros de zona raros en la demo (zonas más chicas o bonus de defensa).
+Hecho por Franco (2026-11-02): probó el 3D en el celular, abrió el puerto 8787 y subió el repo a
+GitHub (`Franco944796/juego_estrategia`, licencia PolyForm Noncommercial 1.0.0).
 
 ## Comandos
 

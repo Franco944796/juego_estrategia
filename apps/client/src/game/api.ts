@@ -54,7 +54,7 @@ export const api = {
     }),
   equip: (token: string, style: string) =>
     request<{ account: PublicAccount }>('/api/styles/equip', { method: 'POST', token, body: { style } }),
-  hall: () => request<HallResponse>('/api/hall'),
+  hall: (league: number) => request<HallResponse>(`/api/hall?league=${league}`),
   createClan: (token: string, name: string, tag: string) =>
     request<{ value: MyClan }>('/api/clans', { method: 'POST', token, body: { name, tag } }),
   searchClans: (query: string) =>

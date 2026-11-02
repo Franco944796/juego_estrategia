@@ -9,6 +9,8 @@ export interface Medal {
   /** Index into `rewards.tiers`: 0 is the top band. */
   tier: number;
   legacy: number;
+  /** Index into `leagues` of the season's world (missing on medals from before leagues). */
+  league?: number;
 }
 
 export interface PublicAccount {
@@ -21,12 +23,16 @@ export interface PublicAccount {
   medals: Medal[];
   /** Equipment kept across seasons. */
   items: Item[];
+  /** Index into `leagues`. */
+  league: number;
 }
 
 export interface SeasonSummary {
   id: number;
   startsAt: number;
   endsAt: number;
+  /** Index into `leagues`. */
+  league: number;
 }
 
 export interface StandingRow {
@@ -126,6 +132,8 @@ export type ServerMessage =
       next: SeasonSummary;
       reward: Reward | null;
       top: StandingRow[];
+      /** The receiver's league before and after the season; null if it did not play it. */
+      move: { from: number; to: number } | null;
     }
   | { type: 'chat'; message: ChatMessage }
   | { type: 'chatHistory'; channel: ChatChannel; messages: ChatMessage[] }
@@ -145,6 +153,7 @@ export interface MeResponse {
 }
 
 export interface HallResponse {
+  /** The league asked for (`?league=`, the lowest by default). */
   current: SeasonSummary;
   seasons: { id: number; startsAt: number; endsAt: number; top: StandingRow[]; clans: ClanRankingRow[] }[];
 }

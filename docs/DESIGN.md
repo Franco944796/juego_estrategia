@@ -181,10 +181,14 @@ them and let points raise them.
 
 The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same rules, in real time.
 
-- **One public world, one league.** A season lasts 30 days. At the end the ranking is frozen, rewards
-  are paid and a new season starts with a fresh map. Players join whenever they connect and appear on
-  a shore slot with a level-1 capital and their private towns (§2). When every isle is full and today's
-  isles are spent, joining fails with `WORLD_FULL` until the next isle is born.
+- **Three leagues, a world each** (`leagues`: Bronze, Silver, Gold), with the same rules. Everyone
+  starts in Bronze. Seasons last 30 days and end together; then the ranking of each league is frozen,
+  rewards are paid (Legacy ×1, ×1.5, ×2 by league) and players move: everyone who played Bronze goes
+  up; the better half of Silver goes up and the rest stays; the better half of Gold stays and the rest
+  goes down to Silver (`promoteShare`, `relegateShare`). Whoever skips a season keeps its league.
+  Players join their league's world whenever they connect, on a level-1 capital (§2). When its isle is
+  full, joining fails with `WORLD_FULL`. Chat, clans and the clan ranking span every league; allies
+  only help each other inside the same world.
 - **Capitals cannot be attacked** (`rules.capitalImmune`, on in the demo too; a shield marks them on
   the map). A march whose target became a capital on the way (an exiled lord restarting there)
   returns home (`MARCH_REPELLED`).

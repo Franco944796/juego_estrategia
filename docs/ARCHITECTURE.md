@@ -106,9 +106,13 @@ bots) is a pure function of the seed and the human commands. A bot reads only wh
   restart in the middle of a march). A snapshot whose `version` differs from the engine's
   `STATE_VERSION` cannot be replayed: that season is marked `abandoned` (no rewards, not in the hall
   of fame) and a new one starts.
-- A timer wakes the world at the next scheduled engine event (at most once a second). When the season
-  ends, `rollover` pays Legacy by rank band (`rewards.ts`), archives the standings, opens the next
-  season at the old end time and creates a fresh map; players rejoin when they connect.
+- One `WorldService` per league (`Account.league`, `seasons.league`); the app sends every request and
+  socket message to the world of the account's league. A league with no season yet starts its first
+  one with the lowest league's, so they all roll over together.
+- A timer wakes the worlds at the next scheduled engine event (at most once a second). When a season
+  ends, `rollover` pays Legacy by rank band times the league's multiplier (`rewards.ts`), moves
+  players between leagues (`leagueMoves`), archives the standings, opens the next season at the old
+  end time and creates a fresh map; players rejoin their (maybe new) league's world when they connect.
 - Accounts are guests: `POST /api/session` returns a random token (stored as a SHA-256 hash) that the
   browser keeps and that doubles as the recovery code.
 - REST: `/api/health`, `/api/session`, `/api/me`, `/api/join`, `/api/styles/unlock`, `/api/items/buy`,

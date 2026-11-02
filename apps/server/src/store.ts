@@ -15,6 +15,8 @@ export interface Account {
   /** Equipment kept across seasons; each season starts with a copy of it. */
   items: Item[];
   gear: Partial<Record<GearSlot, string>>;
+  /** Index into `leagues`; it picks the world the account plays in. */
+  league: number;
   createdAt: number;
 }
 
@@ -49,6 +51,7 @@ interface AccountRecord {
   medals: string;
   items: string;
   gear: string;
+  league: number;
   created_at: number;
 }
 
@@ -64,6 +67,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   medals TEXT NOT NULL DEFAULT '[]',
   items TEXT NOT NULL DEFAULT '[]',
   gear TEXT NOT NULL DEFAULT '{}',
+  league INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS seasons (
@@ -72,7 +76,8 @@ CREATE TABLE IF NOT EXISTS seasons (
   starts_at INTEGER NOT NULL,
   ends_at INTEGER NOT NULL,
   status TEXT NOT NULL,
-  results TEXT
+  results TEXT,
+  league INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS season_log (
   season_id INTEGER NOT NULL,
@@ -130,6 +135,7 @@ function toAccount(r: AccountRecord): Account {
     medals: JSON.parse(r.medals) as Medal[],
     items: JSON.parse(r.items) as Item[],
     gear: JSON.parse(r.gear) as Partial<Record<GearSlot, string>>,
+    league: r.league,
     createdAt: r.created_at,
   };
 }
@@ -147,6 +153,12 @@ export class Store {
     const has = (name: string): boolean => columns.some((c) => c.name === name);
     if (!has('items')) this.db.exec("ALTER TABLE accounts ADD COLUMN items TEXT NOT NULL DEFAULT '[]'");
     if (!has('gear')) this.db.exec("ALTER TABLE accounts ADD COLUMN gear TEXT NOT NULL DEFAULT '{}'");
+    if (!has('league')) this.db.exec('ALTER TABLE accounts ADD COLUMN league INTEGER NOT NULL DEFAULT 0');
+    // Seasons from before leagues all belonged to the one world, which is now the lowest league.
+    const seasonColumns = this.db.prepare('PRAGMA table_info(seasons)').all() as { name: string }[];
+    if (!seasonColumns.some((c) => c.name === 'league')) {
+      this.db.exec('ALTER TABLE seasons ADD COLUMN league INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   close(): void {
@@ -188,7 +200,7 @@ export class Store {
   saveAccount(a: Account): void {
     this.db
       .prepare(
-        'UPDATE accounts SET name = ?, legacy = ?, legacy_total = ?, styles = ?, style = ?, medals = ?, items = ?, gear = ? WHERE id = ?',
+        'UPDATE accounts SET name = ?, legacy = ?, legacy_total = ?, styles = ?, style = ?, medals = ?, items = ?, gear = ?, league = ? WHERE id = ?',
       )
       .run(
         a.name,
@@ -199,23 +211,26 @@ export class Store {
         JSON.stringify(a.medals),
         JSON.stringify(a.items),
         JSON.stringify(a.gear),
+        a.league,
         a.id,
       );
   }
 
-  currentSeason(): SeasonRow | null {
+  currentSeason(league = 0): SeasonRow | null {
     const row = this.db
       .prepare(
-        "SELECT id, seed, starts_at, ends_at FROM seasons WHERE status = 'running' ORDER BY id DESC LIMIT 1",
+        "SELECT id, seed, starts_at, ends_at FROM seasons WHERE status = 'running' AND league = ? ORDER BY id DESC LIMIT 1",
       )
-      .get() as { id: number; seed: number; starts_at: number; ends_at: number } | undefined;
+      .get(league) as { id: number; seed: number; starts_at: number; ends_at: number } | undefined;
     return row ? { id: row.id, seed: row.seed, startsAt: row.starts_at, endsAt: row.ends_at } : null;
   }
 
-  createSeason(seed: number, startsAt: number, endsAt: number): SeasonRow {
+  createSeason(seed: number, startsAt: number, endsAt: number, league = 0): SeasonRow {
     const info = this.db
-      .prepare("INSERT INTO seasons (seed, starts_at, ends_at, status) VALUES (?, ?, ?, 'running')")
-      .run(seed, startsAt, endsAt);
+      .prepare(
+        "INSERT INTO seasons (seed, starts_at, ends_at, status, league) VALUES (?, ?, ?, 'running', ?)",
+      )
+      .run(seed, startsAt, endsAt, league);
     return { id: Number(info.lastInsertRowid), seed, startsAt, endsAt };
   }
 
@@ -230,12 +245,18 @@ export class Store {
       .run(JSON.stringify(results), id);
   }
 
-  finishedSeasons(limit: number): FinishedSeason[] {
+  finishedSeasons(limit: number, league = 0): FinishedSeason[] {
     const rows = this.db
       .prepare(
-        "SELECT id, seed, starts_at, ends_at, results FROM seasons WHERE status = 'finished' ORDER BY id DESC LIMIT ?",
+        "SELECT id, seed, starts_at, ends_at, results FROM seasons WHERE status = 'finished' AND league = ? ORDER BY id DESC LIMIT ?",
       )
-      .all(limit) as { id: number; seed: number; starts_at: number; ends_at: number; results: string }[];
+      .all(league, limit) as {
+      id: number;
+      seed: number;
+      starts_at: number;
+      ends_at: number;
+      results: string;
+    }[];
     return rows.map((r) => ({
       id: r.id,
       seed: r.seed,

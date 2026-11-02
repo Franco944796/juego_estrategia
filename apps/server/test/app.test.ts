@@ -19,7 +19,7 @@ async function start() {
   const store = new Store(':memory:');
   const c = clock();
   const w = world(store, c);
-  app = await buildApp({ store, world: w, config, now: c.now, viewEveryMs: 60_000 });
+  app = await buildApp({ store, worlds: [w], config, now: c.now, viewEveryMs: 60_000 });
   return { store, w, c, app };
 }
 
@@ -251,6 +251,33 @@ describe('WebSocket', () => {
     const stranger = connect('nope');
     const code = await new Promise<number>((resolve) => stranger.socket.on('close', (c) => resolve(c)));
     expect(code).toBe(4001);
+  });
+});
+
+describe('leagues', () => {
+  it('plays each account in the world of its league', async () => {
+    const store = new Store(':memory:');
+    const c = clock();
+    const bronze = world(store, c, 0);
+    const silver = world(store, c, 1, bronze.currentSeason.startsAt);
+    app = await buildApp({ store, worlds: [bronze, silver], config, now: c.now, viewEveryMs: 60_000 });
+    const token = await session(app, 'Ana');
+    const me = (await app.inject({ method: 'GET', url: '/api/me', headers: auth(token) })).json() as {
+      account: { id: string; league: number };
+    };
+    expect(me.account.league).toBe(0);
+    const account = store.account(me.account.id);
+    if (!account) throw new Error('no account');
+    account.league = 1;
+    store.saveAccount(account);
+    const joined = await app.inject({ method: 'POST', url: '/api/join', headers: auth(token) });
+    expect(joined.json()).toMatchObject({ ok: true, season: { league: 1 } });
+    expect(silver.hasJoined(account.id)).toBe(true);
+    expect(bronze.hasJoined(account.id)).toBe(false);
+    const hall = (await app.inject({ method: 'GET', url: '/api/hall?league=1' })).json() as {
+      current: { league: number };
+    };
+    expect(hall.current.league).toBe(1);
   });
 });
 

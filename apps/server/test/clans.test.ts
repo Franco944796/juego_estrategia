@@ -19,7 +19,7 @@ async function start() {
   const store = new Store(':memory:');
   const c = clock();
   const w = world(store, c);
-  app = await buildApp({ store, world: w, config, now: c.now, viewEveryMs: 60_000 });
+  app = await buildApp({ store, worlds: [w], config, now: c.now, viewEveryMs: 60_000 });
   return { store, w, c, app };
 }
 
