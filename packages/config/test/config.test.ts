@@ -51,7 +51,8 @@ describe('live preset', () => {
     expect(liveConfig.season.durationMin).toBe(30 * 24 * 60);
     expect(liveConfig.rules.capitalImmune).toBe(true);
     expect(liveConfig.lords.capitalTier).toBe(1);
-    expect(liveConfig.towns.goldPerMin).toBeCloseTo(defaultConfig.towns.goldPerMin / 5, 12);
+    expect(liveConfig.towns.goldPerMin).toBe(defaultConfig.towns.goldPerMin);
+    expect(liveConfig.towns.troopsPerMin).toBe(defaultConfig.towns.troopsPerMin);
     expect(liveConfig.towns.upgradeCost).toBe(defaultConfig.towns.upgradeCost * 40);
     // Same real seconds per march in both: live game time is real time, demo runs ×20.
     expect(liveConfig.march.landSpeed).toBe(defaultConfig.march.landSpeed * 20);

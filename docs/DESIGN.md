@@ -192,8 +192,9 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
   ×`towns.homeFort` (3) fortification, and owning more than `towns.sprawl.freeTowns` (6) towns divides the production of all
   your towns by `1 + towns.sprawl.penaltyPerTown (0.1) × extra towns`. The demo uses the same brakes,
   milder: ×1.5, and −5% per town beyond 8.
-- **Economy:** production ÷5, upgrade costs ×40, plunder ×5 and 400 starting gold versus the demo, so
-  an active player's best town reaches level 100 in about a week; the wind shifts every 3 hours.
+- **Economy:** the demo's production per minute, upgrade costs ×40, plunder ×5 and 400 starting gold,
+  so an active player's best town reaches level 100 in about two to three days; the wind shifts every
+  3 hours.
 - **Rewards by final rank:** top 5% → 100 Legacy, top 25% → 50, top 50% → 25, everyone else who
   played → 10 (`rewards.tiers`; each cut-off rounds up and holds at least one player). Legacy is
   permanent and only buys town styles (`cosmetics.styles`); it never changes the rules of a season.

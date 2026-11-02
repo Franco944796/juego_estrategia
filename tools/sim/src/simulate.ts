@@ -221,7 +221,7 @@ export const TARGETS: Record<'demo' | 'live', Target[]> = {
     { key: 'medianFirstBeaconMin', label: 'First beacon (min, median)', max: 1440, digits: 0 },
     { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
     { key: 'tensionShare', label: 'PvP battles within 1.5× power', min: 0.2, max: 0.4, digits: 2 },
-    { key: 'firstTopLevelMin', label: 'First town at level 100 (min)', min: 7000, max: 13000, digits: 0 },
+    { key: 'firstTopLevelMin', label: 'First town at level 100 (min)', min: 2500, max: 4500, digits: 0 },
     { key: 'winnerShare', label: 'Winner share of all Dominion', max: 0.35, digits: 2 },
   ],
 };

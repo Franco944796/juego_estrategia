@@ -61,6 +61,13 @@
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
 
+## Mundo en línea más rápido (2026-11-02)
+
+- Franco pidió ×5 de oro y tropas en lo que prueba en el celular (`pnpm serve`): el preset en línea
+  usa la producción por minuto de la demo; costos ×40 igual. Nivel 100 en ~2,3 días (antes 5,4),
+  primera conquista a los ~19 min. La temporada en curso guarda su configuración: para verlo hay
+  que borrar `apps/server/data/shattered-isles.db` con el servidor apagado.
+
 ## Hecho: capitales inatacables y aparición al azar (2026-11-02, demo y en línea)
 
 - Decisiones de Franco: ninguna capital se puede atacar (demo y en línea) y lleva un escudo en el
@@ -168,7 +175,8 @@ Decisiones de Franco (vigentes):
   en nivel 100, salta más al principio). Muros: 20 en nivel 1 → 10T en nivel 100, se suman a la
   defensa; fortificación +5 % por nivel desde 0; capital y cerca de capital conservan su bonus.
 - Neutrales de nivel 1 a 3. Números grandes con K, M, G, T.
-- Un jugador activo en línea llega a nivel 100 en ~1 semana (en la demo, a mitad de temporada).
+- Un jugador activo en línea llegaba a nivel 100 en ~1 semana; desde el 2026-11-02 (producción ×5)
+  en ~2–3 días. En la demo, a mitad de temporada.
 - Habilidades: 1 punto por nivel del señor, fijos, se reinician cada temporada; oro, tropas y ataque
   +5 % por punto. «Atacante» y «defensor» = % de bajas que vuelven a la capital; liga 1: 90 % fijo.
 - Matar una tropa: 5 exp y 5 oro atacando, 3 y 3 defendiendo. Sin edictos ni gloria.
