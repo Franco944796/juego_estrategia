@@ -56,6 +56,9 @@ it: the client looks towns up with `townById` (`apps/client/src/ui/labels.ts`).
   through `grantItem`, logged as kind `item`; items found and gear changes flow back to the account
   (`WorldService.syncGear`, run on those events and after every replay). Found items get the id
   `startsAt-seed-lord-level`, unique across seasons and demo games.
+- A synchronized group is one march per source sharing `groupId` and `arriveAt`; each schedules its
+  own arrival, the first one resolves the whole group as one army and the rest find nothing left.
+  Previews travel as their own socket/worker message (`previewGroup`).
 - Rejected commands never mutate the state. A log of accepted `(lordId, command, now)` entries replays
   to the same `hashState` (property-tested with fast-check).
 - Wind factors use only `+ − × ÷ √`, which are correctly rounded in IEEE 754, so they match across JS

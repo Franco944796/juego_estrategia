@@ -1,4 +1,4 @@
-import type { Command, DomainEvent, LordView, RuleError, SendPreview } from '@si/engine';
+import type { Command, DomainEvent, LordView, RuleError, GroupPreview, SendPreview } from '@si/engine';
 import type { ChatChannel, ChatMessage, ClientMessage, ClockInfo, ServerMessage } from '@si/protocol';
 import type { GameClient } from './client';
 
@@ -26,6 +26,7 @@ export class RemoteGameClient implements GameClient {
   private readonly pending: ClientMessage[] = [];
   private readonly results = new Map<number, (error: RuleError | null) => void>();
   private readonly previews = new Map<number, (preview: SendPreview) => void>();
+  private readonly groupPreviews = new Map<number, (preview: GroupPreview) => void>();
 
   constructor(
     private readonly url: string,
@@ -71,6 +72,10 @@ export class RemoteGameClient implements GameClient {
           this.previews.get(msg.id)?.(msg.preview);
           this.previews.delete(msg.id);
           return;
+        case 'previewGroup':
+          this.groupPreviews.get(msg.id)?.(msg.preview);
+          this.groupPreviews.delete(msg.id);
+          return;
       }
     };
     socket.onclose = (event) => {
@@ -109,6 +114,14 @@ export class RemoteGameClient implements GameClient {
     return new Promise((resolve) => {
       this.previews.set(id, resolve);
       this.send({ type: 'preview', id, from, to, troops });
+    });
+  }
+
+  previewGroup(from: number[], to: number): Promise<GroupPreview> {
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.groupPreviews.set(id, resolve);
+      this.send({ type: 'previewGroup', id, from, to });
     });
   }
 

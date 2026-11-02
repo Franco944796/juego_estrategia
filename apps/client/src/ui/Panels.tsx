@@ -10,7 +10,7 @@ import { CloseIcon } from './icons';
 import { LordProfile } from './LordProfile';
 import { Profile } from './Profile';
 import { SocialPanel } from './Social';
-import { ownerName, townLabel } from './labels';
+import { mergeGroups, ownerName, townLabel } from './labels';
 
 function PanelFrame({ title, children, testid }: { title: string; children: ReactNode; testid: string }) {
   const lang = useGame((s) => s.lang);
@@ -39,9 +39,9 @@ function MarchesPanel({ view, lang }: { view: LordView; lang: Lang }) {
   const clock = useGame((s) => s.clock);
   const select = useGame((s) => s.select);
   const now = useGameNow();
-  const marches = [...view.marches]
-    .filter((m) => m.mine || m.incoming)
-    .sort((a, b) => a.arriveAt - b.arriveAt);
+  const marches = mergeGroups(view.marches.filter((m) => m.mine || m.incoming)).sort(
+    (a, b) => a.arriveAt - b.arriveAt,
+  );
   if (marches.length === 0) return <p className="muted">{t(lang, 'noMarches')}</p>;
   return (
     <ul className="list">
@@ -59,7 +59,7 @@ function MarchesPanel({ view, lang }: { view: LordView; lang: Lang }) {
                     town: townLabel(lang, view, m.to),
                   })
                 : t(lang, 'outgoing', {
-                    from: townLabel(lang, view, m.from),
+                    from: m.legs > 1 ? t(lang, 'groupFrom', { n: m.legs }) : townLabel(lang, view, m.from),
                     to: townLabel(lang, view, m.to),
                   })}
             </span>

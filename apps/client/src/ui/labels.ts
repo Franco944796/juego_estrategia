@@ -1,5 +1,5 @@
 import { GEAR_EFFECTS } from '@si/config/constants';
-import type { Item, LordView, TownView } from '@si/engine';
+import type { Item, LordView, MarchView, TownView } from '@si/engine';
 import { townName } from '../format';
 import { t, type Lang } from '../i18n';
 
@@ -57,4 +57,22 @@ export function itemName(lang: Lang, item: Item): string {
 export function itemEffect(lang: Lang, view: LordView, item: Item): string {
   const p = Math.round(view.me.gearBonus[item.rarity] * 100);
   return t(lang, `effect${GEAR_EFFECTS[item.slot]}`, { p });
+}
+
+/** A synchronized group shows as one march with the troops of every leg. */
+export function mergeGroups(marches: MarchView[]): (MarchView & { legs: number })[] {
+  const merged: (MarchView & { legs: number })[] = [];
+  const byGroup = new Map<number, MarchView & { legs: number }>();
+  for (const m of marches) {
+    const group = m.groupId === null ? undefined : byGroup.get(m.groupId);
+    if (group) {
+      group.legs++;
+      group.troops = group.troops === null || m.troops === null ? null : group.troops + m.troops;
+      continue;
+    }
+    const row = { ...m, legs: 1 };
+    if (m.groupId !== null) byGroup.set(m.groupId, row);
+    merged.push(row);
+  }
+  return merged;
 }

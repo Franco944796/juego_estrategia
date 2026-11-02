@@ -74,10 +74,13 @@ export const defaultConfig: GameConfig = {
     ],
     prices: { COMMON: 20, RARE: 50, EPIC: 120, LEGENDARY: 300 },
   },
+  // Marches feel the same in real seconds as online: demo game time runs ×20 (demo.timeScale), so
+  // these speeds are the online ones ÷ 20. Up to 9 troops cross the isle (~540) in ~10 real seconds.
   march: {
-    landSpeed: 350,
-    skySpeed: 450,
-    minDurationMin: 0.05,
+    landSpeed: 162,
+    skySpeed: 210,
+    minDurationMin: 0.2,
+    perDigit: 5,
     minTroops: 1,
     maxActivePerLord: 10,
   },

@@ -124,6 +124,8 @@ export const gameConfigSchema = z
       landSpeed: positive,
       skySpeed: positive,
       minDurationMin: nonNegative,
+      /** Each digit of the troop count beyond the first adds this much travel time (5 = +500 %). */
+      perDigit: nonNegative,
       minTroops: count,
       maxActivePerLord: count,
     }),

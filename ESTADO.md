@@ -61,6 +61,28 @@
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
 
+## Hecho en la etapa «agrupar tropas y marchas» (2026-11-01, demo y en línea)
+
+Decisiones de Franco (vigentes):
+
+- Agrupar: desde la ficha de cualquier ciudad («Reunir tropas acá» / «Ataque agrupado») se eligen
+  ciudades propias; vienen marcadas las 5 más cercanas con tropas; cada una manda todas sus tropas.
+- Ataque sincronizado: salen todas ya, llegan con la más lenta y pelean como un solo ejército.
+- Límite de 10: solo ataques en camino (un grupo = 1); a ciudades propias siempre se puede mandar.
+- Duración: distancia y tropas; ≤ 9 tropas cruzan la isla en ~10 s reales; +500 % por cada dígito
+  más (100 ×11, 1M ×31, 1T ×61). Mismos segundos reales en la demo y en línea.
+
+Mías (avisadas): velocidad aérea en la misma proporción que antes; duraciones de marcha como métricas
+informativas del simulador; en Marchas y en el contador del botón un grupo se ve como una sola marcha.
+
+Hecho:
+
+- Motor: `troopSlowdown`, `launchGroup`, llegada conjunta en `arriveMarch`, `activeAttacks`, orden
+  `SEND_GROUP`, `previewGroup`; `March.groupId` y `March.attack`; `STATE_VERSION` 4.
+- Servidor y cliente: mensaje `previewGroup`, `GroupSheet.tsx`, botón en la ficha, marchas agrupadas.
+- Verificado: 199 tests unitarios (motor 99,6 % de líneas), 20 de Playwright, revisión visual (lista
+  de grupo y marchas en celular y escritorio). Sim: demo 7/8, en línea 6/8 (ver problemas).
+
 ## Hecho en la etapa «perfil, botones y equipo» (2026-11-01, demo y en línea)
 
 Decisiones de Franco (vigentes):
@@ -204,17 +226,14 @@ Hecho:
 
 Preguntar a Franco los detalles al empezar cada uno:
 
-1. Agrupar tropas: al tocar una ciudad, elegir de qué ciudades recibir tropas, con las cercanas
-   preseleccionadas.
-2. Marchas más lentas según la distancia entre ciudades.
-3. Juego en 3D, con ciudades como chozas bien detalladas; por ahora una sola isla para probar
+1. Juego en 3D, con ciudades como chozas bien detalladas; por ahora una sola isla para probar
    (Franco agrega más cuando todo funcione).
-4. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
+2. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
    `sudo firewall-cmd --add-port=8787/tcp` (con `--permanent` para que quede).
-5. Subir el repo a GitHub (acción de Franco): `git remote add origin
+3. Subir el repo a GitHub (acción de Franco): `git remote add origin
 https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main`. Repo público
    con licencia PolyForm Noncommercial 1.0.0 (`LICENSE.md`, copyright Franco944796).
-6. Varias ligas con ascensos y descensos (en ligas superiores, «atacante» y «defensor» con puntos).
+4. Varias ligas con ascensos y descensos (en ligas superiores, «atacante» y «defensor» con puntos).
 
 - Decisión pendiente: faros de zona raros en la demo (zonas más chicas o bonus de defensa).
 
@@ -230,8 +249,8 @@ https://github.com/Franco944796/juego_estrategia.git` y `git push -u origin main
 
 - Balance (detalle en `docs/BALANCE.md`): tensión PvP baja (demo 0,17, en línea 0,06; objetivo
   0,2–0,4); con 90 % de recuperación las ciudades cambian de dueño muchísimo; señores y ciudades
-  llegan a nivel 100 bastante antes del fin de temporada; menos de la mitad de los vuelos esperan
-  viento a favor (demo 0,49, en línea 0,38).
+  llegan a nivel 100 bastante antes del fin de temporada; en línea los bots nunca cruzan a la
+  segunda isla (las ciudades enemigas de nivel alto valen más que los neutrales de nivel 1–3).
 - Tropas por encima de ~9·10¹⁵ pierden unidades por precisión de los números (determinista igual).
 
 ## Notas del motor (no obvias en el código)

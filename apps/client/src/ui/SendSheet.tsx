@@ -21,7 +21,10 @@ function travelText(lang: Lang, p: SendPreview): string {
   return t(lang, 'crosswind', { f });
 }
 
-function outcomeText(lang: Lang, p: SendPreview): { text: string; tone: string } {
+export function outcomeText(
+  lang: Lang,
+  p: Pick<SendPreview, 'reinforce' | 'battle'>,
+): { text: string; tone: string } {
   if (p.reinforce) return { text: t(lang, 'reinforce'), tone: 'good' };
   if (!p.battle) return { text: t(lang, 'unknown'), tone: 'muted' };
   if (p.battle.winner === 'ATTACKER') {

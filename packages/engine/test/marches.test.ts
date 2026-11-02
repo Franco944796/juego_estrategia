@@ -1,8 +1,8 @@
-import { defaultConfig } from '@si/config';
+import { defaultConfig, liveConfig } from '@si/config';
 import { describe, expect, it } from 'vitest';
 import { advanceTo, computeStandings, execute } from '../src/game';
 import { distance, windFactor } from '../src/geometry';
-import { arriveMarch, travelInfo, windDirAt } from '../src/marches';
+import { arriveMarch, travelInfo, troopSlowdown, windDirAt } from '../src/marches';
 import type { BattleReport, DomainEvent, GameState, Town } from '../src/types';
 import {
   capitalOf,
@@ -48,7 +48,8 @@ describe('travel', () => {
     const capital = capitalOf(state, 'h1');
     const target = firstNeutral(state, capital);
     const march = send(state, 'h1', capital, target, 10);
-    const minutes = Math.max(MIN_DURATION, distance(capital.pos, target.pos) / LAND);
+    // Two digits of troops: ×(1 + 5) the time of 9 troops or fewer.
+    const minutes = Math.max(MIN_DURATION, (distance(capital.pos, target.pos) / LAND) * 6);
     expect(march.arriveAt - march.departAt).toBe(Math.round(minutes * MIN));
     expect(march.sky).toBe(false);
     expect(march.windFactor).toBe(1);
@@ -61,7 +62,7 @@ describe('travel', () => {
     const target = townAcrossLane(state, capital);
     const later = T0 + 31 * MIN;
     for (const at of [T0, later]) {
-      const info = travelInfo(state, 'h1', capital, target, at);
+      const info = travelInfo(state, 'h1', capital, target, 1, at);
       const factor = windFactor(capital.pos, target.pos, windDirAt(state, at), 2, 0.5);
       expect(info.sky).toBe(true);
       expect(info.windFactor).toBe(factor);
@@ -72,6 +73,23 @@ describe('travel', () => {
     expect(windDirAt(state, later)).toBe(state.windDirs[1]);
     expect(windDirAt(state, T0 - MIN)).toBe(state.windDirs[0]);
     expect(windDirAt(state, state.endsAt + MIN)).toBe(state.windDirs[state.windDirs.length - 1]);
+  });
+});
+
+describe('army size', () => {
+  it('adds the base time again ×5 for each digit of troops beyond the first', () => {
+    const state = game();
+    expect([1, 9, 10, 99, 100, 999_999, 1_000_000, 1e12].map((n) => troopSlowdown(state, n))).toEqual([
+      1, 1, 6, 6, 11, 26, 31, 61,
+    ]);
+  });
+
+  it('crosses the isle in about 10 real seconds with up to 9 troops, the same in the demo and online', () => {
+    const across = 540;
+    const demoSeconds = ((across / LAND) * 60) / defaultConfig.demo.timeScale;
+    const liveSeconds = (across / liveConfig.march.landSpeed) * 60;
+    expect(demoSeconds).toBeCloseTo(10, 0);
+    expect(liveSeconds).toBeCloseTo(demoSeconds, 9);
   });
 });
 
@@ -157,13 +175,13 @@ describe('arrivals', () => {
     target.tier = 1;
     target.garrison = 2;
     const first = send(state, 'h1', capital, target, 30);
-    const second = send(state, 'h1', capital, target, 5);
+    const second = send(state, 'h1', capital, target, 10);
     expect(second.arriveAt).toBe(first.arriveAt);
     const events = advanceTo(state, first.arriveAt);
     const types = events.map((e) => e.type).filter((t) => t === 'BATTLE' || t === 'MARCH_REINFORCED');
     expect(types).toEqual(['BATTLE', 'MARCH_REINFORCED']);
     const report = battles(events)[0];
-    expect(target.garrison).toBe((report?.attackerTroops ?? 0) - (report?.attackerLost ?? 0) + 5);
+    expect(target.garrison).toBe((report?.attackerTroops ?? 0) - (report?.attackerLost ?? 0) + 10);
   });
 
   it('ignores an arrival for a march that no longer exists', () => {
@@ -248,7 +266,7 @@ describe('exile and elimination', () => {
     const state = game({ config: QUIET });
     const capital = capitalOf(state, 'h1');
     const far = townAcrossLane(state, capital);
-    const probe = send(state, 'h1', capital, far, 1);
+    const probe = send(state, 'h1', capital, far, 10);
     const { events, at } = conquer(state);
     expect(probe.arriveAt).toBeGreaterThan(at);
     expect(events.some((e) => e.type === 'LORD_EXILED')).toBe(false);

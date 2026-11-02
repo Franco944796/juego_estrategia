@@ -1,4 +1,4 @@
-import type { Command, DomainEvent, Item, LordView, RuleError, SendPreview } from '@si/engine';
+import type { Command, DomainEvent, GroupPreview, Item, LordView, RuleError, SendPreview } from '@si/engine';
 
 /** Messages and REST payloads shared by apps/server and apps/client. Types only. */
 
@@ -111,6 +111,7 @@ export interface MyClan {
 export type ClientMessage =
   | { type: 'command'; id: number; command: Command }
   | { type: 'preview'; id: number; from: number; to: number; troops: number }
+  | { type: 'previewGroup'; id: number; from: number[]; to: number }
   | { type: 'chat'; channel: ChatChannel; text: string };
 
 export type ServerMessage =
@@ -118,6 +119,7 @@ export type ServerMessage =
   | { type: 'events'; events: DomainEvent[] }
   | { type: 'result'; id: number; error: RuleError | null }
   | { type: 'preview'; id: number; preview: SendPreview }
+  | { type: 'previewGroup'; id: number; preview: GroupPreview }
   | {
       type: 'season';
       finished: SeasonSummary;

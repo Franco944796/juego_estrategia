@@ -12,6 +12,11 @@ const MINUTES_PER_DAY = 24 * 60;
 export const liveConfig = withOverrides(defaultConfig, {
   season: { durationMin: SEASON_DAYS * MINUTES_PER_DAY },
   wind: { shiftEveryMin: 180 },
+  march: {
+    landSpeed: defaultConfig.march.landSpeed * defaultConfig.demo.timeScale,
+    skySpeed: defaultConfig.march.skySpeed * defaultConfig.demo.timeScale,
+    minDurationMin: defaultConfig.march.minDurationMin / defaultConfig.demo.timeScale,
+  },
   towns: {
     goldPerMin: defaultConfig.towns.goldPerMin / PRODUCTION_DIVISOR,
     troopsPerMin: defaultConfig.towns.troopsPerMin / PRODUCTION_DIVISOR,

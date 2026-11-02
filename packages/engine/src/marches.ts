@@ -26,12 +26,25 @@ export interface TravelInfo {
   sky: boolean;
 }
 
+/** Digits in the troop count: 1 up to 9 troops, 2 up to 99… */
+function digits(troops: number): number {
+  let d = 1;
+  for (let n = troops; n >= 10; n /= 10) d++;
+  return d;
+}
+
+/** How much longer an army takes than 9 troops or fewer: +`march.perDigit` per extra digit. */
+export function troopSlowdown(state: GameState, troops: number): number {
+  return 1 + state.config.march.perDigit * (digits(troops) - 1);
+}
+
 /** The wind factor is read at departure and stays locked for the whole flight. */
 export function travelInfo(
   state: GameState,
   lordId: string,
   from: Town,
   to: Town,
+  troops: number,
   departAt: number,
   mods?: LordMods,
 ): TravelInfo {
@@ -49,11 +62,28 @@ export function travelInfo(
     );
     speed *= factor;
   }
-  const minutes = Math.max(cfg.march.minDurationMin, distance(from.pos, to.pos) / speed);
+  const minutes = Math.max(
+    cfg.march.minDurationMin,
+    (distance(from.pos, to.pos) / speed) * troopSlowdown(state, troops),
+  );
   return { durationMs: Math.max(1, Math.round(minutes * MINUTE_MS)), windFactor: factor, sky };
 }
 
-/** Puts troops already taken out of a town on the road; the mission is decided on arrival. */
+export function isAttack(state: GameState, lordId: string, to: Town): boolean {
+  return to.owner !== lordId && !areAllies(state, lordId, to.owner);
+}
+
+/** Attacks in flight, a synchronized group counting once; reinforcements never count. */
+export function activeAttacks(state: GameState, lordId: string): number {
+  const keys = new Set<number>();
+  for (const m of state.marches) if (m.owner === lordId && m.attack) keys.add(m.groupId ?? -m.id);
+  return keys.size;
+}
+
+/**
+ * Puts troops already taken out of a town on the road; the mission is decided on arrival. A group
+ * passes its common arrival time and id.
+ */
 export function dispatchMarch(
   state: GameState,
   lordId: string,
@@ -62,8 +92,9 @@ export function dispatchMarch(
   troops: number,
   at: number,
   events: DomainEvent[],
+  group?: { arriveAt: number; id: number },
 ): March {
-  const travel = travelInfo(state, lordId, from, to, at);
+  const travel = travelInfo(state, lordId, from, to, troops, at);
   const march: March = {
     id: state.nextMarchId++,
     owner: lordId,
@@ -71,9 +102,11 @@ export function dispatchMarch(
     to: to.id,
     troops,
     departAt: at,
-    arriveAt: at + travel.durationMs,
+    arriveAt: group?.arriveAt ?? at + travel.durationMs,
     windFactor: travel.windFactor,
     sky: travel.sky,
+    groupId: group?.id ?? null,
+    attack: isAttack(state, lordId, to),
   };
   state.marches.push(march);
   schedule(state, march.arriveAt, { kind: 'MARCH_ARRIVAL', marchId: march.id });
@@ -101,11 +134,42 @@ export function launchMarch(
   return dispatchMarch(state, lordId, from, to, troops, at, events);
 }
 
-/** The mission is decided on arrival: an own town is reinforced, any other town is attacked. */
+/**
+ * Every source sends its whole garrison. All leave now and arrive with the slowest one: the closer
+ * ones simply travel slower.
+ */
+export function launchGroup(
+  state: GameState,
+  lordId: string,
+  sources: Town[],
+  to: Town,
+  at: number,
+  events: DomainEvent[],
+): March[] {
+  const legs = sources.map((from) => ({ from, troops: from.garrison }));
+  const slowest = Math.max(
+    ...legs.map((l) => travelInfo(state, lordId, l.from, to, l.troops, at).durationMs),
+  );
+  const group = { arriveAt: at + slowest, id: state.nextMarchId };
+  return legs.map(({ from, troops }) => {
+    from.garrison -= troops;
+    return dispatchMarch(state, lordId, from, to, troops, at, events, group);
+  });
+}
+
+/**
+ * The mission is decided on arrival: an own town is reinforced, any other town is attacked. A group
+ * resolves as one army when its first march arrives (the others land in the same instant).
+ */
 export function arriveMarch(state: GameState, marchId: number, at: number, events: DomainEvent[]): void {
   const index = state.marches.findIndex((m) => m.id === marchId);
   if (index < 0) return;
-  const march = state.marches.splice(index, 1)[0] as March;
+  const first = state.marches[index] as March;
+  const legs = state.marches.filter(
+    (m) => m.id === marchId || (first.groupId !== null && m.groupId === first.groupId),
+  );
+  state.marches = state.marches.filter((m) => !legs.includes(m));
+  const march: March = { ...first, troops: legs.reduce((sum, m) => sum + m.troops, 0) };
   const town = state.towns[march.to];
   if (!town) return;
   if (town.owner === march.owner) {
@@ -122,8 +186,10 @@ export function arriveMarch(state: GameState, marchId: number, at: number, event
   }
   // A neutral town can become someone's capital while a march is on its way.
   if (state.config.rules.capitalImmune && town.isCapital) {
-    const origin = state.towns[march.from];
-    if (origin?.owner === march.owner) origin.garrison += march.troops;
+    for (const leg of legs) {
+      const origin = state.towns[leg.from];
+      if (origin?.owner === leg.owner) origin.garrison += leg.troops;
+    }
     events.push({ type: 'MARCH_REPELLED', at, march });
     return;
   }

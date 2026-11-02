@@ -225,6 +225,18 @@ describe('WebSocket', () => {
     const preview = await ana.next((m) => m.type === 'preview' && m.id === 9);
     expect(preview.preview).toMatchObject({ error: null });
     expect(ana.messages.some((m) => m.id === 8)).toBe(false);
+
+    ana.socket.send(JSON.stringify({ type: 'previewGroup', id: 10, from: [capital.id], to: neighbor.id }));
+    const group = await ana.next((m) => m.type === 'previewGroup' && m.id === 10);
+    expect(group.preview).toMatchObject({ error: null, reinforce: false });
+    ana.socket.send(
+      JSON.stringify({
+        type: 'command',
+        id: 11,
+        command: { type: 'SEND_GROUP', from: [capital.id], to: neighbor.id },
+      }),
+    );
+    expect(await ana.next((m) => m.type === 'result' && m.id === 11)).toMatchObject({ error: null });
     ana.socket.close();
     bo.socket.close();
   });

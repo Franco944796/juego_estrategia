@@ -35,7 +35,7 @@ async function load(page: Page, state: GameState, gameNow: number): Promise<Lord
       localStorage.setItem(key, save);
       localStorage.setItem('shattered-isles:tutorial-done', '1');
     },
-    [SAVE_KEY, JSON.stringify({ version: 3, state, gameNow, speed: 1 })] as const,
+    [SAVE_KEY, JSON.stringify({ version: 4, state, gameNow, speed: 1 })] as const,
   );
   await page.reload();
   await page.getByTestId('continue-game').click();
@@ -145,6 +145,43 @@ test('a big town: walls, production and upgrading several levels', async ({ page
   await shot(page, 'town-upgraded');
 });
 
+test('a grouped attack from several towns', async ({ page }) => {
+  const state = newState();
+  const me = state.lords[ME];
+  const capital = state.towns[me?.capitalId ?? -1];
+  if (!capital) throw new Error('no capital');
+  const d = (t: { pos: { x: number; y: number } }): number =>
+    Math.hypot(t.pos.x - capital.pos.x, t.pos.y - capital.pos.y);
+  const near = state.towns
+    .filter((t) => t.owner === null && t.isleId === capital.isleId)
+    .sort((a, b) => d(a) - d(b));
+  const target = near[6];
+  if (!target) throw new Error('no target');
+  near.slice(0, 6).forEach((town, i) => {
+    town.owner = ME;
+    town.neutralCap = 0;
+    town.privateTo = null;
+    town.garrison = 15 + i * 40;
+  });
+  await load(page, state, 0);
+  const point = await bringIntoView(page, target.id);
+  await page.mouse.click(point.x, point.y);
+  await page.getByTestId('group-button').click();
+  await expect(page.getByTestId('group-sheet')).toBeVisible();
+  const boxes = page.getByTestId('group-source');
+  await expect(boxes).toHaveCount(7);
+  await expect(page.locator('[data-testid=group-source]:checked')).toHaveCount(5);
+  await expect(page.getByTestId('group-eta')).not.toContainText('—');
+  await page.waitForFunction(() => window.__shatteredIsles?.cameraSettled() ?? false);
+  await shot(page, 'group-sheet');
+  await boxes.nth(6).check();
+  await expect(page.getByTestId('group-total')).toContainText('6');
+  await page.getByTestId('confirm-group').click();
+  await expect(page.getByTestId('group-sheet')).toHaveCount(0);
+  await page.getByTestId('nav-marches').click();
+  await shot(page, 'group-marches');
+});
+
 test('incoming attack, marches and the defense report', async ({ page }) => {
   const state = newState();
   const capital = state.towns[state.lords[ME]?.capitalId ?? -1];
@@ -153,7 +190,7 @@ test('incoming attack, marches and the defense report', async ({ page }) => {
   base.owner = 'bot1';
   base.neutralCap = 0;
   base.garrison = 40;
-  const sent = execute(state, 'bot1', { type: 'SEND', from: base.id, to: capital.id, troops: 25 }, 0);
+  const sent = execute(state, 'bot1', { type: 'SEND', from: base.id, to: capital.id, troops: 9 }, 0);
   expect(sent.ok).toBe(true);
   await load(page, state, 0);
   await expect(page.getByTestId('nav-marches').locator('.badge')).toBeVisible();

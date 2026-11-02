@@ -1,4 +1,4 @@
-import type { Command, DomainEvent, LordView, RuleError, SendPreview } from '@si/engine';
+import type { Command, DomainEvent, LordView, RuleError, GroupPreview, SendPreview } from '@si/engine';
 import type { ClockInfo, FromWorker, NewGameOptions, Save, ToWorker } from './protocol';
 import EngineWorker from './worker?worker&inline';
 
@@ -14,6 +14,7 @@ export interface GameClient {
   load(save: Save): void;
   command(command: Command): Promise<RuleError | null>;
   preview(from: number, to: number, troops: number): Promise<SendPreview>;
+  previewGroup(from: number[], to: number): Promise<GroupPreview>;
   setSpeed(speed: number): void;
   requestSave(): void;
   dispose(): void;
@@ -25,6 +26,7 @@ export class LocalGameClient implements GameClient {
   private nextId = 1;
   private readonly results = new Map<number, (error: RuleError | null) => void>();
   private readonly previews = new Map<number, (preview: SendPreview) => void>();
+  private readonly groupPreviews = new Map<number, (preview: GroupPreview) => void>();
 
   constructor(handlers: GameHandlers) {
     this.worker = new EngineWorker();
@@ -47,6 +49,10 @@ export class LocalGameClient implements GameClient {
         case 'preview':
           this.previews.get(msg.id)?.(msg.preview);
           this.previews.delete(msg.id);
+          return;
+        case 'previewGroup':
+          this.groupPreviews.get(msg.id)?.(msg.preview);
+          this.groupPreviews.delete(msg.id);
           return;
       }
     };
@@ -77,6 +83,14 @@ export class LocalGameClient implements GameClient {
     return new Promise((resolve) => {
       this.previews.set(id, resolve);
       this.post({ type: 'preview', id, from, to, troops });
+    });
+  }
+
+  previewGroup(from: number[], to: number): Promise<GroupPreview> {
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.groupPreviews.set(id, resolve);
+      this.post({ type: 'previewGroup', id, from, to });
     });
   }
 

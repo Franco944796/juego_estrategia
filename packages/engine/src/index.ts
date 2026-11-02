@@ -16,7 +16,13 @@ export type {
   TownView,
   WindView,
 } from './view';
-export { previewSend, type LaterDeparture, type SendPreview } from './preview';
+export {
+  previewGroup,
+  previewSend,
+  type GroupPreview,
+  type LaterDeparture,
+  type SendPreview,
+} from './preview';
 export { hashState, hashString, stableStringify } from './hash';
 export { resolveSiege, summarizeSiege } from './combat';
 export type { BattleOutcome, SiegeInput, SiegeOutcome } from './combat';
@@ -24,6 +30,6 @@ export { levelScale, upgradeCostAt, upgradePlan, wallsAt } from './economy';
 export { unspentPoints } from './skills';
 export { grantItem } from './gear';
 export { distance, WIND_VECTORS, windFactor } from './geometry';
-export { travelInfo, windDirAt, type TravelInfo } from './marches';
+export { activeAttacks, travelInfo, troopSlowdown, windDirAt, type TravelInfo } from './marches';
 export { visibleIsles } from './vision';
 export { reachableTowns } from './world';

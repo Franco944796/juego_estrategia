@@ -1,10 +1,10 @@
 import { SKILL_IDS } from '@si/config/constants';
 import { accrueTo, projectedGarrison, projectedGold, upgradeCost, upgradePlan } from './economy';
 import { equipItem } from './gear';
-import { launchMarch } from './marches';
+import { activeAttacks, isAttack, launchGroup, launchMarch } from './marches';
 import { learnSkill, unspentPoints } from './skills';
-import type { Command, DomainEvent, GameState, RuleError, RuleId } from './types';
-import { areAllies, getLord, getTown, islesLinked } from './world';
+import type { Command, DomainEvent, GameState, RuleError, RuleId, Town } from './types';
+import { getLord, getTown, islesLinked } from './world';
 
 function fail(rule: RuleId, code: string, message: string): RuleError {
   return { rule, code, message };
@@ -36,6 +36,16 @@ function parseCommand(state: GameState, input: unknown): Command | null {
       return isTownId(state, from) && isTownId(state, to) && typeof troops === 'number'
         ? { type: 'SEND', from, to, troops }
         : null;
+    }
+    case 'SEND_GROUP': {
+      const { from, to } = input;
+      if (!Array.isArray(from) || from.length === 0 || !isTownId(state, to)) return null;
+      const ids: number[] = [];
+      for (const id of from as unknown[]) {
+        if (!isTownId(state, id) || ids.includes(id)) return null;
+        ids.push(id);
+      }
+      return { type: 'SEND_GROUP', from: ids, to };
     }
     case 'LEARN_SKILL': {
       const skill = SKILL_IDS.find((id) => id === input.skill);
@@ -90,27 +100,19 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       if (command.troops > available) {
         return fail('R08', 'NOT_ENOUGH_TROOPS', 'not enough troops in the town');
       }
-      if (to.privateTo !== null && to.privateTo !== lordId) {
-        return fail('R14', 'UNKNOWN_TOWN', 'that town is not visible to this lord');
+      return targetRules(state, lordId, [from], to);
+    }
+    case 'SEND_GROUP': {
+      const to = state.towns[command.to];
+      const sources = command.from.map((id) => state.towns[id]);
+      if (!to || sources.some((from) => from?.owner !== lordId)) {
+        return fail('R03', 'NOT_OWNER', 'every source must be a town of yours');
       }
-      if (from.id === to.id) return fail('R09', 'SAME_TOWN', 'target is the source');
-      if (!islesLinked(state, from.isleId, to.isleId)) {
-        return fail('R10', 'UNREACHABLE', 'target isle has no lane to the source isle');
+      const towns = sources as Town[];
+      if (towns.some((from) => projectedGarrison(state, from, now) < cfg.march.minTroops)) {
+        return fail('R08', 'NOT_ENOUGH_TROOPS', 'a source town has no troops to send');
       }
-      if (to.isThrone && !state.throneUnsealed) return fail('R11', 'THRONE_SEALED', 'the Throne is sealed');
-      if (
-        cfg.rules.capitalImmune &&
-        to.isCapital &&
-        to.owner !== lordId &&
-        !areAllies(state, lordId, to.owner)
-      ) {
-        return fail('R15', 'CAPITAL_IMMUNE', 'capitals cannot be attacked');
-      }
-      const active = state.marches.filter((m) => m.owner === lordId).length;
-      if (active >= cfg.march.maxActivePerLord) {
-        return fail('R12', 'TOO_MANY_MARCHES', 'too many marches in flight');
-      }
-      return null;
+      return targetRules(state, lordId, towns, to);
     }
     case 'LEARN_SKILL':
       if (unspentPoints(lord) <= 0) return fail('R13', 'NO_SKILL_POINTS', 'no skill points left');
@@ -121,6 +123,29 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       }
       return null;
   }
+}
+
+/** Rules about where marches from `sources` may go; only attacks count against the march limit. */
+function targetRules(state: GameState, lordId: string, sources: Town[], to: Town): RuleError | null {
+  const cfg = state.config;
+  if (to.privateTo !== null && to.privateTo !== lordId) {
+    return fail('R14', 'UNKNOWN_TOWN', 'that town is not visible to this lord');
+  }
+  for (const from of sources) {
+    if (from.id === to.id) return fail('R09', 'SAME_TOWN', 'target is the source');
+    if (!islesLinked(state, from.isleId, to.isleId)) {
+      return fail('R10', 'UNREACHABLE', 'target isle has no lane to the source isle');
+    }
+  }
+  if (to.isThrone && !state.throneUnsealed) return fail('R11', 'THRONE_SEALED', 'the Throne is sealed');
+  if (!isAttack(state, lordId, to)) return null;
+  if (cfg.rules.capitalImmune && to.isCapital) {
+    return fail('R15', 'CAPITAL_IMMUNE', 'capitals cannot be attacked');
+  }
+  if (activeAttacks(state, lordId) >= cfg.march.maxActivePerLord) {
+    return fail('R12', 'TOO_MANY_MARCHES', 'too many attacks in flight');
+  }
+  return null;
 }
 
 /** Validates, then settles production up to `now` and applies. Returns the broken rule, if any. */
@@ -160,6 +185,12 @@ export function applyCommand(
       const from = state.towns[command.from];
       const to = state.towns[command.to];
       if (from && to) launchMarch(state, lordId, from, to, command.troops, now, events);
+      return null;
+    }
+    case 'SEND_GROUP': {
+      const to = state.towns[command.to];
+      const sources = command.from.flatMap((id) => (state.towns[id] ? [state.towns[id] as Town] : []));
+      if (to) launchGroup(state, lordId, sources, to, now, events);
       return null;
     }
     case 'LEARN_SKILL':

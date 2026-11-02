@@ -656,6 +656,11 @@ button[aria-pressed='true'] {
   border-color: var(--gold);
 }
 
+/* Solid on hover too: the generic translucent hover would let the map show through. */
+.rail-button:hover:not(:disabled) {
+  background: #1b3159;
+}
+
 .rail-button .badge {
   top: -4px;
   right: -4px;
@@ -695,6 +700,28 @@ button[aria-pressed='true'] {
   font-size: 11px;
   font-weight: 700;
   line-height: 18px;
+}
+
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.group-row input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gear-slots {

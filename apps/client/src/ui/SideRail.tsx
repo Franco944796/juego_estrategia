@@ -1,6 +1,7 @@
 import { t, type MessageKey } from '../i18n';
 import { useGame, type Panel } from '../store';
 import { ChatIcon, MarchIcon, MenuIcon, ScrollIcon, TrophyIcon } from './icons';
+import { mergeGroups } from './labels';
 
 const ITEMS: { panel: Panel; label: MessageKey; Icon: typeof MenuIcon }[] = [
   { panel: 'marches', label: 'navMarches', Icon: MarchIcon },
@@ -16,8 +17,8 @@ export function SideRail() {
   const lang = useGame((s) => s.lang);
   const current = useGame((s) => s.panel);
   const setPanel = useGame((s) => s.setPanel);
-  const incoming = view?.marches.filter((m) => m.incoming).length ?? 0;
-  const mine = view?.marches.filter((m) => m.mine).length ?? 0;
+  const incoming = mergeGroups(view?.marches.filter((m) => m.incoming) ?? []).length;
+  const mine = mergeGroups(view?.marches.filter((m) => m.mine) ?? []).length;
   const online = useGame((s) => s.mode === 'online');
   const unread = useGame((s) => s.unread);
   const items = ITEMS.filter((item) => online || item.panel !== 'social');

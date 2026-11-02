@@ -120,6 +120,10 @@ export interface March {
   arriveAt: number;
   windFactor: number;
   sky: boolean;
+  /** Marches of one synchronized group share it (the first march's id) and arrive together. */
+  groupId: number | null;
+  /** Aimed at a town that was neither own nor allied at departure; only these count for the limit. */
+  attack: boolean;
 }
 
 export type BattleWinner = 'ATTACKER' | 'DEFENDER';
@@ -168,7 +172,7 @@ export interface QueueItem {
 export type SeasonStatus = 'RUNNING' | 'ENDED';
 
 /** Bumped when the state shape changes so much that older saves cannot be loaded. */
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 export interface GameState {
   version: typeof STATE_VERSION;
@@ -238,6 +242,8 @@ export type Command =
   /** Raises up to `levels` levels (1 if left out) in one go, stopping when the gold runs out. */
   | { type: 'UPGRADE'; townId: number; levels?: number }
   | { type: 'SEND'; from: number; to: number; troops: number }
+  /** Every listed own town sends all its troops; they arrive together and fight as one army. */
+  | { type: 'SEND_GROUP'; from: number[]; to: number }
   | { type: 'LEARN_SKILL'; skill: SkillId }
   | { type: 'EQUIP'; itemId: string };
 

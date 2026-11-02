@@ -23,6 +23,7 @@ export function TownSheet({ townId }: { townId: number }) {
   const closeSheet = useGame((s) => s.closeSheet);
   const startPicking = useGame((s) => s.startPicking);
   const openSend = useGame((s) => s.openSend);
+  const openGroup = useGame((s) => s.openGroup);
   const select = useGame((s) => s.select);
   const town = view ? townById(view, townId) : undefined;
   if (!view || !town) return null;
@@ -32,6 +33,16 @@ export function TownSheet({ townId }: { townId: number }) {
   const zone = town.zoneId === null ? undefined : view.zones[town.zoneId];
   const zoneMine = zone ? zone.townIds.filter((id) => townById(view, id)?.owner === view.me.id).length : 0;
   const source = mine ? null : bestSource(view, town);
+  const immune = !mine && !ally && view.season.capitalImmune && town.isCapital;
+  const canGroup =
+    !immune &&
+    view.towns.some(
+      (t) =>
+        t.owner === view.me.id &&
+        t.id !== town.id &&
+        (t.garrison ?? 0) > 0 &&
+        linkedIsles(view, t.isleId).has(town.isleId),
+    );
   const gold = view.me.gold;
   const own = town.own;
 
@@ -177,6 +188,11 @@ export function TownSheet({ townId }: { townId: number }) {
           </button>
         ) : (
           <p className="muted">{t(lang, 'noSource')}</p>
+        )}
+        {canGroup && (
+          <button type="button" data-testid="group-button" onClick={() => openGroup(town.id)}>
+            {t(lang, mine || ally ? 'groupHere' : 'groupAttack')}
+          </button>
         )}
       </div>
     </section>

@@ -41,6 +41,8 @@ const CHAT_HISTORY = 50;
 const CHAT_BURST = 5;
 const CHAT_WINDOW_MS = 10_000;
 const CLAN_SEARCH_LIMIT = 30;
+/** Most towns one group send may list; far above a real realm's reach, it only bounds the payload. */
+const MAX_GROUP = 500;
 
 const troopsSchema = z.number().int().min(0);
 const commandSchema = z.discriminatedUnion('type', [
@@ -50,6 +52,11 @@ const commandSchema = z.discriminatedUnion('type', [
     levels: z.number().int().min(1).default(1),
   }),
   z.object({ type: z.literal('SEND'), from: z.number().int(), to: z.number().int(), troops: troopsSchema }),
+  z.object({
+    type: z.literal('SEND_GROUP'),
+    from: z.array(z.number().int()).min(1).max(MAX_GROUP),
+    to: z.number().int(),
+  }),
   z.object({ type: z.literal('LEARN_SKILL'), skill: z.enum(SKILL_IDS) }),
   z.object({ type: z.literal('EQUIP'), itemId: z.string().max(200) }),
 ]);
@@ -62,6 +69,12 @@ const socketMessage = z.discriminatedUnion('type', [
     from: z.number().int(),
     to: z.number().int(),
     troops: troopsSchema,
+  }),
+  z.object({
+    type: z.literal('previewGroup'),
+    id: z.number().int(),
+    from: z.array(z.number().int()).max(MAX_GROUP),
+    to: z.number().int(),
   }),
   z.object({ type: z.literal('chat'), channel: z.enum(['global', 'clan']), text: z.string() }),
 ]);
@@ -282,6 +295,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       } else if (msg.data.type === 'preview') {
         const { id, from, to, troops } = msg.data;
         send(socket, { type: 'preview', id, preview: world.preview(account.id, from, to, troops) });
+      } else if (msg.data.type === 'previewGroup') {
+        const { id, from, to } = msg.data;
+        send(socket, { type: 'previewGroup', id, preview: world.previewGroup(account.id, from, to) });
       } else {
         postChat(account.id, msg.data.channel, msg.data.text);
       }

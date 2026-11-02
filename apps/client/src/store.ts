@@ -40,6 +40,8 @@ export interface GameStore {
   /** Waiting for the player to tap a destination for the selected town. */
   picking: boolean;
   send: { from: number; to: number } | null;
+  /** Target town of a synchronized group being put together. */
+  group: number | null;
   panel: Panel | null;
   toasts: Toast[];
   tutorial: number | null;
@@ -49,6 +51,7 @@ export interface GameStore {
   select(townId: number | null): void;
   startPicking(): void;
   openSend(from: number, to: number): void;
+  openGroup(to: number): void;
   closeSheet(): void;
   setPanel(panel: Panel | null): void;
   pushToast(text: string, tone?: Tone): void;
@@ -80,18 +83,28 @@ export const useGame = create<GameStore>()((set, get) => ({
   selected: null,
   picking: false,
   send: null,
+  group: null,
   panel: null,
   toasts: [],
   tutorial: null,
   setLang: (lang) => set({ lang }),
   setScreen: (screen) => set({ screen }),
   receiveView: (view, clock) => set({ view, clock: { ...clock, receivedAt: performance.now() } }),
-  select: (townId) => set({ selected: townId, picking: false, send: null, panel: null }),
-  startPicking: () => set({ picking: true, send: null }),
-  openSend: (from, to) => set({ send: { from, to }, picking: false, selected: from, panel: null }),
-  closeSheet: () => set({ selected: null, picking: false, send: null }),
+  select: (townId) => set({ selected: townId, picking: false, send: null, group: null, panel: null }),
+  startPicking: () => set({ picking: true, send: null, group: null }),
+  openSend: (from, to) =>
+    set({ send: { from, to }, picking: false, selected: from, group: null, panel: null }),
+  openGroup: (to) => set({ group: to, picking: false, send: null, selected: to, panel: null }),
+  closeSheet: () => set({ selected: null, picking: false, send: null, group: null }),
   setPanel: (panel) =>
-    set({ panel, picking: false, send: null, selected: null, ...(panel === 'social' ? { unread: 0 } : {}) }),
+    set({
+      panel,
+      picking: false,
+      send: null,
+      group: null,
+      selected: null,
+      ...(panel === 'social' ? { unread: 0 } : {}),
+    }),
   pushToast: (text, tone = 'info') => {
     const id = toastId++;
     set({ toasts: [...get().toasts, { id, text, tone }].slice(-MAX_TOASTS) });
@@ -106,6 +119,7 @@ export const useGame = create<GameStore>()((set, get) => ({
       selected: null,
       picking: false,
       send: null,
+      group: null,
       panel: null,
       toasts: [],
     }),

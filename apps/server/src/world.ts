@@ -8,6 +8,7 @@ import {
   grantItem,
   joinLord,
   migrateState,
+  previewGroup,
   previewSend,
   setClan,
   setStyle,
@@ -17,6 +18,7 @@ import {
   type DomainEvent,
   type ExecResult,
   type GameState,
+  type GroupPreview,
   type Item,
   type LordView,
   type SendPreview,
@@ -223,6 +225,10 @@ export class WorldService {
 
   preview(accountId: string, from: number, to: number, troops: number): SendPreview {
     return previewSend(this.state, accountId, from, to, troops, this.opts.now());
+  }
+
+  previewGroup(accountId: string, from: number[], to: number): GroupPreview {
+    return previewGroup(this.state, accountId, from, to, this.opts.now());
   }
 
   setStyle(accountId: string, style: string): void {

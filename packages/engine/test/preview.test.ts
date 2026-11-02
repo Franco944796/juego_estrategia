@@ -36,7 +36,7 @@ describe('previewSend', () => {
     expect(preview.travel?.sky).toBe(true);
     expect(preview.later.map((l) => l.departAt)).toEqual([T0 + 30 * MIN, T0 + 60 * MIN]);
     for (const option of preview.later) {
-      const info = travelInfo(state, 'h1', capital, target, option.departAt);
+      const info = travelInfo(state, 'h1', capital, target, 1, option.departAt);
       expect(option.durationMs).toBe(info.durationMs);
       expect(option.windFactor).toBe(info.windFactor);
     }

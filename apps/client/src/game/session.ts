@@ -1,5 +1,14 @@
 import { defaultConfig } from '@si/config';
-import type { Command, DomainEvent, GearSlot, Item, LordView, Rarity, SendPreview } from '@si/engine';
+import type {
+  Command,
+  DomainEvent,
+  GearSlot,
+  GroupPreview,
+  Item,
+  LordView,
+  Rarity,
+  SendPreview,
+} from '@si/engine';
 import { formatDuration } from '../format';
 import { BOT_NAMES, RULE_TEXT, SERVER_TEXT, t, WIND_NAMES } from '../i18n';
 import { toRealMs, useGame, type SeasonNews } from '../store';
@@ -52,7 +61,7 @@ export function readSave(): Save | null {
   if (!raw) return null;
   try {
     const save = JSON.parse(raw) as Save;
-    return save.version === 3 && save.state.status === 'RUNNING' ? save : null;
+    return save.version === 4 && save.state.status === 'RUNNING' ? save : null;
   } catch {
     return null;
   }
@@ -147,6 +156,10 @@ export async function command(cmd: Command): Promise<boolean> {
 
 export function preview(from: number, to: number, troops: number): Promise<SendPreview> {
   return client ? client.preview(from, to, troops) : new Promise<SendPreview>(() => undefined);
+}
+
+export function previewGroup(from: number[], to: number): Promise<GroupPreview> {
+  return client ? client.previewGroup(from, to) : new Promise<GroupPreview>(() => undefined);
 }
 
 function serverText(code: string): string {

@@ -76,8 +76,14 @@ There is a **single troop type**. A troop is worth 1 in attack and 1 in defense;
 
 - **Send**: choose source town, target town and how many troops. The mission is decided on arrival: own
   town → reinforce; any other town → battle.
-- **Travel time** = distance ÷ (`march.landSpeed` or `march.skySpeed` × wind factor). No march takes
-  less than `march.minDurationMin`.
+- **Grouped send** (`SEND_GROUP`): pick several own towns; each sends **all** its troops. They all
+  leave at once and arrive together with the slowest one (the closer ones just travel slower), then
+  fight as one army or reinforce as one. The send screen preselects the 5 nearest towns with troops.
+- **Travel time** = distance ÷ (`march.landSpeed` or `march.skySpeed` × wind factor × boots) ×
+  `1 + march.perDigit (5) × (digits of the troop count − 1)`: up to 9 troops cross an isle (~540) in
+  about 10 real seconds, 100 troops take ×11, a million ×31, a trillion ×61. Speeds are set so a
+  march lasts the same real seconds in the demo (×20 game time) and online. No march takes less than
+  `march.minDurationMin` (0.6 real seconds).
 - **Power.**
   - `P_att = troops × (1 + attack skill bonus)`
   - `P_def = garrison × fortification + walls` (plus allied contingents × fortification)
@@ -95,7 +101,7 @@ There is a **single troop type**. A troop is worth 1 in attack and 1 in defense;
   survivors become its garrison; the level is kept. The attacker gains plunder
   (`plunder.base (40) × scale(L)`). If no attacker survives, the garrison is still destroyed but the town
   keeps its owner.
-- Two marches that reach the same town resolve as separate battles, in arrival order.
+- Two separate marches that reach the same town resolve as separate battles, in arrival order.
 - Losing a capital moves it to the owner's highest-level town (lowest id on ties).
 
 ## 7. Beacons, Throne and Dominion
@@ -177,8 +183,7 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
   your towns by `1 + towns.sprawl.penaltyPerTown (0.1) × extra towns`. The demo uses the same brakes,
   milder: ×1.5, and −5% per town beyond 8.
 - **Economy:** production ÷5, upgrade costs ×40, plunder ×5 and 400 starting gold versus the demo, so
-  an active player's best town reaches level 100 in about a week; marches take seconds to a couple of
-  minutes and the wind shifts every 3 hours.
+  an active player's best town reaches level 100 in about a week; the wind shifts every 3 hours.
 - **Rewards by final rank:** top 5% → 100 Legacy, top 25% → 50, top 50% → 25, everyone else who
   played → 10 (`rewards.tiers`; each cut-off rounds up and holds at least one player). Legacy is
   permanent and only buys town styles (`cosmetics.styles`); it never changes the rules of a season.
@@ -212,7 +217,7 @@ Every command is validated by the engine; each rule has a passing and a violatin
 | R09 | Target differs from source.                                                    |
 | R10 | Target is on the same isle or on an isle joined by a lane.                     |
 | R11 | The Throne (when enabled) cannot be targeted while sealed.                     |
-| R12 | Active marches per lord stay below `march.maxActivePerLord`.                   |
+| R12 | Attacks in flight (a group counts once) stay below `march.maxActivePerLord`.   |
 | R13 | A skill point can be spent only if the lord has one left.                      |
 | R14 | Command payloads have the right shape; another lord's private town is unknown. |
 | R15 | With `rules.capitalImmune`, another lord's capital cannot be targeted.         |

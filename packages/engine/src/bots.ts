@@ -3,7 +3,7 @@ import { applyCommand } from './commands';
 import { resolveSiege, type SiegeOutcome } from './combat';
 import { fortification, townRates, townWalls, upgradeCost, upgradePlan } from './economy';
 import { distance } from './geometry';
-import { travelInfo, type TravelInfo } from './marches';
+import { activeAttacks, travelInfo, type TravelInfo } from './marches';
 import { modsMemo, type LordMods } from './modifiers';
 import { bestUpgrade } from './gear';
 import { botSkill, unspentPoints } from './skills';
@@ -80,9 +80,9 @@ function spare(turn: Turn, town: Town): number {
   return Math.floor(town.garrison * (1 - turn.p.keepHome));
 }
 
-function marchSlots(turn: Turn): number {
-  const active = turn.state.marches.filter((m) => m.owner === turn.lord.id).length;
-  return turn.state.config.march.maxActivePerLord - active;
+/** Attacks the bot may still launch; reinforcements are never limited. */
+function attackSlots(turn: Turn): number {
+  return turn.state.config.march.maxActivePerLord - activeAttacks(turn.state, turn.lord.id);
 }
 
 /** Unseen garrisons are guessed: neutrals at their regeneration ceiling, lords by their production. */
@@ -118,7 +118,7 @@ function defend(turn: Turn): void {
     .sort((a, b) => a.arriveAt - b.arriveAt || a.id - b.id);
 
   for (const threat of threats) {
-    if (budget <= 0 || marchSlots(turn) <= 0) return;
+    if (budget <= 0) return;
     const town = state.towns[threat.to];
     if (!town) continue;
     const arriving = state.marches
@@ -134,7 +134,7 @@ function defend(turn: Turn): void {
       if (!islesLinked(state, from.isleId, town.isleId)) continue;
       const troops = spare(turn, from);
       if (troops === 0) continue;
-      const travel = travelInfo(state, lord.id, from, town, now, turn.mods);
+      const travel = travelInfo(state, lord.id, from, town, troops, now, turn.mods);
       if (now + travel.durationMs >= threat.arriveAt) continue;
       if (!best || travel.durationMs < best.travel.durationMs) best = { from, troops, travel };
     }
@@ -239,7 +239,7 @@ function targetsNear(turn: Turn, from: Town): Town[] {
 
 function attack(turn: Turn): void {
   const { state, lord, p, now } = turn;
-  let slots = Math.min(p.attacksPerTurn, marchSlots(turn));
+  let slots = Math.min(p.attacksPerTurn, attackSlots(turn));
   if (slots <= 0) return;
   const options: { from: Town; to: Town; troops: number; score: number }[] = [];
 
@@ -256,7 +256,7 @@ function attack(turn: Turn): void {
       if (value <= 0) continue;
       const outcome = predictAttack(turn, troops, turn.mods.attack, to, knownGarrison(turn, to));
       if (outcome.attackerPower < outcome.defenderPower * p.attackMargin) continue;
-      const travel = travelInfo(state, lord.id, from, to, now, turn.mods);
+      const travel = travelInfo(state, lord.id, from, to, troops, now, turn.mods);
       if (travel.sky && travel.windFactor < p.minWindFactor) continue;
       options.push({ from, to, troops, score: value / travel.durationMs });
     }
@@ -297,7 +297,6 @@ function consolidate(turn: Turn): void {
   };
 
   for (const from of townsOf(state, lord.id)) {
-    if (marchSlots(turn) <= 0) return;
     if (turn.busy.has(from.id)) continue;
     const stock = townRates(state, from, turn.mods).troops * state.config.bots.hoardMin;
     if (from.garrison < stock) continue;

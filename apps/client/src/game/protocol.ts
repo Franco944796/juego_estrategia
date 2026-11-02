@@ -2,6 +2,7 @@ import { defaultConfig } from '@si/config';
 import type {
   Command,
   DomainEvent,
+  GroupPreview,
   GameState,
   GearSlot,
   Item,
@@ -32,7 +33,7 @@ export interface Armory {
 }
 
 export interface Save {
-  version: 3;
+  version: 4;
   state: GameState;
   gameNow: number;
   speed: number;
@@ -43,6 +44,7 @@ export type ToWorker =
   | { type: 'load'; save: Save }
   | { type: 'command'; id: number; command: Command }
   | { type: 'preview'; id: number; from: number; to: number; troops: number }
+  | { type: 'previewGroup'; id: number; from: number[]; to: number }
   | { type: 'speed'; speed: number }
   | { type: 'save' };
 
@@ -51,4 +53,5 @@ export type FromWorker =
   | { type: 'events'; events: DomainEvent[] }
   | { type: 'result'; id: number; error: RuleError | null }
   | { type: 'preview'; id: number; preview: SendPreview }
+  | { type: 'previewGroup'; id: number; preview: GroupPreview }
   | { type: 'save'; save: Save };

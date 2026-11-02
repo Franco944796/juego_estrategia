@@ -53,7 +53,9 @@ describe('live preset', () => {
     expect(liveConfig.lords.capitalTier).toBe(1);
     expect(liveConfig.towns.goldPerMin).toBeCloseTo(defaultConfig.towns.goldPerMin / 5, 12);
     expect(liveConfig.towns.upgradeCost).toBe(defaultConfig.towns.upgradeCost * 40);
-    expect(liveConfig.march).toEqual(defaultConfig.march);
+    // Same real seconds per march in both: live game time is real time, demo runs ×20.
+    expect(liveConfig.march.landSpeed).toBe(defaultConfig.march.landSpeed * 20);
+    expect(liveConfig.march.minDurationMin).toBeCloseTo(defaultConfig.march.minDurationMin / 20, 12);
   });
 
   it('rejects rewards that do not end at the whole field and paid default styles', () => {

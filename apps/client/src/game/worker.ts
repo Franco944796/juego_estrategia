@@ -1,5 +1,14 @@
 import { defaultConfig, validateConfig } from '@si/config';
-import { advanceTo, createGame, execute, previewSend, view, type GameState, type LordInit } from '@si/engine';
+import {
+  advanceTo,
+  createGame,
+  execute,
+  previewGroup,
+  previewSend,
+  view,
+  type GameState,
+  type LordInit,
+} from '@si/engine';
 import {
   HUMAN_ID,
   LORD_COLORS,
@@ -40,7 +49,7 @@ function postView(s: GameState): void {
 }
 
 function postSave(s: GameState): void {
-  const save: Save = { version: 3, state: s, gameNow, speed };
+  const save: Save = { version: 4, state: s, gameNow, speed };
   scope.postMessage({ type: 'save', save });
   lastSave = performance.now();
 }
@@ -105,6 +114,14 @@ scope.onmessage = (event) => {
         type: 'preview',
         id: msg.id,
         preview: previewSend(state, HUMAN_ID, msg.from, msg.to, msg.troops, gameNow),
+      });
+      return;
+    case 'previewGroup':
+      if (!state) return;
+      scope.postMessage({
+        type: 'previewGroup',
+        id: msg.id,
+        preview: previewGroup(state, HUMAN_ID, msg.from, msg.to, gameNow),
       });
       return;
     case 'speed':

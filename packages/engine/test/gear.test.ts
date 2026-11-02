@@ -115,8 +115,8 @@ describe('equipping', () => {
     expect(fortification(state, capital)).toBeCloseTo(1.05 * 1.75, 12);
     const target = neutralsBeside(state, capital)[0];
     if (!target) throw new Error('no neutral');
-    const plain = travelInfo(state, 'h2', capitalOf(state, 'h2'), target, T0);
-    const swift = travelInfo(state, 'h1', capitalOf(state, 'h2'), target, T0);
+    const plain = travelInfo(state, 'h2', capitalOf(state, 'h2'), target, 1, T0);
+    const swift = travelInfo(state, 'h1', capitalOf(state, 'h2'), target, 1, T0);
     expect(swift.durationMs).toBeLessThan(plain.durationMs);
   });
 });

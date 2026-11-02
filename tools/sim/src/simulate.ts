@@ -192,8 +192,6 @@ export interface Target {
 export const TARGETS: Record<'demo' | 'live', Target[]> = {
   demo: [
     { key: 'medianFirstCaptureMin', label: 'First capture per lord (game min, median)', max: 10, digits: 1 },
-    { key: 'medianLandMin', label: 'Land march (game min, median)', min: 0.1, max: 0.3, digits: 2 },
-    { key: 'medianSkyMin', label: 'Sky march (game min, median)', min: 0.4, max: 1.2, digits: 2 },
     { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
     { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
     { key: 'medianFirstBeaconMin', label: 'First beacon (game min, median)', max: 90, digits: 0 },
@@ -204,8 +202,6 @@ export const TARGETS: Record<'demo' | 'live', Target[]> = {
   ],
   live: [
     { key: 'medianFirstCaptureMin', label: 'First capture per lord (min, median)', max: 60, digits: 1 },
-    { key: 'medianLandMin', label: 'Land march (min, median)', min: 0.1, max: 0.3, digits: 2 },
-    { key: 'medianSkyMin', label: 'Sky march (min, median)', min: 0.4, max: 1.2, digits: 2 },
     { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
     { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
     { key: 'medianFirstBeaconMin', label: 'First beacon (min, median)', max: 1440, digits: 0 },
@@ -236,6 +232,8 @@ export function renderReport(runs: SeasonMetrics[], header: string, targets: Tar
     return `| ${t.label} | ${range(t)} | ${fmt(value, t.digits)} | ${meets(t, value) ? 'ok' : 'off'} |`;
   });
   const extra: [string, NumericKey, number][] = [
+    ['Land march, game minutes (median)', 'medianLandMin', 2],
+    ['Sky march, game minutes (median)', 'medianSkyMin', 2],
     ['Battles per season', 'battles', 0],
     ['PvP battles per season', 'pvpBattles', 0],
     ['Captures per season', 'captures', 0],

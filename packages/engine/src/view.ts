@@ -76,6 +76,8 @@ export interface MarchView {
   incoming: boolean;
   /** March of a clanmate. */
   allied: boolean;
+  /** Shared by the marches of one synchronized group. */
+  groupId: number | null;
 }
 
 export interface WindView {
@@ -227,6 +229,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
         mine,
         incoming,
         allied,
+        groupId: m.groupId,
       };
     });
 
