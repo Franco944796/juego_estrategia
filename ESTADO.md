@@ -61,6 +61,40 @@
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
 
+## Hecho en la etapa «3D» (2026-11-02, demo y en línea)
+
+Decisiones de Franco (vigentes):
+
+- Investigación profunda antes de elegir la librería 3D (tabla y recomendación antes de programar).
+- Cámara inclinada tipo maqueta: arrastrar para moverse, pellizcar para acercar; sin girar.
+- Ciudades por etapas con el número de nivel encima: choza (1–9), casa con cerco (10–29), aldea con
+  torre (30–59), fuerte (60–89), ciudadela (90–99) y castillo completo en el nivel 100.
+- Una sola isla en demo y en línea (apagar el nacimiento de islas por configuración).
+- Estilo low poly colorido; modelos hechos por código (sin archivos, la demo sigue siendo un HTML).
+- El mapa 2D queda como opción en el menú; el 3D es el mapa por defecto.
+- Marchas: grupito de figuras con estandarte del color del dueño y la cantidad encima.
+- Librería: **Three.js directo** (WebGLRenderer), elegida tras la investigación del 2026-11-02:
+  más liviana (escena medida: 543 KB min / 134 KB gzip; r3f +243 KB gzip, Babylon 344, PlayCanvas
+  504), MIT, r187 del 30-10-2026. Contras: código imperativo; WebGL sin funciones grandes nuevas.
+- Marchas visibles para todos en tiempo real (quién, desde, hacia). Cantidad: el dueño la ve exacta,
+  el atacado ve un rango de un dígito (10–100, 100–1K, 1K–10K…), el resto no la ve.
+
+Mías (avisadas): cámara que abre 2,4× más cerca que el 2D y deja acercar hasta zoom 8; árboles,
+nubes y acantilados de decoración; rango con sufijos («100–1K»); avisos del servidor con 0 tropas para
+marchas ajenas; métrica de viento «n/a» con una sola isla.
+
+Hecho:
+
+- Motor: todas las marchas visibles (salvo hacia pueblos privados ajenos), `troops` solo del dueño,
+  `troopRange` para el atacado (total del grupo); `map.growth.enabled` (apagado).
+- Cliente: `src/map3d/` (`camera3d.ts`, `models.ts`, `world3d.ts`, `overlay3d.ts`), `projector.ts`,
+  `MapCanvas.tsx` con gestos comunes 2D/3D, opción de mapa en el menú (guardada en el navegador),
+  vuelta automática al 2D sin WebGL. Demo: 1,15 MB (314 KB gzip).
+- Verificado: 209 tests unitarios (motor 99,6 % de líneas), 24 de Playwright (3D en Chromium sin
+  pantalla), revisión visual de las 6 etapas, el castillo, marchas, vuelo entre islas y 2D.
+- Sin verificar: rendimiento en un celular real. Para probar sin servidor: pasar
+  `demo/shattered-isles.html` al celular y abrirlo.
+
 ## Hecho en la etapa «agrupar tropas y marchas» (2026-11-01, demo y en línea)
 
 Decisiones de Franco (vigentes):
@@ -226,8 +260,8 @@ Hecho:
 
 Preguntar a Franco los detalles al empezar cada uno:
 
-1. Juego en 3D, con ciudades como chozas bien detalladas; por ahora una sola isla para probar
-   (Franco agrega más cuando todo funcione).
+1. Probar el 3D en el celular (Franco) y ajustar lo que haga falta; volver a prender las islas
+   (`map.growth.enabled`) cuando todo funcione, mejorando antes que los bots crucen a islas nuevas.
 2. Abrir el puerto 8787 en el firewall para jugar desde el celular (acción de Franco):
    `sudo firewall-cmd --add-port=8787/tcp` (con `--permanent` para que quede).
 3. Subir el repo a GitHub (acción de Franco): `git remote add origin

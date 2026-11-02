@@ -1,6 +1,7 @@
 # Shattered Isles
 
-An original real-time conquest game for phones and desktop browsers. Floating isles, a wind that
+An original real-time conquest game for phones and desktop browsers, drawn in low poly 3D (with a
+2D map as an option). Floating isles, a wind that
 shifts every half hour of game time and speeds up or slows down every flight between isles, towns
 that grow from level 1 to 100 behind their walls, a skill point per lord level, isles of 100 towns
 split into zones with a beacon each, and a world that grows a new isle whenever the newest one fills

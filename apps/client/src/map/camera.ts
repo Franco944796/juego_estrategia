@@ -38,8 +38,8 @@ export function minZoom(size: Size, extent: number): number {
   return (Math.min(size.width, size.height) / (2 * extent)) * MIN_ZOOM_FACTOR;
 }
 
-export function clampZoom(zoom: number, size: Size, extent: number): number {
-  return Math.min(MAX_ZOOM, Math.max(minZoom(size, extent), zoom));
+export function clampZoom(zoom: number, size: Size, extent: number, max = MAX_ZOOM): number {
+  return Math.min(max, Math.max(minZoom(size, extent), zoom));
 }
 
 /** Zooms by `factor` keeping the world point under `screen` fixed. */
@@ -60,12 +60,13 @@ export function clampCenter(cam: Camera, extent: number): Camera {
   return { ...cam, x: (cam.x / d) * extent, y: (cam.y / d) * extent };
 }
 
-export function startCamera(size: Size, center: Vec, extent: number): Camera {
+/** `closer` multiplies the opening zoom (the 3D map opens nearer, to show the buildings). */
+export function startCamera(size: Size, center: Vec, extent: number, closer = 1, max = MAX_ZOOM): Camera {
   const span = size.width >= WIDE_SCREEN ? START_SPAN_WIDE : START_SPAN;
   return {
     x: center.x,
     y: center.y,
-    zoom: clampZoom(Math.min(size.width, size.height) / span, size, extent),
+    zoom: clampZoom((Math.min(size.width, size.height) / span) * closer, size, extent, max),
   };
 }
 

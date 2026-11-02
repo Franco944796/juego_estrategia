@@ -15,7 +15,8 @@ export const defaultConfig: GameConfig = {
       zoneSize: 10,
     },
     spawn: { slots: 10, privateTowns: 3, privateSpacing: 38 },
-    growth: { isleSpacing: 760, maxPerDay: 3, laneNeighbors: 2, maxLaneLength: 900 },
+    // One isle while the 3D map is being tried out (Franco turns growth back on when it is ready).
+    growth: { enabled: false, isleSpacing: 760, maxPerDay: 3, laneNeighbors: 2, maxLaneLength: 900 },
     shapePoints: 18,
     shapeJitter: 0.08,
   },

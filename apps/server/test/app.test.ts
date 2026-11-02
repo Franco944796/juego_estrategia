@@ -204,11 +204,16 @@ describe('WebSocket', () => {
     );
     expect(await ana.next((m) => m.type === 'result' && m.id === 7)).toMatchObject({ error: null });
     const warned = await bo.next((m) => m.type === 'events');
-    expect((warned.events as DomainEvent[]).some((e) => e.type === 'MARCH_LAUNCHED')).toBe(true);
+    const launched = (warned.events as DomainEvent[]).find((e) => e.type === 'MARCH_LAUNCHED');
+    // The target hears of the march, but not of its size.
+    expect(launched).toMatchObject({ march: { owner: anaId, troops: 0 } });
     const seen = await bo.next(
       (m) => m.type === 'view' && (m.view as LordView).marches.some((march) => march.incoming),
     );
-    expect((seen.view as LordView).marches.find((m) => m.incoming)?.troops).toBe(5);
+    expect((seen.view as LordView).marches.find((m) => m.incoming)).toMatchObject({
+      troops: null,
+      troopRange: [1, 10],
+    });
 
     ana.socket.send(
       JSON.stringify({ type: 'command', id: 8, command: { type: 'SEND', from: capital.id, to: 99999 } }),

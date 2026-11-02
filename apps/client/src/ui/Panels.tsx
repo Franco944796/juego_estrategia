@@ -1,8 +1,8 @@
 import type { BattleReport, LordView } from '@si/engine';
 import type { ClanRankingRow } from '@si/protocol';
 import { useEffect, useState, type ReactNode } from 'react';
-import { formatDuration, formatNumber } from '../format';
-import { abandonGame, loadClanRanking, rememberLang, setSpeed, SPEEDS } from '../game/session';
+import { formatDuration, formatNumber, formatRange } from '../format';
+import { abandonGame, chooseMapMode, loadClanRanking, rememberLang, setSpeed, SPEEDS } from '../game/session';
 import { LANGS, t, type Lang, type MessageKey } from '../i18n';
 import { toRealMs, useGame, type Panel } from '../store';
 import { useGameNow } from './hooks';
@@ -64,7 +64,8 @@ function MarchesPanel({ view, lang }: { view: LordView; lang: Lang }) {
                   })}
             </span>
             <span className="muted">
-              {m.troops !== null ? `${formatNumber(m.troops, lang)} · ` : ''}
+              {m.troops !== null && `${formatNumber(m.troops, lang)} · `}
+              {m.troops === null && m.troopRange && `${formatRange(m.troopRange)} · `}
               {t(lang, 'arrivesIn', { t: formatDuration(toRealMs(clock, m.arriveAt - now)) })}
             </span>
           </button>
@@ -228,6 +229,7 @@ function MenuPanel({ lang }: { lang: Lang }) {
   const clock = useGame((s) => s.clock);
   const setLang = useGame((s) => s.setLang);
   const online = useGame((s) => s.mode === 'online');
+  const mapMode = useGame((s) => s.mapMode);
   const [confirming, setConfirming] = useState(false);
   const help: MessageKey[] = ['help1', 'help2', 'help3', 'help4', 'help7', 'help8', 'help5', 'help6'];
   return (
@@ -270,6 +272,20 @@ function MenuPanel({ lang }: { lang: Lang }) {
             }}
           >
             {t(l, 'langName')}
+          </button>
+        ))}
+      </div>
+      <h3>{t(lang, 'mapView')}</h3>
+      <div className="segmented" role="group" aria-label={t(lang, 'mapView')}>
+        {(['3d', '2d'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={mapMode === m}
+            data-testid={`map-${m}`}
+            onClick={() => chooseMapMode(m)}
+          >
+            {t(lang, m === '3d' ? 'map3d' : 'map2d')}
           </button>
         ))}
       </div>

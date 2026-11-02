@@ -13,8 +13,8 @@ export interface SeasonMetrics {
   pvpCaptures: number;
   medianLandMin: number;
   medianSkyMin: number;
-  /** Sky marches launched with a tailwind (factor above 1). */
-  tailwindShare: number;
+  /** Sky marches launched with a tailwind (factor above 1); null with no flight (a single isle). */
+  tailwindShare: number | null;
   medianFirstCaptureMin: number;
   medianFirstBeaconMin: number | null;
   beaconLordShare: number;
@@ -148,7 +148,7 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
     pvpCaptures,
     medianLandMin: median(land),
     medianSkyMin: median(skyMinutes),
-    tailwindShare: sky > 0 ? tailwind / sky : 0,
+    tailwindShare: sky > 0 ? tailwind / sky : null,
     medianFirstCaptureMin: median([...firstCapture.values()]),
     medianFirstBeaconMin: firstBeacon.size > 0 ? median([...firstBeacon.values()]) : null,
     beaconLordShare: firstBeacon.size / bots,
@@ -186,13 +186,21 @@ export interface Target {
   min?: number;
   max?: number;
   digits: number;
+  /** Shown as n/a instead of off when it never happened (a tailwind needs a second isle). */
+  optional?: boolean;
 }
 
 // Pacing targets per preset; docs/BALANCE.md explains them.
 export const TARGETS: Record<'demo' | 'live', Target[]> = {
   demo: [
     { key: 'medianFirstCaptureMin', label: 'First capture per lord (game min, median)', max: 10, digits: 1 },
-    { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
+    {
+      key: 'tailwindShare',
+      label: 'Sky marches launched with a tailwind',
+      min: 0.5,
+      digits: 2,
+      optional: true,
+    },
     { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
     { key: 'medianFirstBeaconMin', label: 'First beacon (game min, median)', max: 90, digits: 0 },
     { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
@@ -202,7 +210,13 @@ export const TARGETS: Record<'demo' | 'live', Target[]> = {
   ],
   live: [
     { key: 'medianFirstCaptureMin', label: 'First capture per lord (min, median)', max: 60, digits: 1 },
-    { key: 'tailwindShare', label: 'Sky marches launched with a tailwind', min: 0.5, digits: 2 },
+    {
+      key: 'tailwindShare',
+      label: 'Sky marches launched with a tailwind',
+      min: 0.5,
+      digits: 2,
+      optional: true,
+    },
     { key: 'midSeasonMedianTowns', label: 'Towns per lord at mid-season (median)', min: 6, digits: 1 },
     { key: 'medianFirstBeaconMin', label: 'First beacon (min, median)', max: 1440, digits: 0 },
     { key: 'beaconLordShare', label: 'Lords who lit a beacon', min: 0.75, digits: 2 },
@@ -229,7 +243,8 @@ export function renderReport(runs: SeasonMetrics[], header: string, targets: Tar
   const fmt = (v: number | null, digits: number): string => (v === null ? '—' : v.toFixed(digits));
   const rows = targets.map((t) => {
     const value = mean(runs, t.key);
-    return `| ${t.label} | ${range(t)} | ${fmt(value, t.digits)} | ${meets(t, value) ? 'ok' : 'off'} |`;
+    const status = value === null && t.optional ? 'n/a' : meets(t, value) ? 'ok' : 'off';
+    return `| ${t.label} | ${range(t)} | ${fmt(value, t.digits)} | ${status} |`;
   });
   const extra: [string, NumericKey, number][] = [
     ['Land march, game minutes (median)', 'medianLandMin', 2],

@@ -12,7 +12,7 @@ import {
 } from './economy';
 import { computeStandings } from './game';
 import { modsMemo } from './modifiers';
-import { windIndexAt, windShiftMs } from './marches';
+import { troopRange, windIndexAt, windShiftMs } from './marches';
 import { unspentPoints } from './skills';
 import type {
   BattleReport,
@@ -69,8 +69,10 @@ export interface MarchView {
   arriveAt: number;
   sky: boolean;
   windFactor: number | null;
-  /** Shown for own marches and for marches aimed at the viewer's towns. */
+  /** Exact size, only for the viewer's own marches. */
   troops: number | null;
+  /** Size band (1–10, 10–100…) of another lord's march, group, aimed at one of the viewer's towns. */
+  troopRange: [number, number] | null;
   mine: boolean;
   /** Hostile march aimed at one of the viewer's towns. */
   incoming: boolean;
@@ -203,14 +205,13 @@ export function view(state: GameState, lordId: string, now: number): LordView {
     return [seen];
   });
 
-  const isleOf = (townId: number): number => state.towns[townId]?.isleId ?? -1;
+  // Everyone sees every march in real time, but not its size (see troops and troopRange).
+  const groupTroops = new Map<number, number>();
+  for (const m of state.marches) {
+    if (m.groupId !== null) groupTroops.set(m.groupId, (groupTroops.get(m.groupId) ?? 0) + m.troops);
+  }
   const marches: MarchView[] = state.marches
-    .filter(
-      (m) =>
-        m.owner === lordId ||
-        state.towns[m.to]?.owner === lordId ||
-        (!hidden(m.to) && (visible.has(isleOf(m.from)) || visible.has(isleOf(m.to)))),
-    )
+    .filter((m) => m.owner === lordId || !hidden(m.to))
     .map((m) => {
       const mine = m.owner === lordId;
       const allied = areAllies(state, lordId, m.owner);
@@ -225,7 +226,11 @@ export function view(state: GameState, lordId: string, now: number): LordView {
         arriveAt: m.arriveAt,
         sky: m.sky,
         windFactor: mine ? m.windFactor : null,
-        troops: mine || toMe ? m.troops : null,
+        troops: mine ? m.troops : null,
+        troopRange:
+          toMe && !mine
+            ? troopRange(m.groupId === null ? m.troops : (groupTroops.get(m.groupId) ?? m.troops))
+            : null,
         mine,
         incoming,
         allied,

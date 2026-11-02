@@ -26,6 +26,9 @@ logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
 - Each isle has `map.spawn.slots` (10) **shore slots**. A lord appears on a free slot with a new
   capital and `map.spawn.privateTowns` (3) level-1 neutral towns beside it that only that lord sees and
   may attack until someone owns them. Lords go to the newest isle with a free slot.
+- **Growth is off for now** (`map.growth.enabled: false`, demo and online): every season keeps its
+  first isle while the 3D map is tried out, and joining fails with `WORLD_FULL` once its 10 slots are
+  taken. With growth on, the rules below apply.
 - **A new isle is born** when the newest isle is full (every slot taken) or fully conquered (every
   public town owned), at most `map.growth.maxPerDay` (3) per 24 game hours, not counting the first. New
   isles go in rings of 6, 12, 18… around the first, `map.growth.isleSpacing` apart.
@@ -158,8 +161,10 @@ them and let points raise them.
 - Garrison sizes are visible on isles where the lord or a clanmate owns a town and on isles one lane
   away (two from an isle with a lit friendly beacon).
 - Another lord's private towns are hidden altogether (and so are marches toward them).
-- A lord sees its own marches, every march targeting its towns, and other marches whose origin or target
-  isle is visible.
+- **Every march is public** and shown live: everyone sees who marches from where to where. The owner
+  sees the exact size; the lord whose town is the target sees only its band of one digit (10–100,
+  100–1K, 1K–10K…, a whole group's total); nobody else sees a size. Server events for another lord's
+  march carry 0 troops.
 
 ## 10. Exile and season end
 
@@ -252,6 +257,13 @@ more than `bots.hoardMin` (30) minutes of production to the most exposed of thei
 - Screen: the map with the HUD on top (gold, Dominion, and the portrait with the lord level, which
   opens the profile: Gear, Skills, Stats) and a column of picture buttons on the right (marches,
   reports, ranking, social online, menu).
+- **3D map** (default; the menu switches to the lighter 2D map, also used when WebGL is missing):
+  low poly floating isles with trees and clouds, seen from a tilted tabletop camera (drag to move,
+  pinch or wheel to zoom, no rotation). Towns are built in code by stage, roofs and flags in the
+  owner's color: hut (levels 1–9), fenced house (10–29), village with a watchtower (30–59), palisade
+  fort (60–89), stone citadel (90–99) and a full castle at level 100. Marches are a few soldiers
+  behind a banner in the owner's color (red when they come for you). Levels, garrisons and march
+  sizes are drawn as labels over the scene.
 - Onboarding: tap your capital → send troops to a neutral town on your isle → watch the wind → upgrade a
   town. First conquest in under 60 real seconds.
 - Acceptance (15 real minutes): finish onboarding, hold 6+ towns, light a beacon, spend a skill point, see a

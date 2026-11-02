@@ -61,7 +61,7 @@ describe('view', () => {
     expect(() => view(state, 'ghost', T0)).toThrow();
   });
 
-  it('reveals incoming armies but hides strangers’ troops', () => {
+  it('shows every march to everyone, the size only to its owner and a band to its target', () => {
     const state = game();
     const capital = capitalOf(state, 'h1');
     const [a, b] = neutralsBeside(state, capital);
@@ -77,11 +77,24 @@ describe('view', () => {
     expect(ownMarch).toMatchObject({ mine: true, incoming: false, troops: 10 });
     expect(ownMarch?.windFactor).toBe(1);
     const stranger = mine.marches.find((m) => m.owner === 'h2');
-    expect(stranger).toMatchObject({ mine: false, incoming: false, troops: null, windFactor: null });
+    expect(stranger).toMatchObject({
+      mine: false,
+      incoming: false,
+      troops: null,
+      troopRange: null,
+      windFactor: null,
+    });
 
     const theirs = view(state, 'h2', T0);
     const incoming = theirs.marches.find((m) => m.owner === 'h1');
-    expect(incoming).toMatchObject({ incoming: true, troops: 10, windFactor: null });
+    expect(incoming).toMatchObject({ incoming: true, troops: null, troopRange: [10, 100], windFactor: null });
+
+    // A march to someone else's private town stays hidden, like the town itself.
+    const secret = state.towns.find((t) => t.privateTo === 'h2');
+    if (!secret) throw new Error('no private town');
+    expect(execute(state, 'h2', { type: 'SEND', from: a.id, to: secret.id, troops: 1 }, T0).ok).toBe(true);
+    expect(view(state, 'h1', T0).marches.some((m) => m.to === secret.id)).toBe(false);
+    expect(view(state, 'h2', T0).marches.some((m) => m.to === secret.id)).toBe(true);
 
     const events = advanceTo(state, ownMarch?.arriveAt ?? T0);
     expect(events.some((e) => e.type === 'BATTLE')).toBe(true);

@@ -32,10 +32,11 @@ export function growIsle(state: GameState, at: number, events: DomainEvent[]): I
 }
 
 /**
- * A new isle is born when the newest one is full or fully conquered, at most `maxPerDay` in 24 game
+ * With growth enabled, a new isle is born when the newest one is full or fully conquered, at most `maxPerDay` in 24 game
  * hours (the first isle does not count). Over the cap, a check is scheduled for when a slot frees up.
  */
 export function checkGrowth(state: GameState, at: number, events: DomainEvent[]): void {
+  if (!state.config.map.growth.enabled) return;
   const newest = state.isles[state.isles.length - 1];
   if (!newest || !(isleFull(newest) || isleConquered(state, newest))) return;
   const recent = state.isles.filter((isle) => isle.id > 0 && isle.bornAt > at - DAY_MS);

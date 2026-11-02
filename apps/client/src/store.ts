@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { ClockInfo } from './game/protocol';
 import { detectLang, type Lang } from './i18n';
 
+export type MapMode = '3d' | '2d';
 export type Panel = 'marches' | 'reports' | 'ranking' | 'profile' | 'social' | 'menu';
 export type Tone = 'info' | 'good' | 'bad';
 
@@ -34,6 +35,7 @@ export interface GameStore {
   /** Chat lines received while the social panel was closed. */
   unread: number;
   screen: 'title' | 'game';
+  mapMode: MapMode;
   view: LordView | null;
   clock: Clock;
   selected: number | null;
@@ -47,6 +49,7 @@ export interface GameStore {
   tutorial: number | null;
   setLang(lang: Lang): void;
   setScreen(screen: 'title' | 'game'): void;
+  setMapMode(mode: MapMode): void;
   receiveView(view: LordView, clock: ClockInfo): void;
   select(townId: number | null): void;
   startPicking(): void;
@@ -78,6 +81,7 @@ export const useGame = create<GameStore>()((set, get) => ({
   chat: { global: [], clan: [] },
   unread: 0,
   screen: 'title',
+  mapMode: '3d',
   view: null,
   clock: idleClock,
   selected: null,
@@ -89,6 +93,7 @@ export const useGame = create<GameStore>()((set, get) => ({
   tutorial: null,
   setLang: (lang) => set({ lang }),
   setScreen: (screen) => set({ screen }),
+  setMapMode: (mapMode) => set({ mapMode }),
   receiveView: (view, clock) => set({ view, clock: { ...clock, receivedAt: performance.now() } }),
   select: (townId) => set({ selected: townId, picking: false, send: null, group: null, panel: null }),
   startPicking: () => set({ picking: true, send: null, group: null }),

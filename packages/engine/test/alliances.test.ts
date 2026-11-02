@@ -38,7 +38,7 @@ describe('alliances', () => {
     const before = host.garrison;
     const hostView = view(state, 'h1', T0);
     const seen = hostView.marches.find((m) => m.id === march.id);
-    expect(seen).toMatchObject({ incoming: false, allied: true, troops: 30 });
+    expect(seen).toMatchObject({ incoming: false, allied: true, troops: null, troopRange: [10, 100] });
     const events = advanceTo(state, march.arriveAt);
     expect(events.some((e) => e.type === 'MARCH_STATIONED')).toBe(true);
     expect(host.garrison).toEqual(before);

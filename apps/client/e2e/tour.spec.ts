@@ -45,20 +45,14 @@ async function load(page: Page, state: GameState, gameNow: number): Promise<Lord
   return view;
 }
 
-/** Drags the map until the town sits in the middle of the screen. */
+/** Pans the camera to the town (as selecting it would) and returns where it lands on screen. */
 async function bringIntoView(page: Page, townId: number): Promise<{ x: number; y: number }> {
   await page.waitForFunction(() => window.__shatteredIsles?.cameraSettled() ?? false);
-  const size = page.viewportSize() ?? { width: 390, height: 844 };
-  const center = { x: size.width / 2, y: size.height * 0.45 };
+  await page.evaluate((id) => window.__shatteredIsles?.centerOn(id), townId);
+  await page.waitForFunction(() => window.__shatteredIsles?.cameraSettled() ?? false);
   const point = await page.evaluate((id) => window.__shatteredIsles?.townScreen(id) ?? null, townId);
   if (!point) throw new Error('unknown town');
-  await page.mouse.move(center.x, center.y);
-  await page.mouse.down();
-  await page.mouse.move(center.x + (center.x - point.x), center.y + (center.y - point.y), { steps: 8 });
-  await page.mouse.up();
-  const moved = await page.evaluate((id) => window.__shatteredIsles?.townScreen(id) ?? null, townId);
-  if (!moved) throw new Error('unknown town');
-  return moved;
+  return point;
 }
 
 async function fits(page: Page): Promise<void> {
@@ -180,6 +174,58 @@ test('a grouped attack from several towns', async ({ page }) => {
   await expect(page.getByTestId('group-sheet')).toHaveCount(0);
   await page.getByTestId('nav-marches').click();
   await shot(page, 'group-marches');
+});
+
+test('town stages up close, with a march on the way', async ({ page }) => {
+  const state = newState();
+  const me = state.lords[ME];
+  const capital = state.towns[me?.capitalId ?? -1];
+  if (!capital) throw new Error('no capital');
+  const d = (t: { pos: { x: number; y: number } }): number =>
+    Math.hypot(t.pos.x - capital.pos.x, t.pos.y - capital.pos.y);
+  const near = state.towns
+    .filter((t) => t.owner === null && t.isleId === capital.isleId && t.privateTo === null)
+    .sort((a, b) => d(a) - d(b));
+  [1, 10, 30, 60, 90, 100].forEach((tier, i) => {
+    const town = near[i];
+    if (!town) return;
+    town.tier = tier;
+    town.owner = i % 2 === 0 ? ME : 'bot1';
+    town.neutralCap = 0;
+  });
+  const target = near[6];
+  if (!target) throw new Error('no target');
+  expect(execute(state, ME, { type: 'SEND', from: capital.id, to: target.id, troops: 9 }, 0).ok).toBe(true);
+  await load(page, state, 0);
+  const point = await bringIntoView(page, near[2]?.id ?? capital.id);
+  await page.mouse.move(point.x, point.y);
+  for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -200);
+  await page.waitForTimeout(300);
+  await shot(page, 'stages-close');
+  const castle = await bringIntoView(page, near[5]?.id ?? capital.id);
+  await page.mouse.move(castle.x, castle.y);
+  await page.mouse.wheel(0, -400);
+  await page.waitForTimeout(300);
+  await shot(page, 'castle-close');
+});
+
+test('switching to the 2D map and back', async ({ page }) => {
+  const view = await load(page, newState(), 0);
+  await page.getByTestId('nav-menu').click();
+  await page.getByTestId('map-2d').click();
+  await expect(page.getByTestId('map-2d')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('nav-menu').click();
+  const capital = view.me.capitalId ?? -1;
+  const point = await bringIntoView(page, capital);
+  await page.mouse.click(point.x, point.y);
+  await expect(page.getByTestId('town-sheet')).toBeVisible();
+  await shot(page, 'map-2d');
+  await page.reload();
+  await page.getByTestId('continue-game').click();
+  await page.getByTestId('nav-menu').click();
+  await expect(page.getByTestId('map-2d')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('map-3d').click();
+  await expect(page.locator('canvas.map-overlay')).toBeVisible();
 });
 
 test('incoming attack, marches and the defense report', async ({ page }) => {

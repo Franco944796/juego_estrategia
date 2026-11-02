@@ -24,6 +24,22 @@ export function formatDecimal(value: number, lang: 'es' | 'en', digits = 1): str
   return lang === 'es' ? text.replace('.', ',') : text;
 }
 
+/** A power of ten as «100», «1K», «10M». */
+function formatPower(n: number): string {
+  if (n < 1000) return String(n);
+  let i = 0;
+  while (n >= 1000 && i < SUFFIXES.length - 1) {
+    n /= 1000;
+    i++;
+  }
+  return `${Math.round(n)}${SUFFIXES[i] ?? ''}`;
+}
+
+/** A size band as «10–100», «1K–10K». */
+export function formatRange(range: [number, number]): string {
+  return `${formatPower(range[0])}–${formatPower(range[1])}`;
+}
+
 /** Per-minute rates: one decimal while small, then the K, M, G… suffixes of formatNumber. */
 export function formatRate(value: number, lang: 'es' | 'en'): string {
   return Math.abs(value) < 1000 ? formatDecimal(value, lang) : formatNumber(value, lang);

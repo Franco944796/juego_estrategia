@@ -137,6 +137,15 @@ button[aria-pressed='true'] {
   display: block;
 }
 
+/* Labels over the 3D map; taps go through to the map canvas below. */
+.map-overlay {
+  pointer-events: none;
+}
+
+.map-overlay[hidden] {
+  display: none;
+}
+
 .overlay-top {
   position: absolute;
   top: 0;

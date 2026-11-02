@@ -43,6 +43,8 @@ export const gameConfigSchema = z
       }),
       spawn: z.object({ slots: count, privateTowns: intNonNegative, privateSpacing: positive }),
       growth: z.object({
+        /** Off: the season keeps its first isle; joining fails once its shore slots are taken. */
+        enabled: z.boolean(),
         isleSpacing: positive,
         maxPerDay: intNonNegative,
         laneNeighbors: count,

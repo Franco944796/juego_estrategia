@@ -77,8 +77,19 @@ bots) is a pure function of the seed and the human commands. A bot reads only wh
   (inlined into the single HTML file) with an accelerated clock, advancing game time by real time ×
   `timeScale` × speed. The worker posts a `LordView` four times a second and after every event batch
   or command.
-- The main thread renders the latest view on a Canvas 2D map at 60 fps, interpolating march positions
-  from `departAt`/`arriveAt` and extrapolating game time from the last clock message.
+- The main thread renders the latest view at 60 fps, interpolating march positions from
+  `departAt`/`arriveAt` and extrapolating game time from the last clock message. `MapCanvas` owns the
+  camera (center and zoom, in pixels per world unit) and the gestures, and talks to the map through
+  a `Projector` (world ↔ screen, zoom around a point, center a point): `flatProjector` for the Canvas
+  2D map (`src/map/render.ts`) and `tiltedProjector` for the 3D one (`src/map3d/camera3d.ts`).
+- 3D map: three.js r187 `WebGLRenderer` (chosen 2026-11-02 for size: ~134 KB gzip for what the map
+  uses, against ~243 KB more for react-three-fiber, ~344 KB Babylon.js, ~504 KB PlayCanvas; the
+  demo HTML went from 167 to ~315 KB gzip). `World3D` builds isles once and refills instanced meshes
+  when the view changes (one fixed and one owner-colored mesh per town stage, beacons, soldiers,
+  banners); `models.ts` builds every model in code from flat-shaded primitives with vertex colors;
+  `overlay3d.ts` draws the labels on a 2D canvas on top. The scratch camera used for projections is
+  only recomputed when the camera moves. `window.__shatteredIsles.centerOn` lets the end-to-end tests
+  pan to a town (dragging toward a town behind the 3D camera would go the wrong way).
 - State: Zustand store (`src/store.ts`); text: typed es/en dictionary (`src/i18n.ts`), defaulting to
   the browser language.
 - Saving: the worker posts the full state every 5 s and when the page hides; the main thread keeps it

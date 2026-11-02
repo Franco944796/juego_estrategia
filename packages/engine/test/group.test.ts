@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { advanceTo, execute } from '../src/game';
 import { activeAttacks, travelInfo } from '../src/marches';
 import { previewGroup } from '../src/preview';
+import { view } from '../src/view';
 import type { DomainEvent, GameState, Town } from '../src/types';
 import {
   capitalOf,
@@ -97,6 +98,17 @@ describe('synchronized groups', () => {
     for (const from of [[], [a.id, a.id], 'all', [a.id, 99_999]]) {
       expect(bad(from)).toMatchObject({ ok: false, error: { code: 'BAD_COMMAND' } });
     }
+  });
+});
+
+describe('what the target sees', () => {
+  it('a band of the whole group, the same on every leg', () => {
+    const { state, capital, a, b } = setup();
+    const foe = capitalOf(state, 'h2');
+    expect(group(state, [capital, a, b], foe).ok).toBe(true);
+    const legs = view(state, 'h2', T0).marches.filter((m) => m.owner === 'h1');
+    expect(legs).toHaveLength(3);
+    expect(legs.every((m) => m.troops === null && m.troopRange?.join() === '100,1000')).toBe(true);
   });
 });
 

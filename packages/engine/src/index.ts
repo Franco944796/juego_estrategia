@@ -30,6 +30,6 @@ export { levelScale, upgradeCostAt, upgradePlan, wallsAt } from './economy';
 export { unspentPoints } from './skills';
 export { grantItem } from './gear';
 export { distance, WIND_VECTORS, windFactor } from './geometry';
-export { activeAttacks, travelInfo, troopSlowdown, windDirAt, type TravelInfo } from './marches';
+export { activeAttacks, travelInfo, troopRange, troopSlowdown, windDirAt, type TravelInfo } from './marches';
 export { visibleIsles } from './vision';
 export { reachableTowns } from './world';

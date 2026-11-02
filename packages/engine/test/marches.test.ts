@@ -2,7 +2,7 @@ import { defaultConfig, liveConfig } from '@si/config';
 import { describe, expect, it } from 'vitest';
 import { advanceTo, computeStandings, execute } from '../src/game';
 import { distance, windFactor } from '../src/geometry';
-import { arriveMarch, travelInfo, troopSlowdown, windDirAt } from '../src/marches';
+import { arriveMarch, travelInfo, troopRange, troopSlowdown, windDirAt } from '../src/marches';
 import type { BattleReport, DomainEvent, GameState, Town } from '../src/types';
 import {
   capitalOf,
@@ -90,6 +90,20 @@ describe('army size', () => {
     const liveSeconds = (across / liveConfig.march.landSpeed) * 60;
     expect(demoSeconds).toBeCloseTo(10, 0);
     expect(liveSeconds).toBeCloseTo(demoSeconds, 9);
+  });
+});
+
+describe('troop bands', () => {
+  it('rounds a troop count to its power-of-ten band', () => {
+    expect([1, 9, 10, 99, 100, 4321, 1e12].map(troopRange)).toEqual([
+      [1, 10],
+      [1, 10],
+      [10, 100],
+      [10, 100],
+      [100, 1000],
+      [1000, 10_000],
+      [1e12, 1e13],
+    ]);
   });
 });
 

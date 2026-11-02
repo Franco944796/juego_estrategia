@@ -33,6 +33,12 @@ function digits(troops: number): number {
   return d;
 }
 
+/** The power-of-ten band a troop count falls in: 1–10, 10–100, 100–1000… */
+export function troopRange(troops: number): [number, number] {
+  const low = 10 ** (digits(troops) - 1);
+  return [low, low * 10];
+}
+
 /** How much longer an army takes than 9 troops or fewer: +`march.perDigit` per extra digit. */
 export function troopSlowdown(state: GameState, troops: number): number {
   return 1 + state.config.march.perDigit * (digits(troops) - 1);

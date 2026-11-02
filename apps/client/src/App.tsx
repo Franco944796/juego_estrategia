@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { savedLang, watchVisibility } from './game/session';
+import { savedLang, savedMapMode, watchVisibility } from './game/session';
 import { MapCanvas } from './map/MapCanvas';
 import { useGame } from './store';
 import { SideRail } from './ui/SideRail';
@@ -55,6 +55,8 @@ export function App() {
   useEffect(() => {
     const stored = savedLang();
     if (stored) useGame.getState().setLang(stored);
+    const mode = savedMapMode();
+    if (mode) useGame.getState().setMapMode(mode);
     return watchVisibility();
   }, []);
 

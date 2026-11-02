@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatDecimal, formatDuration, formatNumber, formatRate, townName } from '../src/format';
+import {
+  formatDecimal,
+  formatDuration,
+  formatNumber,
+  formatRange,
+  formatRate,
+  townName,
+} from '../src/format';
 
 describe('formatting', () => {
   it('abbreviates large numbers to three significant digits', () => {
@@ -17,6 +24,12 @@ describe('formatting', () => {
   it('formats decimals with the language mark', () => {
     expect(formatDecimal(5.25, 'en')).toBe('5.3');
     expect(formatDecimal(5.25, 'es', 2)).toBe('5,25');
+  });
+
+  it('writes size bands with suffixes', () => {
+    expect(formatRange([10, 100])).toBe('10–100');
+    expect(formatRange([1000, 10_000])).toBe('1K–10K');
+    expect(formatRange([1e12, 1e13])).toBe('1T–10T');
   });
 
   it('keeps a decimal on small rates and suffixes on big ones', () => {

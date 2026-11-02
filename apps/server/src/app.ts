@@ -105,9 +105,24 @@ function publicAccount(a: Account): PublicAccount {
   };
 }
 
-/** Events a lord may see: its own and incoming marches and battles, plus public map news. */
+/**
+ * Events a lord may see: its own and incoming marches and battles, plus public map news. Another
+ * lord's march goes out with 0 troops: the target learns its size only as a band, from the view.
+ */
 export function eventsFor(lordId: string, events: DomainEvent[], state: GameState): DomainEvent[] {
-  return events.filter((e) => {
+  return events.filter(visibleTo(lordId, state)).map((e) => {
+    if (
+      (e.type === 'MARCH_LAUNCHED' || e.type === 'MARCH_REINFORCED' || e.type === 'MARCH_REPELLED') &&
+      e.march.owner !== lordId
+    ) {
+      return { ...e, march: { ...e.march, troops: 0 } };
+    }
+    return e;
+  });
+}
+
+function visibleTo(lordId: string, state: GameState): (e: DomainEvent) => boolean {
+  return (e) => {
     switch (e.type) {
       case 'MARCH_LAUNCHED':
       case 'MARCH_REINFORCED':
@@ -129,7 +144,7 @@ export function eventsFor(lordId: string, events: DomainEvent[], state: GameStat
       default:
         return true;
     }
-  });
+  };
 }
 
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {

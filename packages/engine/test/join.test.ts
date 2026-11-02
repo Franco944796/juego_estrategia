@@ -1,4 +1,4 @@
-import { liveConfig } from '@si/config';
+import { liveConfig, withOverrides } from '@si/config';
 import { describe, expect, it } from 'vitest';
 import { advanceTo, createGame, execute } from '../src/game';
 import { hashState } from '../src/hash';
@@ -12,6 +12,12 @@ import { capitalOf, game, give, humans, lord, MIN, publicNeutral, T0 } from './h
 
 function world(seed = 3): GameState {
   return createGame({ seed, config: liveConfig, startsAt: T0, lords: [] });
+}
+
+/** The online world with new isles turned on (they are off while the 3D map is tried out). */
+function growing(seed = 3): GameState {
+  const config = withOverrides(liveConfig, { map: { growth: { enabled: true } } });
+  return createGame({ seed, config, startsAt: T0, lords: [] });
 }
 
 function player(id: string): LordInit {
@@ -88,8 +94,16 @@ describe('joining a running season', () => {
     expect(view(state, 'bo', T0).towns.some((t) => t.id === mine.id)).toBe(true);
   });
 
-  it('opens a new linked isle when ten lords fill the first one', () => {
+  it('keeps a single isle while growth is off and turns newcomers away once it is full', () => {
     const state = world();
+    const slots = state.config.map.spawn.slots;
+    for (let i = 0; i < slots; i++) expect(joinLord(state, player(`p${i}`), T0).ok).toBe(true);
+    expect(state.isles).toHaveLength(1);
+    expect(joinLord(state, player('late'), T0)).toMatchObject({ ok: false, error: { code: 'WORLD_FULL' } });
+  });
+
+  it('opens a new linked isle when ten lords fill the first one', () => {
+    const state = growing();
     const slots = state.config.map.spawn.slots;
     for (let i = 0; i < slots - 1; i++) expect(joinLord(state, player(`p${i}`), T0).ok).toBe(true);
     expect(state.isles).toHaveLength(1);
@@ -108,7 +122,7 @@ describe('joining a running season', () => {
   });
 
   it('opens a new isle when every public town of the newest one has an owner', () => {
-    const state = world();
+    const state = growing();
     joinLord(state, player('ana'), T0);
     const open = (state.isles[0]?.townIds ?? [])
       .map((id) => state.towns[id] as Town)
@@ -123,7 +137,7 @@ describe('joining a running season', () => {
   });
 
   it('opens at most three isles a day and the world is full until the next one', () => {
-    const state = world();
+    const state = growing();
     const { slots } = state.config.map.spawn;
     const max = state.config.map.growth.maxPerDay;
     for (let i = 0; i < slots * (max + 1); i++) {

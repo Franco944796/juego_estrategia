@@ -1,6 +1,6 @@
 import { defaultConfig } from '@si/config';
 import { WIND_VECTORS, windFactor, type LordView, type TownView } from '@si/engine';
-import { formatNumber } from '../format';
+import { formatNumber, formatRange } from '../format';
 import { isAlly, linkedIsles, NEUTRAL_COLOR, ownerColor, townById } from '../ui/labels';
 import { worldToScreen, type Camera, type Size, type Vec } from './camera';
 
@@ -51,7 +51,7 @@ function circle(ctx: CanvasRenderingContext2D, p: Vec, r: number): void {
   ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
 }
 
-function label(
+export function label(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,
@@ -254,7 +254,9 @@ function marches(ctx: CanvasRenderingContext2D, input: SceneInput): void {
     ctx.strokeStyle = INK;
     ctx.stroke();
     ctx.restore();
-    if (m.troops) label(ctx, formatNumber(m.troops), cur.x, cur.y - 14, 11, m.incoming ? HOSTILE : '#ffffff');
+    const amount =
+      m.troops !== null ? formatNumber(m.troops) : m.troopRange ? formatRange(m.troopRange) : null;
+    if (amount) label(ctx, amount, cur.x, cur.y - 14, 11, m.incoming ? HOSTILE : '#ffffff');
     if (m.incoming) {
       ctx.strokeStyle = HOSTILE;
       ctx.lineWidth = 2;
@@ -264,7 +266,7 @@ function marches(ctx: CanvasRenderingContext2D, input: SceneInput): void {
   }
 }
 
-function crown(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string): void {
+export function crown(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string): void {
   ctx.beginPath();
   ctx.moveTo(cx - s, cy + s * 0.5);
   ctx.lineTo(cx - s, cy - s * 0.45);

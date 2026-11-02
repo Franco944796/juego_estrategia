@@ -11,7 +11,7 @@ import type {
 } from '@si/engine';
 import { formatDuration } from '../format';
 import { BOT_NAMES, RULE_TEXT, SERVER_TEXT, t, WIND_NAMES } from '../i18n';
-import { toRealMs, useGame, type SeasonNews } from '../store';
+import { toRealMs, useGame, type MapMode, type SeasonNews } from '../store';
 import { isAlly, itemName, townLabel } from '../ui/labels';
 import { LocalGameClient, type GameClient } from './client';
 import type { ChatChannel, ClanDetail, ClanRankingRow, ClanSummary, HallResponse } from '@si/protocol';
@@ -24,6 +24,7 @@ const LANG_KEY = 'shattered-isles:lang';
 const TUTORIAL_KEY = 'shattered-isles:tutorial-done';
 const TOKEN_KEY = 'shattered-isles:token';
 const ARMORY_KEY = 'shattered-isles:armory';
+const MAP_KEY = 'shattered-isles:map';
 
 let client: GameClient | null = null;
 let remote: RemoteGameClient | null = null;
@@ -65,6 +66,16 @@ export function readSave(): Save | null {
   } catch {
     return null;
   }
+}
+
+export function savedMapMode(): MapMode | null {
+  const mode = read(MAP_KEY);
+  return mode === '3d' || mode === '2d' ? mode : null;
+}
+
+export function chooseMapMode(mode: MapMode): void {
+  write(MAP_KEY, mode);
+  useGame.getState().setMapMode(mode);
 }
 
 export function savedLang(): 'es' | 'en' | null {
