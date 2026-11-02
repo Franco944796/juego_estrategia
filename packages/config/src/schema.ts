@@ -119,12 +119,25 @@ export const gameConfigSchema = z
     gear: z.object({
       /** Bonus of an item by rarity (0.03 = +3 %), added to the skill bonus of the same kind. */
       rarityBonus: perRarity(fraction),
+      /** The chest's refund by rarity (0.5 = half the gold invested in a lost town comes back). */
+      refundByRarity: perRarity(fraction),
       /** A lord finds one item every this many levels. */
       dropEveryLevels: count,
       /** Rarity weights (common, rare, epic, legendary) by lord level: the last row reached applies. */
       dropOdds: z.array(z.object({ minLevel: count, weights: z.array(nonNegative).length(4) })).min(1),
       /** Legacy price of an item in the online shop. */
       prices: perRarity(intNonNegative),
+    }),
+    /**
+     * Power (troops + walls) of the lord attacked over the attacker's: below `forbidBelow` it cannot be
+     * attacked, below `halfBelow` kills pay `lowXp`, from `doubleFrom` they pay `highXp`.
+     */
+    power: z.object({
+      forbidBelow: fraction,
+      halfBelow: fraction,
+      doubleFrom: z.number().min(1),
+      lowXp: nonNegative,
+      highXp: nonNegative,
     }),
     /** League rules: share of a lord's dead troops that reappear in its capital. */
     league: z.object({ attackerRecovery: fraction, defenderRecovery: fraction }),

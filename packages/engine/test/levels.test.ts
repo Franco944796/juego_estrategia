@@ -69,12 +69,13 @@ describe('kill rewards', () => {
     const report = reportOf(attack(state, 'h3', town.id, 40));
     expect(report.winner).toBe('DEFENDER');
     // The losing attacker still kills a few defenders and is paid for them.
-    expect(report.rewards).toEqual({
+    expect(report.rewards).toMatchObject({
       attackerXp: report.defenderLost * 5,
       attackerGold: report.defenderLost * 5,
       defenderXp: 120,
-      defenderGold: 120,
     });
+    // Paid share by share, so it may land a hair off the round total.
+    expect(report.rewards.defenderGold).toBeCloseTo(120, 9);
     expect(report.defenderLost).toBeGreaterThan(0);
     const owner = 100 * report.fort + townWalls(state, town);
     const ally = 100 * report.fort;

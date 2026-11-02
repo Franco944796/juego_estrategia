@@ -64,8 +64,11 @@ export const defaultConfig: GameConfig = {
   },
   skills: { perPoint: { GOLD: 0.05, TROOPS: 0.05, ATTACK: 0.05 } },
   league: { attackerRecovery: 0.9, defenderRecovery: 0.9 },
+  // With 100 of power: 200 or more pays ×2 experience, 81–199 ×1, 65–80 ×0.5, 64 or less is off limits.
+  power: { forbidBelow: 0.65, halfBelow: 0.81, doubleFrom: 2, lowXp: 0.5, highXp: 2 },
   gear: {
     rarityBonus: { COMMON: 0.03, RARE: 0.06, EPIC: 0.1, LEGENDARY: 0.15 },
+    refundByRarity: { COMMON: 0.1, RARE: 0.2, EPIC: 0.35, LEGENDARY: 0.5 },
     dropEveryLevels: 5,
     dropOdds: [
       { minLevel: 1, weights: [70, 25, 5, 0] },

@@ -29,7 +29,7 @@ describe('i18n', () => {
   it('covers every skill, rule code, wind direction and bot slot', () => {
     for (const lang of ['es', 'en'] as const) {
       for (const id of SKILL_IDS) expect(messageKeys(lang)).toContain(`skill${id}`);
-      expect(Object.keys(RULE_TEXT[lang])).toHaveLength(16);
+      expect(Object.keys(RULE_TEXT[lang])).toHaveLength(17);
       for (const slot of GEAR_SLOTS) expect(messageKeys(lang)).toContain(`slot${slot}`);
       for (const rarity of RARITIES) expect(messageKeys(lang)).toContain(`rarity${rarity}`);
       for (const effect of Object.values(GEAR_EFFECTS))

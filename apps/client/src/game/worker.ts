@@ -49,7 +49,7 @@ function postView(s: GameState): void {
 }
 
 function postSave(s: GameState): void {
-  const save: Save = { version: 4, state: s, gameNow, speed };
+  const save: Save = { version: 5, state: s, gameNow, speed };
   scope.postMessage({ type: 'save', save });
   lastSave = performance.now();
 }

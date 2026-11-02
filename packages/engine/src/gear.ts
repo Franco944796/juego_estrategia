@@ -3,7 +3,8 @@ import { nextFloat, nextInt } from './rng';
 import type { DomainEvent, GameState, GearSlot, Item, Lord } from './types';
 
 export function itemBonus(state: GameState, item: Item): number {
-  return state.config.gear.rarityBonus[item.rarity];
+  const gear = state.config.gear;
+  return item.slot === 'CHEST' ? gear.refundByRarity[item.rarity] : gear.rarityBonus[item.rarity];
 }
 
 export function equippedItem(lord: Lord, slot: GearSlot): Item | undefined {

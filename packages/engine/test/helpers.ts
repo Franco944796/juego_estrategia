@@ -7,8 +7,16 @@ import type { GameState, LordInit, Town } from '../src/types';
 export const T0 = 1_700_000_000_000;
 export const MIN = 60_000;
 
+/**
+ * Power changes who may be attacked and the experience paid, which most tests do not look at: it is
+ * neutral here and tested on its own (power.test.ts).
+ */
+export const NO_POWER: DeepPartial<GameConfig> = {
+  power: { forbidBelow: 0, halfBelow: 0, doubleFrom: 1e12 },
+};
+
 export function config(patch: DeepPartial<GameConfig> = {}): GameConfig {
-  return withOverrides(defaultConfig, patch);
+  return withOverrides(withOverrides(defaultConfig, NO_POWER), patch);
 }
 
 export function humans(n: number): LordInit[] {

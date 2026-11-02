@@ -2,12 +2,15 @@
 export const SKILL_IDS = ['GOLD', 'TROOPS', 'ATTACK'] as const;
 export type SkillId = (typeof SKILL_IDS)[number];
 
-export const GEAR_SLOTS = ['WEAPON', 'ARMOR', 'HELMET', 'CLOAK', 'BOOTS', 'RING'] as const;
+export const GEAR_SLOTS = ['WEAPON', 'ARMOR', 'HELMET', 'CLOAK', 'BOOTS', 'RING', 'AMULET', 'CHEST'] as const;
 export type GearSlot = (typeof GEAR_SLOTS)[number];
 
 /** What an item in each slot improves, by its rarity bonus. */
 export const GEAR_EFFECTS: Readonly<
-  Record<GearSlot, 'attack' | 'defense' | 'walls' | 'troopProd' | 'speed' | 'goldProd'>
+  Record<
+    GearSlot,
+    'attack' | 'defense' | 'walls' | 'troopProd' | 'speed' | 'goldProd' | 'killGold' | 'refund'
+  >
 > = {
   WEAPON: 'attack',
   ARMOR: 'defense',
@@ -15,6 +18,10 @@ export const GEAR_EFFECTS: Readonly<
   CLOAK: 'troopProd',
   BOOTS: 'speed',
   RING: 'goldProd',
+  /** Gold paid per enemy troop killed, attacking or defending. */
+  AMULET: 'killGold',
+  /** Share of the gold spent upgrading a town that comes back when the town is lost. */
+  CHEST: 'refund',
 };
 
 export const RARITIES = ['COMMON', 'RARE', 'EPIC', 'LEGENDARY'] as const;

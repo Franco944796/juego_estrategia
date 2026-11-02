@@ -3,8 +3,8 @@ import { formatDecimal, formatNumber, formatRate } from '../format';
 import { command } from '../game/session';
 import { t } from '../i18n';
 import { useGame } from '../store';
-import { CloseIcon, CrownIcon, ShieldIcon, TroopIcon } from './icons';
-import { isAlly, linkedIsles, ownerColor, ownerName, townById, townLabel } from './labels';
+import { CloseIcon, CrownIcon, ShieldIcon, StarIcon, TroopIcon } from './icons';
+import { attackXp, isAlly, linkedIsles, ownerColor, ownerName, townById, townLabel } from './labels';
 
 /** The player's town with the most troops that can reach `target`, if any. */
 export function bestSource(view: LordView, target: TownView): TownView | null {
@@ -34,8 +34,13 @@ export function TownSheet({ townId }: { townId: number }) {
   const zoneMine = zone ? zone.townIds.filter((id) => townById(view, id)?.owner === view.me.id).length : 0;
   const source = mine ? null : bestSource(view, town);
   const immune = !mine && !ally && view.season.capitalImmune && town.isCapital;
+  const enemyLord = !mine && !ally && town.owner !== null;
+  const xp = enemyLord ? attackXp(view, town.owner) : 1;
+  const ownerPower = view.lords.find((l) => l.id === town.owner)?.power ?? 0;
+  const tooWeak = enemyLord && xp === 0;
   const canGroup =
     !immune &&
+    !tooWeak &&
     view.towns.some(
       (t) =>
         t.owner === view.me.id &&
@@ -81,6 +86,18 @@ export function TownSheet({ townId }: { townId: number }) {
             {t(lang, 'defense', { n: formatDecimal(town.fort, lang, 2) })}
           </span>
         </div>
+        {enemyLord && !tooWeak && (
+          <div className="fact" data-testid="lord-power">
+            <StarIcon size={15} />
+            <span>
+              {t(lang, 'lordPower', {
+                name: ownerName(lang, view, town.owner),
+                n: formatNumber(ownerPower, lang),
+                x: formatDecimal(xp, lang, xp % 1 === 0 ? 0 : 1),
+              })}
+            </span>
+          </div>
+        )}
         {own && (
           <div className="fact">
             <span className="fact-label">{t(lang, 'production')}</span>
@@ -176,6 +193,13 @@ export function TownSheet({ townId }: { townId: number }) {
         ) : view.season.capitalImmune && town.isCapital ? (
           <p className="muted" data-testid="capital-immune">
             {t(lang, 'capitalImmune')}
+          </p>
+        ) : tooWeak ? (
+          <p className="muted" data-testid="too-weak">
+            {t(lang, 'tooWeak', {
+              n: formatNumber(ownerPower, lang),
+              mine: formatNumber(view.me.power, lang),
+            })}
           </p>
         ) : source ? (
           <button

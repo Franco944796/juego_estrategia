@@ -56,7 +56,8 @@ export function itemName(lang: Lang, item: Item): string {
 
 /** «+10 % muros», with the bonus the view reports for the item's rarity. */
 export function itemEffect(lang: Lang, view: LordView, item: Item): string {
-  const p = Math.round(view.me.gearBonus[item.rarity] * 100);
+  const table = item.slot === 'CHEST' ? view.me.refundBonus : view.me.gearBonus;
+  const p = Math.round(table[item.rarity] * 100);
   return t(lang, `effect${GEAR_EFFECTS[item.slot]}`, { p });
 }
 
@@ -82,4 +83,19 @@ export function mergeGroups(marches: MarchView[]): (MarchView & { legs: number }
 export function leagueName(lang: Lang, league: number): string {
   const id = defaultConfig.leagues[league]?.id ?? 'BRONZE';
   return t(lang, `league${id}` as 'leagueBRONZE');
+}
+
+/**
+ * Experience multiplier for attacking `ownerId` (the engine's power rule, from the view): 0 when that
+ * lord is too weak to be attacked, 1 for neutral towns.
+ */
+export function attackXp(view: LordView, ownerId: string | null): number {
+  const other = ownerId === null ? undefined : view.lords.find((l) => l.id === ownerId);
+  if (!other || other.id === view.me.id) return 1;
+  const rules = view.me.powerRules;
+  const ratio = view.me.power > 0 ? other.power / view.me.power : Infinity;
+  if (ratio >= rules.doubleFrom) return rules.highXp;
+  if (ratio >= rules.halfBelow) return 1;
+  if (ratio >= rules.forbidBelow) return rules.lowXp;
+  return 0;
 }

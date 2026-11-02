@@ -2,6 +2,7 @@ import { SKILL_IDS } from '@si/config/constants';
 import { accrueTo, projectedGarrison, projectedGold, upgradeCost, upgradePlan } from './economy';
 import { equipItem } from './gear';
 import { activeAttacks, isAttack, launchGroup, launchMarch } from './marches';
+import { xpMultiplier } from './power';
 import { learnSkill, unspentPoints } from './skills';
 import type { Command, DomainEvent, GameState, RuleError, RuleId, Town } from './types';
 import { getLord, getTown, islesLinked } from './world';
@@ -100,7 +101,7 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       if (command.troops > available) {
         return fail('R08', 'NOT_ENOUGH_TROOPS', 'not enough troops in the town');
       }
-      return targetRules(state, lordId, [from], to);
+      return targetRules(state, lordId, [from], to, now);
     }
     case 'SEND_GROUP': {
       const to = state.towns[command.to];
@@ -112,7 +113,7 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       if (towns.some((from) => projectedGarrison(state, from, now) < cfg.march.minTroops)) {
         return fail('R08', 'NOT_ENOUGH_TROOPS', 'a source town has no troops to send');
       }
-      return targetRules(state, lordId, towns, to);
+      return targetRules(state, lordId, towns, to, now);
     }
     case 'LEARN_SKILL':
       if (unspentPoints(lord) <= 0) return fail('R13', 'NO_SKILL_POINTS', 'no skill points left');
@@ -126,7 +127,13 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
 }
 
 /** Rules about where marches from `sources` may go; only attacks count against the march limit. */
-function targetRules(state: GameState, lordId: string, sources: Town[], to: Town): RuleError | null {
+function targetRules(
+  state: GameState,
+  lordId: string,
+  sources: Town[],
+  to: Town,
+  now: number,
+): RuleError | null {
   const cfg = state.config;
   if (to.privateTo !== null && to.privateTo !== lordId) {
     return fail('R14', 'UNKNOWN_TOWN', 'that town is not visible to this lord');
@@ -144,6 +151,9 @@ function targetRules(state: GameState, lordId: string, sources: Town[], to: Town
   }
   if (activeAttacks(state, lordId) >= cfg.march.maxActivePerLord) {
     return fail('R12', 'TOO_MANY_MARCHES', 'too many attacks in flight');
+  }
+  if (xpMultiplier(state, lordId, to.owner, now) === 0) {
+    return fail('R17', 'TOO_WEAK', 'that lord is too weak to be attacked');
   }
   return null;
 }
@@ -170,6 +180,7 @@ export function applyCommand(
       const plan = upgradePlan(state.config, town.tier, lord.gold, command.levels ?? 1);
       if (plan.levels === 0) return null;
       lord.gold -= plan.cost;
+      town.invested += plan.cost;
       town.tier += plan.levels;
       events.push({
         type: 'TOWN_UPGRADED',

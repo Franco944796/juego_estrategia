@@ -13,6 +13,7 @@ import {
 import { computeStandings } from './game';
 import { modsMemo } from './modifiers';
 import { troopRange, windIndexAt, windShiftMs } from './marches';
+import { lordPower } from './power';
 import { unspentPoints } from './skills';
 import type {
   BattleReport,
@@ -104,8 +105,13 @@ export interface MeView {
   recovery: { attacker: number; defender: number };
   items: Item[];
   gear: Partial<Record<GearSlot, string>>;
-  /** Bonus of an item by rarity (0.03 = +3 %). */
+  /** Bonus of an item by rarity (0.03 = +3 %); the chest uses `refundBonus`. */
   gearBonus: Record<Item['rarity'], number>;
+  refundBonus: Record<Item['rarity'], number>;
+  /** Troops plus walls; see `power` in the config for what it changes. */
+  power: number;
+  /** Power ratios (theirs over yours) that set the experience of an attack; see config `power`. */
+  powerRules: { forbidBelow: number; halfBelow: number; doubleFrom: number; lowXp: number; highXp: number };
   capitalId: number | null;
   alive: boolean;
   exiles: number;
@@ -127,6 +133,7 @@ export interface LordSummary {
   style: string;
   clanId: string | null;
   level: number;
+  power: number;
 }
 
 export interface SeasonView {
@@ -265,6 +272,9 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       items: lord.items.map((item) => ({ ...item })),
       gear: { ...lord.gear },
       gearBonus: { ...cfg.gear.rarityBonus },
+      refundBonus: { ...cfg.gear.refundByRarity },
+      power: lordPower(state, lordId, t),
+      powerRules: { ...cfg.power },
       capitalId: lord.capitalId,
       alive: lord.alive,
       exiles: lord.exiles,
@@ -288,6 +298,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
               style: l.style,
               clanId: l.clanId,
               level: l.level,
+              power: lordPower(state, l.id, t),
             },
           ]
         : [];

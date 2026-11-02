@@ -61,6 +61,26 @@
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
 
+## Hecho en la etapa «poder y equipo nuevo» (2026-11-02, demo y en línea)
+
+Decisiones de Franco (vigentes):
+
+- Poder de un señor = sus tropas (en ciudades, en marcha y apostadas) + los muros de sus ciudades.
+- Exp por tropa matada al atacar a otro señor, según su poder frente al tuyo (ej. con 100): ≥ 200 →
+  ×2; 81–199 → ×1; 65–80 → ×0,5; ≤ 64 → no se lo puede atacar.
+- 2 ranuras nuevas: amuleto (+ % de oro por bajas, atacando y defendiendo) y cofre (% del oro
+  invertido en una ciudad que se recupera al perderla, hasta 50 % con legendario).
+
+Mías (avisadas): neutrales sin límite y exp ×1; defender da exp normal; cofre 10/20/35/50 % por
+rareza; amuleto con la tabla de rarezas de siempre (+3/6/10/15 %); el oro invertido se cuenta por
+dueño (al perder la ciudad vuelve a 0).
+
+Hecho: `power.ts` (`lordPower`, `xpMultiplier`), regla R17 `TOO_WEAK`, `Town.invested`, ranuras
+AMULET y CHEST, reintegro al capturar, bots que no atacan a los demasiado débiles, poder en la vista
+(propio y de cada señor), ficha con «Poder de X · exp ×N» o «Demasiado débil», `STATE_VERSION` 5.
+Verificado: 224 tests, 24 de Playwright (más la captura nueva de poder), revisión visual. Sim: demo
+7/8; en línea 4/8 (nivel 100 en 1,5 días, 5,2 pueblos por señor, ganador 0,36): sin reajustar.
+
 ## Hecho en la etapa «ligas» (2026-11-02, en línea)
 
 Decisiones de Franco (vigentes):
@@ -304,13 +324,8 @@ Preguntar a Franco los detalles al empezar cada uno:
 
 1. Bots que crucen a islas nuevas; después volver a prender el nacimiento de islas
    (`map.growth.enabled`).
-2. Equipo nuevo (pedido 2026-11-02): más oro al matar tropas (atacando y defendiendo) y un % del oro
-   invertido que se recupera al perder una ciudad (ej.: invertidos 10T con el máximo, 50 %, se
-   recuperan 5T).
-3. Poder (pedido 2026-11-02): ciudades y tropas con un valor de «poder» por señor. Atacar a alguien
-   con el doble o más de tu poder da ×2 de exp; atacar a alguien con «64 % menos» de tu poder da 50 %
-   menos de exp; no se puede atacar a quien tiene «65 % de tu poder o menos». Aclarar al empezar: los
-   dos umbrales se superponen (64 % menos = 36 % de tu poder, que ya queda prohibido).
+2. Decidir si se reajusta el mundo en línea tras la regla de poder (nivel 100 en 1,5 días, ganador
+   0,36 del Dominio).
 
 Hecho por Franco (2026-11-02): probó el 3D en el celular, abrió el puerto 8787 y subió el repo a
 GitHub (`Franco944796/juego_estrategia`, licencia PolyForm Noncommercial 1.0.0).

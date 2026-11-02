@@ -135,6 +135,7 @@ export function setOwner(
   town.stationed = [];
   town.neutralCap = 0;
   town.privateTo = null;
+  town.invested = 0;
   const wasCapital = town.isCapital;
   town.isCapital = false;
   events.push({ type: 'TOWN_CAPTURED', at, townId: town.id, from: previous, to: newOwner });

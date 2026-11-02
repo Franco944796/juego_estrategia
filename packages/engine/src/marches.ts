@@ -3,6 +3,7 @@ import { resolveSiege } from './combat';
 import { fortification, plunderAt, townWalls } from './economy';
 import { distance, windFactor } from './geometry';
 import { lordMods, type LordMods } from './modifiers';
+import { xpMultiplier } from './power';
 import { schedule } from './queue';
 import type { BattleReport, DomainEvent, GameState, Lord, March, Town } from './types';
 import { areAllies, checkExile, gainXp, getLord, recoverTroops, setOwner } from './world';
@@ -213,6 +214,9 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
   ];
   const fort = fortification(state, town);
   const walls = townWalls(state, town);
+  // Measured before the fight, with the arriving army back in the attacker's power. A target that grew
+  // too weak while the march was on its way still pays the lowest rate.
+  const xpMult = Math.max(cfg.power.lowXp, xpMultiplier(state, march.owner, town.owner, at, march.troops));
   const outcome = resolveSiege(cfg, {
     attacker: march.troops,
     attackMult: lordMods(state, attacker.id).attack,
@@ -235,12 +239,13 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
   if (attackerWon) attacker.stats.battlesWon++;
   else attacker.stats.battlesLost++;
   const rewards = {
-    attackerXp: killedByAttacker * cfg.kills.xp.attack,
-    attackerGold: killedByAttacker * cfg.kills.gold.attack,
+    attackerXp: killedByAttacker * cfg.kills.xp.attack * xpMult,
+    attackerGold: killedByAttacker * cfg.kills.gold.attack * lordMods(state, attacker.id).killGold,
     defenderXp: defenderId === null ? 0 : killedByDefenders * cfg.kills.xp.defend,
-    defenderGold: defenderId === null ? 0 : killedByDefenders * cfg.kills.gold.defend,
+    defenderGold: 0,
   };
   attacker.gold += rewards.attackerGold;
+  const defendGold = defenderId === null ? 0 : killedByDefenders * cfg.kills.gold.defend;
 
   // Defending lords share the kill rewards in proportion to the power they brought (walls go to the owner).
   const defenders: { lord: Lord; share: number; lost: number; index: number }[] = [];
@@ -252,7 +257,9 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
     defenders.push({ lord, share, lost: result.lost, index: i });
     lord.stats.troopsKilled += Math.round(killedByDefenders * share);
     lord.stats.troopsLost += result.lost;
-    lord.gold += rewards.defenderGold * share;
+    const gold = defendGold * share * lordMods(state, lord.id).killGold;
+    lord.gold += gold;
+    rewards.defenderGold += gold;
     if (attackerWon) lord.stats.battlesLost++;
     else lord.stats.battlesWon++;
   });
@@ -268,7 +275,13 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
 
   // The report goes before the capture events, but recovery has to wait for capitals to move.
   const battleAt = events.length;
+  let refund = 0;
   if (captured) {
+    const loser = defenderId === null ? undefined : getLord(state, defenderId);
+    if (loser) {
+      refund = Math.floor(town.invested * lordMods(state, loser.id).refund);
+      loser.gold += refund;
+    }
     setOwner(state, town, attacker.id, at, events);
     town.garrison = outcome.attackerSurvivors;
   }
@@ -298,6 +311,8 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
     winner: outcome.winner,
     captured,
     plunder,
+    refund,
+    xpMult,
     rewards,
     allies: contingents.slice(1).map((c, i) => ({
       lordId: c.lordId ?? '',

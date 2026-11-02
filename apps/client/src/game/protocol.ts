@@ -33,7 +33,7 @@ export interface Armory {
 }
 
 export interface Save {
-  version: 4;
+  version: 5;
   state: GameState;
   gameNow: number;
   speed: number;

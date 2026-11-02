@@ -71,6 +71,8 @@ export interface Town {
   zoneId: number | null;
   /** A starter town only this lord can see or target until someone owns it. */
   privateTo: string | null;
+  /** Gold its current owner spent upgrading it; part of it comes back if the town is lost (chest). */
+  invested: number;
 }
 
 export interface LordStats {
@@ -149,6 +151,10 @@ export interface BattleReport {
   winner: BattleWinner;
   captured: boolean;
   plunder: number;
+  /** Gold the lord who lost the town got back from what it had invested in it (chest). */
+  refund: number;
+  /** Experience multiplier of the attacker from the power of the lord attacked. */
+  xpMult: number;
   /** Kill rewards; the defenders' total is split among the defending lords by the power they brought. */
   rewards: { attackerXp: number; attackerGold: number; defenderXp: number; defenderGold: number };
   /** Allied contingents that defended alongside the owner (their troops are included above). */
@@ -172,7 +178,7 @@ export interface QueueItem {
 export type SeasonStatus = 'RUNNING' | 'ENDED';
 
 /** Bumped when the state shape changes so much that older saves cannot be loaded. */
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 
 export interface GameState {
   version: typeof STATE_VERSION;
@@ -262,7 +268,8 @@ export type RuleId =
   | 'R13'
   | 'R14'
   | 'R15'
-  | 'R16';
+  | 'R16'
+  | 'R17';
 
 export interface RuleError {
   rule: RuleId;

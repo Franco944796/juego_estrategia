@@ -62,7 +62,7 @@ export function readSave(): Save | null {
   if (!raw) return null;
   try {
     const save = JSON.parse(raw) as Save;
-    return save.version === 4 && save.state.status === 'RUNNING' ? save : null;
+    return save.version === 5 && save.state.status === 'RUNNING' ? save : null;
   } catch {
     return null;
   }

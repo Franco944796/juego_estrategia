@@ -35,7 +35,7 @@ async function load(page: Page, state: GameState, gameNow: number): Promise<Lord
       localStorage.setItem(key, save);
       localStorage.setItem('shattered-isles:tutorial-done', '1');
     },
-    [SAVE_KEY, JSON.stringify({ version: 4, state, gameNow, speed: 1 })] as const,
+    [SAVE_KEY, JSON.stringify({ version: 5, state, gameNow, speed: 1 })] as const,
   );
   await page.reload();
   await page.getByTestId('continue-game').click();
@@ -226,6 +226,41 @@ test('switching to the 2D map and back', async ({ page }) => {
   await expect(page.getByTestId('map-2d')).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('map-3d').click();
   await expect(page.locator('canvas.map-overlay')).toBeVisible();
+});
+
+test('power: a stronger rival pays double, a much weaker one is off limits', async ({ page }) => {
+  const state = newState();
+  const capital = state.towns[state.lords[ME]?.capitalId ?? -1];
+  if (!capital) throw new Error('no capital');
+  const d = (t: { pos: { x: number; y: number } }): number =>
+    Math.hypot(t.pos.x - capital.pos.x, t.pos.y - capital.pos.y);
+  const [strong, weak] = state.towns
+    .filter((t) => t.owner === null && t.privateTo === null && t.isleId === capital.isleId)
+    .sort((a, b) => d(a) - d(b));
+  if (!strong || !weak) throw new Error('no towns');
+  for (const [town, owner, troops] of [
+    [strong, 'bot1', 5000],
+    [weak, 'bot2', 0],
+  ] as const) {
+    town.owner = owner;
+    town.neutralCap = 0;
+    town.garrison = troops;
+  }
+  // bot2 also loses its capital's troops, so its power drops far below ours.
+  const bot2 = state.towns[state.lords.bot2?.capitalId ?? -1];
+  if (bot2) bot2.garrison = 0;
+  capital.garrison = 400;
+  await load(page, state, 0);
+  let point = await bringIntoView(page, strong.id);
+  await page.mouse.click(point.x, point.y);
+  await expect(page.getByTestId('lord-power')).toContainText('×2');
+  await shot(page, 'enemy-power');
+  await page.getByTestId('town-sheet').getByRole('button').first().click();
+  point = await bringIntoView(page, weak.id);
+  await page.mouse.click(point.x, point.y);
+  await expect(page.getByTestId('too-weak')).toBeVisible();
+  await expect(page.getByTestId('attack-button')).toHaveCount(0);
+  await shot(page, 'enemy-too-weak');
 });
 
 test('incoming attack, marches and the defense report', async ({ page }) => {

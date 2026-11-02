@@ -41,6 +41,7 @@ export function neutralTown(id: number, isleId: number, pos: Vec, tier: number, 
     stationed: [],
     zoneId: null,
     privateTo: null,
+    invested: 0,
   };
 }
 

@@ -310,6 +310,8 @@ describe('event filtering', () => {
           winner: 'DEFENDER',
           captured: false,
           plunder: 0,
+          refund: 0,
+          xpMult: 1,
           rewards: { attackerXp: 0, attackerGold: 0, defenderXp: 3, defenderGold: 3 },
           allies: [],
         },

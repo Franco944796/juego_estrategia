@@ -13,12 +13,26 @@ export interface LordMods {
   speed: number;
   goldProd: number;
   troopProd: number;
+  /** On the gold paid per enemy troop killed. */
+  killGold: number;
+  /** Share of the gold invested in a town that comes back when it is lost (0 without a chest). */
+  refund: number;
   /** Production multiplier from owning many towns (1 when sprawl is off). */
   sprawl: number;
 }
 
 export function neutralMods(): LordMods {
-  return { attack: 1, defense: 1, walls: 1, speed: 1, goldProd: 1, troopProd: 1, sprawl: 1 };
+  return {
+    attack: 1,
+    defense: 1,
+    walls: 1,
+    speed: 1,
+    goldProd: 1,
+    troopProd: 1,
+    killGold: 1,
+    refund: 0,
+    sprawl: 1,
+  };
 }
 
 /** Memoized lordMods for loops that read many towns while ownership stays put. */

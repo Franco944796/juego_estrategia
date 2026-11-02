@@ -6,6 +6,7 @@ import { distance } from './geometry';
 import { activeAttacks, travelInfo, type TravelInfo } from './marches';
 import { modsMemo, type LordMods } from './modifiers';
 import { bestUpgrade } from './gear';
+import { xpMultiplier } from './power';
 import { botSkill, unspentPoints } from './skills';
 import type { DomainEvent, GameState, Lord, Town } from './types';
 import { visibleIsles } from './vision';
@@ -28,6 +29,7 @@ interface Turn {
   busy: Set<number>;
   /** Towns this lord already has a march heading to. */
   targeted: Set<number>;
+  attackable: Map<string, boolean>;
 }
 
 /** One bot decision round. Bots act only through applyCommand, so they obey the same rules as players. */
@@ -46,6 +48,7 @@ export function botTurn(state: GameState, lordId: string, now: number, events: D
     visible: visibleIsles(state, lordId),
     busy: new Set(),
     targeted: new Set(state.marches.filter((m) => m.owner === lordId).map((m) => m.to)),
+    attackable: new Map(),
   };
   learn(turn);
   defend(turn);
@@ -222,6 +225,16 @@ function seenBy(lordId: string, town: Town): boolean {
  * The nearest towns `from` could attack (big isles hold too many towns to weigh them all), plus a few
  * on each linked isle so bots still look across the lanes.
  */
+/** Lords too weak next to this one cannot be attacked (rule R17); worked out once per turn. */
+function attackable(turn: Turn, ownerId: string): boolean {
+  let ok = turn.attackable.get(ownerId);
+  if (ok === undefined) {
+    ok = xpMultiplier(turn.state, turn.lord.id, ownerId, turn.now) > 0;
+    turn.attackable.set(ownerId, ok);
+  }
+  return ok;
+}
+
 function targetsNear(turn: Turn, from: Town): Town[] {
   const { state, lord } = turn;
   const capitalImmune = state.config.rules.capitalImmune;
@@ -230,7 +243,8 @@ function targetsNear(turn: Turn, from: Town): Town[] {
     to.owner !== lord.id &&
     seenBy(lord.id, to) &&
     !(to.isThrone && !state.throneUnsealed) &&
-    !(to.isCapital && capitalImmune);
+    !(to.isCapital && capitalImmune) &&
+    (to.owner === null || attackable(turn, to.owner));
   const across = (isleNeighbors(state)[from.isleId] ?? []).flatMap((isleId) =>
     nearest(state, from, [isleId], Math.ceil(limit / 4), accept),
   );

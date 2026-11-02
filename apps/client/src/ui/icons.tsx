@@ -130,6 +130,19 @@ export const RingIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const AmuletIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M7 3c0 5 2 7 5 8 3-1 5-3 5-8" />
+    <path d="m12 11 3 4-3 5-3-5z" />
+  </Svg>
+);
+
+export const ChestIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 10a8 5 0 0 1 16 0v9H4zM4 12h16M11 12h2v3h-2z" />
+  </Svg>
+);
+
 /** Arrow pointing where the wind blows: direction 0 is north, each step 45° clockwise. */
 export function WindArrow({ dir, size = 18 }: { dir: number; size?: number }) {
   return (

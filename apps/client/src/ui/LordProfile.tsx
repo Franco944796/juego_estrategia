@@ -6,7 +6,17 @@ import { formatDecimal, formatNumber } from '../format';
 import { buyItem, command } from '../game/session';
 import { t, type Lang, type MessageKey } from '../i18n';
 import { useGame } from '../store';
-import { ArmorIcon, BootsIcon, CloakIcon, HelmetIcon, RingIcon, StarIcon, SwordIcon } from './icons';
+import {
+  AmuletIcon,
+  ArmorIcon,
+  BootsIcon,
+  ChestIcon,
+  CloakIcon,
+  HelmetIcon,
+  RingIcon,
+  StarIcon,
+  SwordIcon,
+} from './icons';
 import { itemEffect, itemName } from './labels';
 
 type Tab = 'gear' | 'skills' | 'stats';
@@ -18,6 +28,8 @@ const SLOT_ICONS: Record<GearSlot, ComponentType<{ size?: number; className?: st
   CLOAK: CloakIcon,
   BOOTS: BootsIcon,
   RING: RingIcon,
+  AMULET: AmuletIcon,
+  CHEST: ChestIcon,
 };
 
 const percent = (share: number, lang: Lang): string => formatDecimal(share * 100, lang, 0);
@@ -175,6 +187,7 @@ function StatsTab({ view, lang }: { view: LordView; lang: Lang }) {
   const { me } = view;
   const towns = view.towns.filter((town) => town.owner === me.id).length;
   const rows: [MessageKey, number][] = [
+    ['statPower', me.power],
     ['statTowns', towns],
     ['statCaptures', me.stats.captures],
     ['statWins', me.stats.battlesWon],

@@ -138,19 +138,34 @@ Bonuses add up (10 points in Gold = +50%). The **Attacker** and **Defender** ski
 shares of §6: league 1 fixes both at the 90% maximum, so they take no points. Other leagues may lower
 them and let points raise them.
 
+## 8c. Power
+
+- A lord's **power** is every troop it has (in its towns, stationed with allies, marching) plus the
+  walls of its towns. Everyone sees everyone's power.
+- Attacking another lord, the experience of each kill depends on the target's power over yours (with
+  100 of power): 200 or more pays ×2 (`power.highXp`), 81–199 ×1, 65–80 ×0.5 (`power.lowXp`), and 64 or
+  less cannot be attacked at all (rule R17). Neutral towns always pay ×1; defending pays as usual.
+  Measured when the march is sent and again when it lands (a target that fell too low on the way
+  still pays ×0.5).
+- Each town remembers the gold its owner spent upgrading it (`invested`); a chest returns part of it
+  when the town is captured, and the count starts again at 0 for the new owner.
+
 ## 8b. Equipment
 
-- Six slots, each improving one thing by the item's rarity bonus (`gear.rarityBonus`: common 3%, rare
-  6%, epic 10%, legendary 15%), added to the skill bonus of the same kind:
+- Eight slots, each improving one thing by the item's rarity bonus (`gear.rarityBonus`: common 3%, rare
+  6%, epic 10%, legendary 15%; the chest uses `gear.refundByRarity`: 10, 20, 35, 50%), added to the
+  skill bonus of the same kind:
 
-| Slot   | Improves                               |
-| ------ | -------------------------------------- |
-| Weapon | attack                                 |
-| Armor  | defense of the lord's troops (× fort.) |
-| Helmet | walls of the lord's towns              |
-| Cloak  | troop production                       |
-| Boots  | march speed                            |
-| Ring   | gold production                        |
+| Slot   | Improves                                                             |
+| ------ | -------------------------------------------------------------------- |
+| Weapon | attack                                                               |
+| Armor  | defense of the lord's troops (× fort.)                               |
+| Helmet | walls of the lord's towns                                            |
+| Cloak  | troop production                                                     |
+| Boots  | march speed                                                          |
+| Ring   | gold production                                                      |
+| Amulet | gold per enemy troop killed                                          |
+| Chest  | share of the gold invested in a town that comes back when it is lost |
 
 - A lord finds one item every `gear.dropEveryLevels` (5) levels: any slot, rarity rolled with the
   weights of the last `gear.dropOdds` row its level reached (better at high levels).
@@ -219,24 +234,25 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
 
 Every command is validated by the engine; each rule has a passing and a violating test.
 
-| Id  | Rule                                                                           |
-| --- | ------------------------------------------------------------------------------ |
-| R01 | The acting lord exists and is not eliminated.                                  |
-| R02 | The season has started and has not ended.                                      |
-| R03 | The town acted on (upgrade, send from) belongs to the acting lord.             |
-| R04 | Upgrade only below the maximum level.                                          |
-| R05 | The lord has enough gold for at least one level.                               |
-| R06 | Retired (it was respecialization).                                             |
-| R07 | The troop count is an integer of at least `march.minTroops`.                   |
-| R08 | Troops sent do not exceed the garrison.                                        |
-| R09 | Target differs from source.                                                    |
-| R10 | Target is on the same isle or on an isle joined by a lane.                     |
-| R11 | The Throne (when enabled) cannot be targeted while sealed.                     |
-| R12 | Attacks in flight (a group counts once) stay below `march.maxActivePerLord`.   |
-| R13 | A skill point can be spent only if the lord has one left.                      |
-| R14 | Command payloads have the right shape; another lord's private town is unknown. |
-| R15 | With `rules.capitalImmune`, another lord's capital cannot be targeted.         |
-| R16 | A lord equips only items it owns.                                              |
+| Id  | Rule                                                                              |
+| --- | --------------------------------------------------------------------------------- |
+| R01 | The acting lord exists and is not eliminated.                                     |
+| R02 | The season has started and has not ended.                                         |
+| R03 | The town acted on (upgrade, send from) belongs to the acting lord.                |
+| R04 | Upgrade only below the maximum level.                                             |
+| R05 | The lord has enough gold for at least one level.                                  |
+| R06 | Retired (it was respecialization).                                                |
+| R07 | The troop count is an integer of at least `march.minTroops`.                      |
+| R08 | Troops sent do not exceed the garrison.                                           |
+| R09 | Target differs from source.                                                       |
+| R10 | Target is on the same isle or on an isle joined by a lane.                        |
+| R11 | The Throne (when enabled) cannot be targeted while sealed.                        |
+| R12 | Attacks in flight (a group counts once) stay below `march.maxActivePerLord`.      |
+| R13 | A skill point can be spent only if the lord has one left.                         |
+| R14 | Command payloads have the right shape; another lord's private town is unknown.    |
+| R15 | With `rules.capitalImmune`, another lord's capital cannot be targeted.            |
+| R16 | A lord equips only items it owns.                                                 |
+| R17 | A lord with less than `power.forbidBelow` (65%) of your power cannot be attacked. |
 
 ## 13. Bots
 
