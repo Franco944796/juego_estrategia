@@ -40,19 +40,29 @@ function connected(state: GameState): boolean {
 }
 
 describe('joining a running season', () => {
-  it('founds a tier-1 capital on a shore slot with three private towns beside it', () => {
+  it('turns a neutral town into a level-1 capital, with its three nearest neighbors as private towns', () => {
     const state = world();
     const result = joinLord(state, player('ana'), T0 + 5 * MIN);
     if (!result.ok) throw new Error(result.error.code);
     const town = state.towns[result.townId];
     if (!town) throw new Error('no capital');
+    // No town is added: the capital and its starter towns were already on the isle.
+    expect(state.towns).toHaveLength(state.config.map.isle.towns);
+    expect(state.zones.some((z) => z.townIds.includes(town.id))).toBe(false);
     expect(town).toMatchObject({ owner: 'ana', tier: 1, isCapital: true, zoneId: null, privateTo: null });
     expect(town.garrison).toBe(40);
     expect(state.isles[0]?.slots.filter((slot) => slot.lordId === 'ana')).toHaveLength(1);
     const own = state.towns.filter((t) => t.privateTo === 'ana');
     expect(own).toHaveLength(3);
     for (const t of own) {
-      expect(t).toMatchObject({ owner: null, tier: 1, isleId: 0, zoneId: null });
+      expect(t).toMatchObject({
+        owner: null,
+        tier: 1,
+        isleId: 0,
+        zoneId: null,
+        garrison: 14,
+        neutralCap: 14,
+      });
       expect(distance(t.pos, town.pos)).toBeLessThanOrEqual(state.config.map.spawn.privateSpacing * 1.5);
     }
     expect(lord(state, 'ana')).toMatchObject({ style: 'classic', gold: 400, capitalId: result.townId });
@@ -116,7 +126,7 @@ describe('joining a running season', () => {
     const late = joinLord(state, player('late'), T0 + 2 * MIN);
     if (!late.ok) throw new Error(late.error.code);
     expect(state.towns[late.townId]?.isleId).toBe(1);
-    expect(state.isles[1]?.townIds.length).toBe(state.config.map.isle.towns + 4);
+    expect(state.isles[1]?.townIds.length).toBe(state.config.map.isle.towns);
     expect(connected(state)).toBe(true);
     expect(view(state, 'late', T0 + 2 * MIN).isles).toHaveLength(2);
   });
@@ -156,7 +166,7 @@ describe('joining a running season', () => {
     expect(joinLord(state, player('late'), T0 + day).ok).toBe(true);
   });
 
-  it('spreads the lords of a new game over the shore slots, opening isles as needed', () => {
+  it('spreads the lords of a new game over inland towns far apart, opening isles as needed', () => {
     const state = game({ lords: humans(12) });
     const capitals = state.lordOrder.map((id) => capitalOf(state, id));
     expect(capitals.filter((t) => t.isleId === 0)).toHaveLength(10);
@@ -164,7 +174,22 @@ describe('joining a running season', () => {
     expect(state.isles[0]?.slots.every((slot) => slot.lordId !== null)).toBe(true);
     const two = game({ lords: humans(2) });
     const [a, b] = two.lordOrder.map((id) => capitalOf(two, id));
-    expect(distance(a?.pos ?? { x: 0, y: 0 }, b?.pos ?? { x: 0, y: 0 })).toBeGreaterThan(400);
+    expect(distance(a?.pos ?? { x: 0, y: 0 }, b?.pos ?? { x: 0, y: 0 })).toBeGreaterThan(150);
+    expect(two.towns).toHaveLength(two.config.map.isle.towns);
+  });
+
+  it('keeps the capitals of a full demo game apart, each with its own three private towns', () => {
+    const state = game({ lords: humans(8) });
+    const capitals = state.lordOrder.map((id) => capitalOf(state, id));
+    let closest = Infinity;
+    for (const a of capitals)
+      for (const b of capitals) if (a !== b) closest = Math.min(closest, distance(a.pos, b.pos));
+    expect(closest).toBeGreaterThan(60);
+    for (const id of state.lordOrder) {
+      const own = state.towns.filter((t) => t.privateTo === id);
+      expect(own).toHaveLength(3);
+      expect(own.every((t) => t.tier === 1 && t.owner === null && t.zoneId === null)).toBe(true);
+    }
   });
 
   it('grows the map deterministically', () => {
@@ -206,17 +231,21 @@ describe('immune capitals', () => {
     expect(result.ok ? null : result.error.rule).toBe('R15');
   });
 
-  it('lets capitals fall in the demo rules', () => {
-    const state = game({ lords: humans(2) });
-    const capital = lord(state, 'h2').capitalId ?? -1;
-    const isleId = state.towns[capital]?.isleId ?? -1;
-    const base = state.towns.find((t) => t.isleId === isleId && t.id !== capital);
-    if (!base) throw new Error('no base');
-    base.owner = 'h1';
-    base.neutralCap = 0;
-    base.garrison = 50;
-    const result = execute(state, 'h1', { type: 'SEND', from: base.id, to: capital, troops: 10 }, T0);
-    expect(result.ok).toBe(true);
+  it('protects capitals in the demo too, and lets them fall with the rule off', () => {
+    const attempt = (open: boolean) => {
+      const state = game({ lords: humans(2), config: { rules: { capitalImmune: !open } } });
+      const capital = lord(state, 'h2').capitalId ?? -1;
+      const isleId = state.towns[capital]?.isleId ?? -1;
+      const base = state.towns.find((t) => t.isleId === isleId && t.id !== capital && !t.isCapital);
+      if (!base) throw new Error('no base');
+      base.owner = 'h1';
+      base.neutralCap = 0;
+      base.garrison = 50;
+      const result = execute(state, 'h1', { type: 'SEND', from: base.id, to: capital, troops: 10 }, T0);
+      return result.ok ? null : result.error.code;
+    };
+    expect(attempt(false)).toBe('CAPITAL_IMMUNE');
+    expect(attempt(true)).toBeNull();
   });
 
   it('repels a march whose target became a capital on the way', () => {

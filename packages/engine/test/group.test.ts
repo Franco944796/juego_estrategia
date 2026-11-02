@@ -12,6 +12,7 @@ import {
   neutralsBeside,
   NO_PRODUCTION,
   NO_RECOVERY,
+  OPEN_CAPITALS,
   T0,
   townOutOfReach,
 } from './helpers';
@@ -103,7 +104,7 @@ describe('synchronized groups', () => {
 
 describe('what the target sees', () => {
   it('a band of the whole group, the same on every leg', () => {
-    const { state, capital, a, b } = setup();
+    const { state, capital, a, b } = setup({ ...QUIET, ...OPEN_CAPITALS });
     const foe = capitalOf(state, 'h2');
     expect(group(state, [capital, a, b], foe).ok).toBe(true);
     const legs = view(state, 'h2', T0).marches.filter((m) => m.owner === 'h1');

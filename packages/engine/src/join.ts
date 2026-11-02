@@ -43,7 +43,7 @@ export function joinLord(state: GameState, init: LordInit, now: number): JoinRes
   // Settled only once the join is accepted: rejected joins are not logged, so replays never see them.
   accrueTo(state, at);
   const personality = init.isBot ? (init.personality ?? pick(state.rng, PERSONALITIES)) : null;
-  const town = spawnLord(state, init, isle, personality);
+  const town = spawnLord(state, init, isle, personality, at, events);
   if (init.isBot) scheduleFirstBotTurn(state, init.id, at);
   events.push({ type: 'LORD_JOINED', at, lordId: init.id, townId: town.id });
   checkGrowth(state, at, events);

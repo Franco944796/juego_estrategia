@@ -14,7 +14,7 @@ export const defaultConfig: GameConfig = {
       tiers: [3, 2, 1],
       zoneSize: 10,
     },
-    spawn: { slots: 10, privateTowns: 3, privateSpacing: 38 },
+    spawn: { slots: 10, privateTowns: 3, privateSpacing: 38, farShare: 0.25 },
     // One isle while the 3D map is being tried out (Franco turns growth back on when it is ready).
     growth: { enabled: false, isleSpacing: 760, maxPerDay: 3, laneNeighbors: 2, maxLaneLength: 900 },
     shapePoints: 18,
@@ -172,7 +172,7 @@ export const defaultConfig: GameConfig = {
       '#c77dff',
     ],
   },
-  rules: { capitalImmune: false },
+  rules: { capitalImmune: true },
   levels: { xpBase: 50, maxLevel: 100 },
   rewards: {
     tiers: [

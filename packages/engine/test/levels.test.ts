@@ -4,7 +4,17 @@ import { advanceTo, execute } from '../src/game';
 import type { BattleReport, DomainEvent, GameState } from '../src/types';
 import { view } from '../src/view';
 import { gainXp, migrateState, recoverTroops, xpForLevel } from '../src/world';
-import { capitalOf, game, give, lord, neutralsBeside, NO_PRODUCTION, NO_RECOVERY, T0 } from './helpers';
+import {
+  capitalOf,
+  game,
+  give,
+  lord,
+  neutralsBeside,
+  NO_PRODUCTION,
+  NO_RECOVERY,
+  OPEN_CAPITALS,
+  T0,
+} from './helpers';
 
 /** Sends `troops` from `lordId`'s capital to `target` and resolves the battle. */
 function attack(state: GameState, lordId: string, targetId: number, troops: number): DomainEvent[] {
@@ -51,7 +61,7 @@ describe('kill rewards', () => {
           clanId: id === 'h3' ? null : 'c',
         })),
       ],
-      config: { ...NO_PRODUCTION, ...NO_RECOVERY },
+      config: { ...NO_PRODUCTION, ...NO_RECOVERY, ...OPEN_CAPITALS },
     });
     const town = capitalOf(state, 'h1');
     town.garrison = 100;
@@ -94,7 +104,7 @@ describe('troop recovery', () => {
   });
 
   it('returns 90 % of the defender dead to the capital, wherever it moves', () => {
-    const state = game({ config: NO_PRODUCTION });
+    const state = game({ config: { ...NO_PRODUCTION, ...OPEN_CAPITALS } });
     const capital = capitalOf(state, 'h2');
     const other = neutralsBeside(state, capital)[0];
     if (!other) throw new Error('no neutral');

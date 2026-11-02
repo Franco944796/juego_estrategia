@@ -231,12 +231,25 @@ test('switching to the 2D map and back', async ({ page }) => {
 test('incoming attack, marches and the defense report', async ({ page }) => {
   const state = newState();
   const capital = state.towns[state.lords[ME]?.capitalId ?? -1];
-  const base = state.towns.find((t) => t.isleId === capital?.isleId && t.owner === null);
-  if (!capital || !base) throw new Error('no towns');
+  // Capitals cannot be attacked, so the bot goes for another town of ours next to it.
+  const nearby = state.towns
+    .filter((t) => t.isleId === capital?.isleId && t.owner === null && t.privateTo === null)
+    .sort(
+      (a, b) =>
+        Math.hypot(a.pos.x - (capital?.pos.x ?? 0), a.pos.y - (capital?.pos.y ?? 0)) -
+        Math.hypot(b.pos.x - (capital?.pos.x ?? 0), b.pos.y - (capital?.pos.y ?? 0)),
+    );
+  // A base a bit farther off and two digits of troops, so the march is still on its way when we look.
+  const mine = nearby[0];
+  const base = nearby[10];
+  if (!capital || !mine || !base) throw new Error('no towns');
+  mine.owner = ME;
+  mine.neutralCap = 0;
+  mine.garrison = 30;
   base.owner = 'bot1';
   base.neutralCap = 0;
-  base.garrison = 40;
-  const sent = execute(state, 'bot1', { type: 'SEND', from: base.id, to: capital.id, troops: 9 }, 0);
+  base.garrison = 99;
+  const sent = execute(state, 'bot1', { type: 'SEND', from: base.id, to: mine.id, troops: 99 }, 0);
   expect(sent.ok).toBe(true);
   await load(page, state, 0);
   await expect(page.getByTestId('nav-marches').locator('.badge')).toBeVisible();

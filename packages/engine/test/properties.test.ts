@@ -105,5 +105,6 @@ describe('determinism and invariants', () => {
       ),
       { numRuns: 25 },
     );
-  });
+    // Heavy on purpose (25 random seasons); under a full parallel run it needs more than 5 s.
+  }, 30_000);
 });

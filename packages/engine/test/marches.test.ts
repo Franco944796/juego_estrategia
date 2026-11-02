@@ -14,11 +14,12 @@ import {
   neutralsBeside,
   NO_PRODUCTION,
   NO_RECOVERY,
+  OPEN_CAPITALS,
   T0,
   townAcrossLane,
 } from './helpers';
 
-const QUIET = { ...NO_PRODUCTION, ...NO_RECOVERY };
+const QUIET = { ...NO_PRODUCTION, ...NO_RECOVERY, ...OPEN_CAPITALS };
 
 function send(state: GameState, lordId: string, from: Town, to: Town, t: number, at = T0) {
   const result = execute(state, lordId, { type: 'SEND', from: from.id, to: to.id, troops: t }, at);

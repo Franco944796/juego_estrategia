@@ -67,7 +67,7 @@ export function createGame(params: CreateGameParams): GameState {
       botIndex++;
     }
     // Lords given at creation always fit: extra isles here skip the daily cap.
-    spawnLord(state, init, openIsle(state) ?? growIsle(state, startsAt, []), personality);
+    spawnLord(state, init, openIsle(state) ?? growIsle(state, startsAt, []), personality, startsAt, []);
   }
 
   const shiftMs = windShiftMs(state);

@@ -23,9 +23,13 @@ logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
   levels toward the middle (`map.isle.tierBands`, `map.isle.tiers`: level 3 inside, then 2, then 1).
 - Each isle is split into **zones** of about `map.isle.zoneSize` (10) towns: one in the middle, then
   rings of 3, 6, 9… sectors. Every zone has its own beacon (§7).
-- Each isle has `map.spawn.slots` (10) **shore slots**. A lord appears on a free slot with a new
-  capital and `map.spawn.privateTowns` (3) level-1 neutral towns beside it that only that lord sees and
-  may attack until someone owns them. Lords go to the newest isle with a free slot.
+- Each isle holds `map.spawn.slots` (10) lords. A new lord's capital is a **random neutral town of the
+  isle**: anywhere for the first lord, then among the `map.spawn.farShare` (25%) of neutral towns
+  farthest from the existing capitals. It becomes a capital of `lords.capitalTier` with the starting
+  troops, and its `map.spawn.privateTowns` (3) nearest neutral neighbors become level-1 towns that only
+  that lord sees and may attack until someone owns them. Capitals and private towns leave their zones.
+  Only when an isle has no neutral town left does the capital go on a shore slot, as it used to.
+  Lords go to the newest isle with room.
 - **Growth is off for now** (`map.growth.enabled: false`, demo and online): every season keeps its
   first isle while the 3D map is tried out, and joining fails with `WORLD_FULL` once its 10 slots are
   taken. With growth on, the rules below apply.
@@ -181,8 +185,9 @@ The online world uses `liveConfig` (`packages/config/src/presets.ts`): the same 
   are paid and a new season starts with a fresh map. Players join whenever they connect and appear on
   a shore slot with a level-1 capital and their private towns (§2). When every isle is full and today's
   isles are spent, joining fails with `WORLD_FULL` until the next isle is born.
-- **Capitals cannot be attacked** (`rules.capitalImmune`); there are no shields. A march whose target
-  became a capital on the way (an exiled lord restarting there) returns home (`MARCH_REPELLED`).
+- **Capitals cannot be attacked** (`rules.capitalImmune`, on in the demo too; a shield marks them on
+  the map). A march whose target became a capital on the way (an exiled lord restarting there)
+  returns home (`MARCH_REPELLED`).
 - **Snowball brakes:** your towns within `towns.homeRadius` (110) of your capital get
   ×`towns.homeFort` (3) fortification, and owning more than `towns.sprawl.freeTowns` (6) towns divides the production of all
   your towns by `1 + towns.sprawl.penaltyPerTown (0.1) × extra towns`. The demo uses the same brakes,

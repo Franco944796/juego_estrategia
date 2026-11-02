@@ -41,7 +41,13 @@ export const gameConfigSchema = z
         tiers: z.array(count),
         zoneSize: count,
       }),
-      spawn: z.object({ slots: count, privateTowns: intNonNegative, privateSpacing: positive }),
+      spawn: z.object({
+        slots: count,
+        privateTowns: intNonNegative,
+        privateSpacing: positive,
+        /** A new capital is drawn among this share of neutral towns farthest from other capitals. */
+        farShare: z.number().gt(0).max(1),
+      }),
       growth: z.object({
         /** Off: the season keeps its first isle; joining fails once its shore slots are taken. */
         enabled: z.boolean(),

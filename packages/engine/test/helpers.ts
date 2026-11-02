@@ -117,6 +117,9 @@ export const NO_PRODUCTION: DeepPartial<GameConfig> = {
   towns: { troopsPerMin: 0, goldPerMin: 0 },
 };
 
+/** Capitals that can be attacked, for tests about losing one (both presets protect them). */
+export const OPEN_CAPITALS: DeepPartial<GameConfig> = { rules: { capitalImmune: false } };
+
 /** Dead troops vanish instead of reappearing in the capital, so tests can count losses plainly. */
 export const NO_RECOVERY: DeepPartial<GameConfig> = {
   league: { attackerRecovery: 0, defenderRecovery: 0 },

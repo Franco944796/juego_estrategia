@@ -24,5 +24,6 @@ describe('hashing', () => {
     advanceTo(state, state.endsAt);
     advanceTo(copy, copy.endsAt);
     expect(hashState(copy)).toBe(hashState(state));
-  });
+    // Plays two whole seasons with bots: slow under a full parallel run.
+  }, 30_000);
 });

@@ -266,6 +266,23 @@ function marches(ctx: CanvasRenderingContext2D, input: SceneInput): void {
   }
 }
 
+/** The mark of a capital that cannot be attacked: a small filled shield. */
+export function shield(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number): void {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - s);
+  ctx.lineTo(cx + s * 0.85, cy - s * 0.65);
+  ctx.lineTo(cx + s * 0.8, cy + s * 0.05);
+  ctx.quadraticCurveTo(cx + s * 0.6, cy + s * 0.75, cx, cy + s);
+  ctx.quadraticCurveTo(cx - s * 0.6, cy + s * 0.75, cx - s * 0.8, cy + s * 0.05);
+  ctx.lineTo(cx - s * 0.85, cy - s * 0.65);
+  ctx.closePath();
+  ctx.fillStyle = '#7fb4ff';
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, s * 0.25);
+  ctx.strokeStyle = INK;
+  ctx.stroke();
+}
+
 export function crown(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string): void {
   ctx.beginPath();
   ctx.moveTo(cx - s, cy + s * 0.5);
@@ -381,6 +398,7 @@ function towns(ctx: CanvasRenderingContext2D, input: SceneInput, targets: Set<nu
     }
     label(ctx, String(town.tier), p.x, p.y, Math.max(9, rr * (town.tier >= 10 ? 0.8 : 1)));
     if (town.isCapital) crown(ctx, p.x, p.y - rr - 6, rr * 0.5, GOLD);
+    if (town.isCapital && view.season.capitalImmune) shield(ctx, p.x + rr * 0.95, p.y - rr * 0.8, rr * 0.38);
     if (town.isThrone) {
       crown(ctx, p.x, p.y - rr - 8, rr * 0.6, '#f4e3ff');
       if (!view.season.throneUnsealed) lock(ctx, p.x + rr * 0.9, p.y + rr * 0.55, rr * 0.4);

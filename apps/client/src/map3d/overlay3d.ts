@@ -1,5 +1,5 @@
 import { formatNumber, formatRange } from '../format';
-import { TOWN_RADIUS, crown, label } from '../map/render';
+import { TOWN_RADIUS, crown, label, shield } from '../map/render';
 import { townById } from '../ui/labels';
 import { TILT, toScreen3d } from './camera3d';
 import { UNIT_SCALE } from './models';
@@ -69,6 +69,8 @@ export function drawOverlay(
     const px = Math.max(10, Math.min(14, townPx * 0.6));
     label(ctx, String(town.tier), top.x, top.y - px * 0.8, px);
     if (town.isCapital) crown(ctx, top.x, top.y - px * 2.1, px * 0.55, GOLD);
+    if (town.isCapital && view.season.capitalImmune)
+      shield(ctx, top.x + px * 1.2, top.y - px * 2.1, px * 0.5);
     if (townPx >= GARRISON_MIN_PX) {
       const text = town.garrison !== null ? formatNumber(town.garrison) : '?';
       // In front of the model (the camera looks from the south), not over it.

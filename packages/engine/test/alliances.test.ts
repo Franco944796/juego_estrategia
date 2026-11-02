@@ -8,7 +8,17 @@ import type { DomainEvent, GameState, March, Town } from '../src/types';
 import { view } from '../src/view';
 import { visibleIsles } from '../src/vision';
 import { migrateState } from '../src/world';
-import { capitalOf, game, give, humans, lord, NO_PRODUCTION, T0, townOutOfReach } from './helpers';
+import {
+  capitalOf,
+  game,
+  give,
+  humans,
+  lord,
+  NO_PRODUCTION,
+  OPEN_CAPITALS,
+  T0,
+  townOutOfReach,
+} from './helpers';
 
 function launched(events: DomainEvent[]): March {
   const e = events.find((x) => x.type === 'MARCH_LAUNCHED');
@@ -18,7 +28,7 @@ function launched(events: DomainEvent[]): March {
 
 /** h1 and h2 in one clan, h3 outside; h2 owns a town on h1's isle (its outpost). */
 function alliance(): { state: GameState; host: Town; outpost: Town; foe: Town } {
-  const state = game({ lords: humans(3), config: NO_PRODUCTION });
+  const state = game({ lords: humans(3), config: { ...NO_PRODUCTION, ...OPEN_CAPITALS } });
   setClan(state, 'h1', 'sky', T0);
   setClan(state, 'h2', 'sky', T0);
   const host = capitalOf(state, 'h1');

@@ -40,7 +40,7 @@
     (`node:sqlite`), log de órdenes aceptadas + foto del estado cada 5 min, replay al reiniciar;
   - stack: Fastify + @fastify/websocket + @fastify/static, identidad por token en el navegador con
     código de recuperación;
-  - la demo offline queda igual (capitales atacables, ×20, bots).
+  - la demo offline va ×20 y con bots; desde el 2026-11-02 sus capitales tampoco se pueden atacar.
 - Al terminar: mandar a la papelera (`gio trash`) el archivo del prompt de la raíz, como pidió Franco.
 
 ## Hecho
@@ -60,6 +60,18 @@
 ## En curso
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
+
+## Hecho: capitales inatacables y aparición al azar (2026-11-02, demo y en línea)
+
+- Decisiones de Franco: ninguna capital se puede atacar (demo y en línea) y lleva un escudo en el
+  mapa; la capital nace en un pueblo neutral al azar, entre el 25 % más alejado de las otras
+  capitales (`map.spawn.farShare`); sus 3 vecinos neutrales más cercanos pasan a ser privados.
+- Mías (avisadas): capital y privados salen de su zona; los privados vuelven a nivel 1 con guarnición
+  de nivel 1; sin pueblo neutral libre se aparece en la costa como antes.
+- `COMO-PROBAR-EN-EL-CELULAR.txt` en la raíz: demo en un archivo o servidor en la red de la casa.
+- Verificado: 210 tests unitarios, 24 de Playwright (las pruebas en línea y de clanes usan el mapa 2D
+  para no ser lentas; el 3D lo cubren el recorrido y la prueba de humo), revisión visual de escudos
+  y capitales tierra adentro. Sim: demo 6/7 + n/a (faros 0,63), en línea 6/7 + n/a.
 
 ## Hecho en la etapa «3D» (2026-11-02, demo y en línea)
 

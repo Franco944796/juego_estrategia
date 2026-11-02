@@ -10,6 +10,9 @@ describe('previewSend', () => {
     const capital = capitalOf(state, 'h1');
     const target = neutralsBeside(state, capital)[0];
     if (!target) throw new Error('no neutral');
+    // Capitals now land inland, so the nearest neutral may be a big one: make it an easy level 1.
+    target.tier = 1;
+    target.garrison = 14;
     const army = 40;
     const preview = previewSend(state, 'h1', capital.id, target.id, army, T0);
     expect(preview.error).toBeNull();

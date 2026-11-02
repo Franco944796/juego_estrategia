@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function enter(page: Page, name: string): Promise<void> {
+  // Several players at once: the lighter 2D map keeps software rendering fast (the tour covers 3D).
+  await page.addInitScript(() => localStorage.setItem('shattered-isles:map', '2d'));
   await page.goto('/');
   await page.getByTestId('lord-name').fill(name);
   await page.getByTestId('create-lord').click();

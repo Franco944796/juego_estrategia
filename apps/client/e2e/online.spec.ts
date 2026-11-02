@@ -24,6 +24,8 @@ async function tapTown(page: Page, id: number): Promise<void> {
 }
 
 async function enter(page: Page, name: string): Promise<LordView> {
+  // Several players at once: the lighter 2D map keeps software rendering fast (the tour covers 3D).
+  await page.addInitScript(() => localStorage.setItem('shattered-isles:map', '2d'));
   await page.goto('/');
   await page.getByTestId('lord-name').fill(name);
   await page.getByTestId('create-lord').click();

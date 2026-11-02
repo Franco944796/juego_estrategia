@@ -16,6 +16,7 @@ import {
   lord,
   neutralsBeside,
   NO_PRODUCTION,
+  OPEN_CAPITALS,
   publicNeutral,
   T0,
   townAcrossLane,
@@ -78,12 +79,13 @@ describe('troop conservation', () => {
 describe('bot decisions', () => {
   const warden: LordInit = { ...(bots(1)[0] as LordInit), personality: 'WARDEN' };
 
-  function duel(): GameState {
-    return game({ lords: [...humans(1), warden], config: NO_PRODUCTION });
+  function duel(open = false): GameState {
+    const config = open ? { ...NO_PRODUCTION, ...OPEN_CAPITALS } : NO_PRODUCTION;
+    return game({ lords: [...humans(1), warden], config });
   }
 
   it('reinforces a town that would fall to an incoming march', () => {
-    const state = duel();
+    const state = duel(true);
     const capital = capitalOf(state, 'b1');
     const helper = neutralsBeside(state, capital)[0];
     if (!helper) throw new Error('no neutral');
