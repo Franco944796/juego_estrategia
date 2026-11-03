@@ -61,6 +61,11 @@
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
 
+## Tropas al subir de nivel (2026-11-03)
+
+- Franco: cada nivel del señor da tropas, en todos los niveles: 30 × escala del nivel nuevo en la
+  capital (`levels.troopsReward`); el aviso dice cuántas llegaron.
+
 ## Hecho en la etapa «poder y equipo nuevo» (2026-11-02, demo y en línea)
 
 Decisiones de Franco (vigentes):
@@ -324,8 +329,8 @@ Preguntar a Franco los detalles al empezar cada uno:
 
 1. Bots que crucen a islas nuevas; después volver a prender el nacimiento de islas
    (`map.growth.enabled`).
-2. Decidir si se reajusta el mundo en línea tras la regla de poder (nivel 100 en 1,5 días, ganador
-   0,36 del Dominio).
+2. Decidir si se reajusta el mundo en línea tras la regla de poder y las tropas por nivel (nivel 100
+   en ~1 día, 5,5 pueblos por señor a mitad de temporada, ganador 0,35 del Dominio).
 
 Hecho por Franco (2026-11-02): probó el 3D en el celular, abrió el puerto 8787 y subió el repo a
 GitHub (`Franco944796/juego_estrategia`, licencia PolyForm Noncommercial 1.0.0).

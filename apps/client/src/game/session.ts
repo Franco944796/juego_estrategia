@@ -9,7 +9,7 @@ import type {
   Rarity,
   SendPreview,
 } from '@si/engine';
-import { formatDuration } from '../format';
+import { formatDuration, formatNumber } from '../format';
 import { BOT_NAMES, RULE_TEXT, SERVER_TEXT, t, WIND_NAMES } from '../i18n';
 import { toRealMs, useGame, type MapMode, type SeasonNews } from '../store';
 import { isAlly, itemName, townLabel } from '../ui/labels';
@@ -353,6 +353,7 @@ function notify(events: DomainEvent[]): void {
   const me = view.me.id;
   // One battle can climb several levels; a single toast names the last one.
   let level: number | null = null;
+  let levelTroops = 0;
   for (const e of events) {
     switch (e.type) {
       case 'MARCH_LAUNCHED': {
@@ -392,7 +393,10 @@ function notify(events: DomainEvent[]): void {
         break;
       }
       case 'LEVEL_UP':
-        if (e.lordId === me) level = e.level;
+        if (e.lordId === me) {
+          level = e.level;
+          levelTroops += e.troops;
+        }
         break;
       case 'MARCH_STATIONED': {
         const target = view.towns.find((x) => x.id === e.march.to);
@@ -434,7 +438,9 @@ function notify(events: DomainEvent[]): void {
         break;
     }
   }
-  if (level !== null) pushToast(t(lang, 'toastLevelUp', { n: level }), 'good');
+  if (level !== null) {
+    pushToast(t(lang, 'toastLevelUp', { n: level, troops: formatNumber(levelTroops, lang) }), 'good');
+  }
 }
 
 export const DEMO_BOTS = defaultConfig.demo.bots;

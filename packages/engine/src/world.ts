@@ -244,14 +244,19 @@ export function xpForLevel(state: GameState, level: number): number {
   return Math.round(state.config.levels.xpBase * levelScale(state.config, level));
 }
 
-/** Adds battle experience; each level reached is a skill point, and every few levels an item. */
+/**
+ * Adds battle experience. Each level reached is a skill point and troops in the capital (growing with
+ * the level, so they still count late in the season); every few levels also an item.
+ */
 export function gainXp(state: GameState, lord: Lord, xp: number, at: number, events: DomainEvent[]): void {
   const cfg = state.config.levels;
   lord.xp += xp;
   while (lord.level < cfg.maxLevel && lord.xp >= xpForLevel(state, lord.level)) {
     lord.xp -= xpForLevel(state, lord.level);
     lord.level++;
-    events.push({ type: 'LEVEL_UP', at, lordId: lord.id, level: lord.level });
+    const reward = cfg.troopsReward * levelScale(state.config, lord.level);
+    const troops = recoverTroops(state, lord.id, reward, 1);
+    events.push({ type: 'LEVEL_UP', at, lordId: lord.id, level: lord.level, troops });
     if (lord.level % state.config.gear.dropEveryLevels === 0) dropItem(state, lord, lord.level, at, events);
   }
   if (lord.level >= cfg.maxLevel) lord.xp = 0;

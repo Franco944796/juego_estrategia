@@ -176,7 +176,7 @@ export const defaultConfig: GameConfig = {
     ],
   },
   rules: { capitalImmune: true },
-  levels: { xpBase: 50, maxLevel: 100 },
+  levels: { xpBase: 50, maxLevel: 100, troopsReward: 30 },
   leagues: [
     { id: 'BRONZE', legacyMult: 1, promoteShare: 1, relegateShare: 0 },
     { id: 'SILVER', legacyMult: 1.5, promoteShare: 0.5, relegateShare: 0 },

@@ -184,7 +184,12 @@ export const gameConfigSchema = z
     }),
     rules: z.object({ capitalImmune: z.boolean() }),
     /** Lord levels: from level L the next one needs `xpBase` times the town level scale of L. */
-    levels: z.object({ xpBase: positive, maxLevel: count }),
+    levels: z.object({
+      xpBase: positive,
+      maxLevel: count,
+      /** Troops given at each new level: this times the town level scale of the level reached. */
+      troopsReward: nonNegative,
+    }),
     /**
      * Online leagues, lowest first, each its own world. At the season end the top `promoteShare` of
      * the ranking go up one league and the bottom `relegateShare` go down one; Legacy is × `legacyMult`.

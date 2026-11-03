@@ -300,6 +300,7 @@ export type DomainEvent =
   | { type: 'MARCH_REPELLED'; at: number; march: March }
   | { type: 'MARCH_STATIONED'; at: number; march: March }
   | { type: 'CLAN_CHANGED'; at: number; lordId: string; clanId: string | null }
-  | { type: 'LEVEL_UP'; at: number; lordId: string; level: number }
+  /** `troops`: the reward placed in the capital (0 with no town to put them in). */
+  | { type: 'LEVEL_UP'; at: number; lordId: string; level: number; troops: number }
   | { type: 'STYLE_CHANGED'; at: number; lordId: string; style: string }
   | { type: 'SEASON_ENDED'; at: number; standings: Standing[] };

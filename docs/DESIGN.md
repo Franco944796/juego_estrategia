@@ -125,7 +125,8 @@ There is a **single troop type**. A troop is worth 1 in attack and 1 in defense;
 
 - Experience comes from kills (§6). Level n → n+1 needs `round(levels.xpBase (50) × scale(n))`, so lord
   levels keep pace with town levels; up to `levels.maxLevel` (100). Levels reset with the season.
-- Each level reached gives **one skill point**. Points are spent one at a time and stay put until the
+- Each level reached gives **one skill point** and `levels.troopsReward` (30) × the level scale of the
+  new level in troops at the capital (75 at level 2, ~3 000 at 20, ~900K at 50, ~15G at 100). Points are spent one at a time and stay put until the
   season ends (no reassigning).
 
 | Skill  | Per point (`skills.perPoint`) |

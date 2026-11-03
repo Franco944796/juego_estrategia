@@ -278,9 +278,9 @@ const es = {
   hallClan: 'Clan ganador: {name} [{tag}]',
   levelShort: 'Nv {n}',
   levelTitle: 'Nivel del señor',
-  toastLevelUp: '¡Nivel {n}! Ganaste un punto de habilidad',
+  toastLevelUp: '¡Nivel {n}! Un punto de habilidad y {troops} tropas en tu capital',
   help7:
-    'Matar tropas enemigas da experiencia y oro: 5 por cada una al atacar y 3 al defender. Cada nivel da un punto de habilidad.',
+    'Matar tropas enemigas da experiencia y oro: 5 por cada una al atacar y 3 al defender. Cada nivel da un punto de habilidad y tropas en tu capital.',
   help8:
     'Liga 1: el 90 % de tus tropas muertas, atacando o defendiendo, reaparece al instante en tu capital.',
 };
@@ -565,9 +565,9 @@ const en: Record<MessageKey, string> = {
   hallClan: 'Winning clan: {name} [{tag}]',
   levelShort: 'Lv {n}',
   levelTitle: 'Lord level',
-  toastLevelUp: 'Level {n}! You earned a skill point',
+  toastLevelUp: 'Level {n}! A skill point and {troops} troops at your capital',
   help7:
-    'Killing enemy troops gives experience and gold: 5 for each one when attacking, 3 when defending. Each level gives a skill point.',
+    'Killing enemy troops gives experience and gold: 5 for each one when attacking, 3 when defending. Each level gives a skill point and troops at your capital.',
   help8: 'League 1: 90% of your troops killed, attacking or defending, reappear at once in your capital.',
 };
 

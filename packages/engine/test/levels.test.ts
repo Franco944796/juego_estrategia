@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { plunderAt, townWalls } from '../src/economy';
+import { levelScale, plunderAt, townWalls } from '../src/economy';
 import { advanceTo, execute } from '../src/game';
 import type { BattleReport, DomainEvent, GameState } from '../src/types';
 import { view } from '../src/view';
@@ -90,7 +90,8 @@ describe('kill rewards', () => {
 
 describe('troop recovery', () => {
   it('returns 90 % of the attacker dead to its capital at once', () => {
-    const state = game({ config: NO_PRODUCTION });
+    // No level-up troops, so the capital holds only what came back.
+    const state = game({ config: { ...NO_PRODUCTION, levels: { troopsReward: 0 } } });
     const capital = capitalOf(state, 'h1');
     const target = neutralsBeside(state, capital)[0];
     if (!target) throw new Error('no neutral');
@@ -105,7 +106,7 @@ describe('troop recovery', () => {
   });
 
   it('returns 90 % of the defender dead to the capital, wherever it moves', () => {
-    const state = game({ config: { ...NO_PRODUCTION, ...OPEN_CAPITALS } });
+    const state = game({ config: { ...NO_PRODUCTION, ...OPEN_CAPITALS, levels: { troopsReward: 0 } } });
     const capital = capitalOf(state, 'h2');
     const other = neutralsBeside(state, capital)[0];
     if (!other) throw new Error('no neutral');
@@ -144,7 +145,13 @@ describe('lord levels and skills', () => {
     const needed = xpForLevel(state, 1) + xpForLevel(state, 2) + xpForLevel(state, 3);
     gainXp(state, h1, needed + 1, T0, events);
     expect(h1).toMatchObject({ level: 4, xp: 1 });
-    expect(events).toEqual([2, 3, 4].map((level) => ({ type: 'LEVEL_UP', at: T0, lordId: 'h1', level })));
+    // Each level also sends 30 × the level scale in troops to the capital: 75 at level 2.
+    const rewards = [2, 3, 4].map((level) => Math.floor(30 * levelScale(state.config, level)));
+    expect(rewards[0]).toBe(75);
+    expect(events).toEqual(
+      [2, 3, 4].map((level, i) => ({ type: 'LEVEL_UP', at: T0, lordId: 'h1', level, troops: rewards[i] })),
+    );
+    expect(capitalOf(state, 'h1').garrison).toBe(40 + rewards.reduce((a, b) => a + b, 0));
     expect(xpForLevel(state, 1)).toBe(50);
     expect(xpForLevel(state, 2)).toBe(125);
     expect(view(state, 'h1', T0).me.skillPoints).toBe(3);
