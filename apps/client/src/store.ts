@@ -3,6 +3,7 @@ import type { ChatChannel, ChatMessage, MyClan, PublicAccount, ServerMessage } f
 import { create } from 'zustand';
 import type { ClockInfo } from './game/protocol';
 import { detectLang, type Lang } from './i18n';
+import type { QualitySetting } from './map3d/quality';
 
 export type MapMode = '3d' | '2d';
 export type Panel = 'marches' | 'reports' | 'ranking' | 'profile' | 'social' | 'menu';
@@ -36,12 +37,14 @@ export interface GameStore {
   unread: number;
   screen: 'title' | 'game';
   mapMode: MapMode;
+  quality: QualitySetting;
   view: LordView | null;
   clock: Clock;
   selected: number | null;
   /** Waiting for the player to tap a destination for the selected town. */
   picking: boolean;
-  send: { from: number; to: number } | null;
+  /** `scout`: the sheet opens on its lowest stop, which scouts a foreign town. */
+  send: { from: number; to: number; scout: boolean } | null;
   /** Target town of a synchronized group being put together. */
   group: number | null;
   panel: Panel | null;
@@ -50,10 +53,11 @@ export interface GameStore {
   setLang(lang: Lang): void;
   setScreen(screen: 'title' | 'game'): void;
   setMapMode(mode: MapMode): void;
+  setQuality(quality: QualitySetting): void;
   receiveView(view: LordView, clock: ClockInfo): void;
   select(townId: number | null): void;
   startPicking(): void;
-  openSend(from: number, to: number): void;
+  openSend(from: number, to: number, scout?: boolean): void;
   openGroup(to: number): void;
   closeSheet(): void;
   setPanel(panel: Panel | null): void;
@@ -82,6 +86,7 @@ export const useGame = create<GameStore>()((set, get) => ({
   unread: 0,
   screen: 'title',
   mapMode: '3d',
+  quality: 'auto',
   view: null,
   clock: idleClock,
   selected: null,
@@ -94,11 +99,12 @@ export const useGame = create<GameStore>()((set, get) => ({
   setLang: (lang) => set({ lang }),
   setScreen: (screen) => set({ screen }),
   setMapMode: (mapMode) => set({ mapMode }),
+  setQuality: (quality) => set({ quality }),
   receiveView: (view, clock) => set({ view, clock: { ...clock, receivedAt: performance.now() } }),
   select: (townId) => set({ selected: townId, picking: false, send: null, group: null, panel: null }),
   startPicking: () => set({ picking: true, send: null, group: null }),
-  openSend: (from, to) =>
-    set({ send: { from, to }, picking: false, selected: from, group: null, panel: null }),
+  openSend: (from, to, scout = false) =>
+    set({ send: { from, to, scout }, picking: false, selected: from, group: null, panel: null }),
   openGroup: (to) => set({ group: to, picking: false, send: null, selected: to, panel: null }),
   closeSheet: () => set({ selected: null, picking: false, send: null, group: null }),
   setPanel: (panel) =>

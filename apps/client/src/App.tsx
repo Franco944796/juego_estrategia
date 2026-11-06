@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { savedLang, savedMapMode, watchVisibility } from './game/session';
+import { savedLang, savedMapMode, savedQuality, watchVisibility } from './game/session';
+import { followDaylight } from './theme';
 import { MapCanvas } from './map/MapCanvas';
 import { useGame } from './store';
 import { SideRail } from './ui/SideRail';
@@ -18,7 +19,9 @@ function Drawer() {
   const selected = useGame((s) => s.selected);
   const picking = useGame((s) => s.picking);
   if (panel) return <PanelView panel={panel} />;
-  if (send) return <SendSheet key={`${send.from}-${send.to}`} from={send.from} to={send.to} />;
+  if (send) {
+    return <SendSheet key={`${send.from}-${send.to}`} from={send.from} to={send.to} scout={send.scout} />;
+  }
   if (group !== null) return <GroupSheet key={group} to={group} />;
   if (selected !== null && !picking) return <TownSheet townId={selected} />;
   return null;
@@ -57,7 +60,14 @@ export function App() {
     if (stored) useGame.getState().setLang(stored);
     const mode = savedMapMode();
     if (mode) useGame.getState().setMapMode(mode);
-    return watchVisibility();
+    const quality = savedQuality();
+    if (quality) useGame.getState().setQuality(quality);
+    const stopTheme = followDaylight();
+    const stopVisibility = watchVisibility();
+    return () => {
+      stopTheme();
+      stopVisibility();
+    };
   }, []);
 
   useEffect(() => {

@@ -15,8 +15,7 @@ export const defaultConfig: GameConfig = {
       zoneSize: 10,
     },
     spawn: { slots: 10, privateTowns: 3, privateSpacing: 38, farShare: 0.25 },
-    // One isle while the 3D map is being tried out (Franco turns growth back on when it is ready).
-    growth: { enabled: false, isleSpacing: 760, maxPerDay: 3, laneNeighbors: 2, maxLaneLength: 900 },
+    growth: { enabled: true, isleSpacing: 760, maxPerDay: 3, laneNeighbors: 2, maxLaneLength: 900 },
     shapePoints: 18,
     shapeJitter: 0.08,
   },
@@ -77,7 +76,14 @@ export const defaultConfig: GameConfig = {
       { minLevel: 80, weights: [10, 35, 38, 17] },
     ],
     prices: { COMMON: 20, RARE: 50, EPIC: 120, LEGENDARY: 300 },
+    levelBonus: { COMMON: 0.01, RARE: 0.02, EPIC: 0.03, LEGENDARY: 0.05 },
+    maxItemLevel: 20,
+    copiesPerLevel: 2,
+    scrapByRarity: { COMMON: 10, RARE: 25, EPIC: 60, LEGENDARY: 150 },
+    upgradeScrap: 20,
+    sockets: { COMMON: 0, RARE: 1, EPIC: 4, LEGENDARY: 9 },
   },
+  gems: { maxLevel: 10, levelShare: 0.5 },
   // Marches feel the same in real seconds as online: demo game time runs ×20 (demo.timeScale), so
   // these speeds are the online ones ÷ 20. Up to 9 troops cross the isle (~540) in ~10 real seconds.
   march: {
@@ -101,6 +107,7 @@ export const defaultConfig: GameConfig = {
     targetsPerTown: 12,
     guessMin: 60,
     hoardMin: 30,
+    crossSlack: 1.5,
     personalities: {
       RAIDER: {
         attackMargin: 1.15,
@@ -113,6 +120,8 @@ export const defaultConfig: GameConfig = {
         keepHome: 0.15,
         minWindFactor: 0.9,
         minAttackTroops: 8,
+        crossFreeShare: 1,
+        crossWeight: 20,
         skillWeights: { GOLD: 1, TROOPS: 1, ATTACK: 2 },
       },
       BUILDER: {
@@ -126,6 +135,8 @@ export const defaultConfig: GameConfig = {
         keepHome: 0.35,
         minWindFactor: 0.7,
         minAttackTroops: 10,
+        crossFreeShare: 0,
+        crossWeight: 1,
         skillWeights: { GOLD: 3, TROOPS: 1, ATTACK: 1 },
       },
       WARDEN: {
@@ -139,6 +150,8 @@ export const defaultConfig: GameConfig = {
         keepHome: 0.45,
         minWindFactor: 0.8,
         minAttackTroops: 10,
+        crossFreeShare: 0,
+        crossWeight: 0.01,
         skillWeights: { GOLD: 1, TROOPS: 3, ATTACK: 1 },
       },
       CLIMBER: {
@@ -152,6 +165,8 @@ export const defaultConfig: GameConfig = {
         keepHome: 0.25,
         minWindFactor: 0.85,
         minAttackTroops: 10,
+        crossFreeShare: 0.2,
+        crossWeight: 1,
         skillWeights: { GOLD: 1, TROOPS: 1, ATTACK: 1 },
       },
     },
@@ -178,16 +193,16 @@ export const defaultConfig: GameConfig = {
   rules: { capitalImmune: true },
   levels: { xpBase: 50, maxLevel: 100, troopsReward: 30 },
   leagues: [
-    { id: 'BRONZE', legacyMult: 1, promoteShare: 1, relegateShare: 0 },
-    { id: 'SILVER', legacyMult: 1.5, promoteShare: 0.5, relegateShare: 0 },
-    { id: 'GOLD', legacyMult: 2, promoteShare: 0, relegateShare: 0.5 },
+    { id: 'BRONZE', legacyMult: 1, promoteShare: 1, relegateShare: 0, gemBonus: 0.025 },
+    { id: 'SILVER', legacyMult: 1.5, promoteShare: 0.5, relegateShare: 0, gemBonus: 0.05 },
+    { id: 'GOLD', legacyMult: 2, promoteShare: 0, relegateShare: 0.5, gemBonus: 0.1 },
   ],
   rewards: {
     tiers: [
-      { topShare: 0.05, legacy: 100 },
-      { topShare: 0.25, legacy: 50 },
-      { topShare: 0.5, legacy: 25 },
-      { topShare: 1, legacy: 10 },
+      { topShare: 0.05, legacy: 100, gems: 5 },
+      { topShare: 0.25, legacy: 50, gems: 3 },
+      { topShare: 0.5, legacy: 25, gems: 2 },
+      { topShare: 1, legacy: 10, gems: 1 },
     ],
   },
   cosmetics: {

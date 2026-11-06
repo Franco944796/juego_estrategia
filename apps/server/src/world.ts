@@ -1,9 +1,11 @@
 import { withOverrides, type GameConfig } from '@si/config';
-import { MINUTE_MS } from '@si/config/constants';
+import { GEM_COLORS, MINUTE_MS } from '@si/config/constants';
 import {
   advanceTo,
   computeStandings,
   createGame,
+  devAction,
+  stockGem,
   execute,
   grantItem,
   joinLord,
@@ -15,6 +17,7 @@ import {
   STATE_VERSION,
   view,
   type Command,
+  type DevAction,
   type DomainEvent,
   type ExecResult,
   type GameState,
@@ -26,7 +29,7 @@ import {
 } from '@si/engine';
 import type { ClanRankingRow, Reward, SeasonSummary, StandingRow } from '@si/protocol';
 import { computeRewards, leagueMoves } from './rewards';
-import type { Account, Store } from './store';
+import type { Account, LogKind, Store } from './store';
 
 export interface WorldOptions {
   store: Store;
@@ -118,6 +121,7 @@ export class WorldService {
       if (entry.kind === 'style') setStyle(this.state, entry.lordId, String(entry.payload), entry.at);
       if (entry.kind === 'clan') setClan(this.state, entry.lordId, entry.payload as string | null, entry.at);
       if (entry.kind === 'item') grantItem(this.state, entry.lordId, entry.payload as Item, entry.at);
+      if (entry.kind === 'dev') devAction(this.state, entry.lordId, entry.payload, entry.at);
       this.lastSeq = entry.seq;
     }
     this.syncGear(this.state.lordOrder);
@@ -130,19 +134,21 @@ export class WorldService {
     return this.store.createSeason(seed, startsAt, endsAt, this.league);
   }
 
-  private log(
-    kind: 'join' | 'command' | 'style' | 'clan' | 'item',
-    at: number,
-    lordId: string,
-    payload: unknown,
-  ): void {
+  private log(kind: LogKind, at: number, lordId: string, payload: unknown): void {
     this.lastSeq = this.store.appendLog(this.season.id, at, kind, lordId, payload);
   }
 
   private emit(events: DomainEvent[]): void {
     if (events.length === 0) return;
     const geared = events.flatMap((e) =>
-      e.type === 'ITEM_FOUND' || e.type === 'ITEM_EQUIPPED' ? [e.lordId] : [],
+      e.type === 'ITEM_FOUND' ||
+      e.type === 'ITEM_EQUIPPED' ||
+      e.type === 'ITEM_DESTROYED' ||
+      e.type === 'ITEM_UPGRADED' ||
+      e.type === 'GEM_SOCKETED' ||
+      e.type === 'GEM_UNSOCKETED'
+        ? [e.lordId]
+        : [],
     );
     if (geared.length > 0) this.syncGear(geared);
     for (const listener of this.eventListeners) listener(events);
@@ -157,9 +163,12 @@ export class WorldService {
       const lord = this.state.lords[id];
       const account = lord ? this.store.account(id) : null;
       if (!lord || !account) continue;
-      const known = new Set(account.items.map((item) => item.id));
-      account.items.push(...lord.items.filter((item) => !known.has(item.id)).map((item) => ({ ...item })));
+      // The season's list is the whole truth: it started as the account's and since gained copies,
+      // levels and found items and lost destroyed ones.
+      account.items = lord.items.map((item) => ({ ...item }));
       account.gear = { ...lord.gear };
+      account.scrap = lord.scrap;
+      account.gems = lord.gems.map((gem) => ({ ...gem }));
       this.store.saveAccount(account);
     }
   }
@@ -217,6 +226,8 @@ export class WorldService {
       style: account.style,
       clanId: this.store.membership(account.id)?.clanId ?? null,
       items: account.items,
+      scrap: account.scrap,
+      gems: account.gems,
       gear: account.gear,
     };
     const result = joinLord(this.state, init, at);
@@ -248,6 +259,23 @@ export class WorldService {
     const events = setStyle(this.state, accountId, style, at);
     if (events.length > 0) this.log('style', at, accountId, style);
     this.emit(events);
+  }
+
+  /** Marks or unmarks the account's lord as a test lord; logged only when it changes. */
+  setDev(accountId: string, on: boolean): void {
+    const lord = this.state.lords[accountId];
+    if (!lord || (lord.dev === true) === on) return;
+    this.dev(accountId, { type: 'ENABLE', on });
+  }
+
+  /** A test tool (see the engine's dev.ts); the caller checks the account may use it. */
+  dev(accountId: string, action: DevAction): boolean {
+    if (!this.hasJoined(accountId)) return false;
+    const at = this.opts.now();
+    const result = devAction(this.state, accountId, action, at);
+    if (result.ok) this.log('dev', at, accountId, action);
+    this.emit(result.events);
+    return result.ok;
   }
 
   /** Hands an item bought in the Legacy shop to the running season (no-op if not joined). */
@@ -332,6 +360,15 @@ export class WorldService {
         if (!account) continue;
         account.legacy += reward.legacy;
         account.legacyTotal += reward.legacy;
+        // Gems of this league, colors at random; repeats join the owned gem as copies.
+        for (let k = 0; k < reward.gems; k++) {
+          const color = GEM_COLORS[Math.floor(this.opts.random() * GEM_COLORS.length)] ?? 'TOPAZ';
+          stockGem(this.opts.config, account.gems, {
+            id: `${finished.id}-${this.league}-${account.id}-${k}`,
+            color,
+            league: this.league,
+          });
+        }
         account.medals.push({
           season: finished.id,
           rank: reward.rank,

@@ -10,6 +10,8 @@ import { WorldService } from './world';
 const here = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 8787);
 const DB_PATH = process.env.DB_PATH ?? resolve(here, '../data/shattered-isles.db');
+// Recovery codes of test accounts, one per line; the server re-reads it when it changes.
+const DEV_ACCOUNTS = process.env.DEV_ACCOUNTS ?? resolve(here, '../data/dev-accounts.txt');
 const SNAPSHOT_EVERY_MS = 5 * 60_000;
 /** Upper bound between ticks, so views and snapshots keep flowing on a quiet world. */
 const MAX_SLEEP_MS = 1000;
@@ -43,6 +45,7 @@ const app = await buildApp({
   now,
   rate: TIME_SCALE,
   clientDir: resolve(here, '../../client/dist'),
+  devAccountsPath: DEV_ACCOUNTS,
   logger: true,
 });
 

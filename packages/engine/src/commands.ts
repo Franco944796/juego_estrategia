@@ -1,6 +1,7 @@
 import { SKILL_IDS } from '@si/config/constants';
 import { accrueTo, projectedGarrison, projectedGold, upgradeCost, upgradePlan } from './economy';
-import { equipItem } from './gear';
+import { destroyScrap, equipItem, itemLevel, upgradeScrapCost } from './gear';
+import { gemHolder, socketsOf } from './gems';
 import { activeAttacks, isAttack, launchGroup, launchMarch } from './marches';
 import { xpMultiplier } from './power';
 import { learnSkill, unspentPoints } from './skills';
@@ -38,6 +39,10 @@ function parseCommand(state: GameState, input: unknown): Command | null {
         ? { type: 'SEND', from, to, troops }
         : null;
     }
+    case 'SCOUT': {
+      const { from, to } = input;
+      return isTownId(state, from) && isTownId(state, to) ? { type: 'SCOUT', from, to } : null;
+    }
     case 'SEND_GROUP': {
       const { from, to } = input;
       if (!Array.isArray(from) || from.length === 0 || !isTownId(state, to)) return null;
@@ -54,6 +59,18 @@ function parseCommand(state: GameState, input: unknown): Command | null {
     }
     case 'EQUIP':
       return typeof input.itemId === 'string' ? { type: 'EQUIP', itemId: input.itemId } : null;
+    case 'DESTROY_ITEM':
+      return typeof input.itemId === 'string' ? { type: 'DESTROY_ITEM', itemId: input.itemId } : null;
+    case 'UPGRADE_ITEM':
+      return typeof input.itemId === 'string' ? { type: 'UPGRADE_ITEM', itemId: input.itemId } : null;
+    case 'SOCKET_GEM':
+    case 'UNSOCKET_GEM': {
+      const { itemId, gemId } = input;
+      if (typeof itemId !== 'string' || typeof gemId !== 'string') return null;
+      return input.type === 'SOCKET_GEM'
+        ? { type: 'SOCKET_GEM', itemId, gemId }
+        : { type: 'UNSOCKET_GEM', itemId, gemId };
+    }
     default:
       return null;
   }
@@ -83,7 +100,8 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       if (!town || town.owner !== lordId) return fail('R03', 'NOT_OWNER', 'town not owned');
       const cost = upgradeCost(state, town);
       if (cost === null) return fail('R04', 'MAX_TIER', 'town already at the maximum level');
-      if (projectedGold(state, lordId, now) < cost) return fail('R05', 'NO_GOLD', 'not enough gold');
+      if (!lord.dev && projectedGold(state, lordId, now) < cost)
+        return fail('R05', 'NO_GOLD', 'not enough gold');
       return null;
     }
     case 'SEND': {
@@ -115,6 +133,22 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
       }
       return targetRules(state, lordId, towns, to, now);
     }
+    case 'SCOUT': {
+      const from = state.towns[command.from];
+      const to = state.towns[command.to];
+      const stationed = from?.stationed.find((s) => s.lordId === lordId);
+      if (!from || !to || (from.owner !== lordId && !stationed)) {
+        return fail('R03', 'NOT_OWNER', 'no troops of yours in the source town');
+      }
+      const available =
+        from.owner === lordId ? projectedGarrison(state, from, now) : (stationed?.troops ?? 0);
+      if (available < 1) return fail('R08', 'NOT_ENOUGH_TROOPS', 'no troop to send');
+      const reach = reachRules(state, lordId, [from], to);
+      if (reach) return reach;
+      // Scouting has no other limit: capitals, neutrals and lords too weak to attack may all be looked at.
+      if (!isAttack(state, lordId, to)) return fail('R18', 'NOT_FOREIGN', 'only foreign towns are scouted');
+      return null;
+    }
     case 'LEARN_SKILL':
       if (unspentPoints(lord) <= 0) return fail('R13', 'NO_SKILL_POINTS', 'no skill points left');
       return null;
@@ -123,7 +157,53 @@ function checkRules(state: GameState, lordId: string, command: Command, now: num
         return fail('R16', 'NO_ITEM', 'the lord does not own that item');
       }
       return null;
+    case 'DESTROY_ITEM': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (!item) return fail('R16', 'NO_ITEM', 'the lord does not own that item');
+      if (lord.gear[item.slot] === item.id) return fail('R19', 'ITEM_EQUIPPED', 'take the item off first');
+      return null;
+    }
+    case 'UPGRADE_ITEM': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (!item) return fail('R16', 'NO_ITEM', 'the lord does not own that item');
+      if (item.slot === 'CHEST') return fail('R19', 'CHEST_FIXED', 'the chest does not level up');
+      if (itemLevel(item) >= cfg.gear.maxItemLevel)
+        return fail('R19', 'MAX_ITEM_LEVEL', 'the item is at the top level');
+      if (!lord.dev && lord.scrap < upgradeScrapCost(cfg, item))
+        return fail('R19', 'NO_SCRAP', 'not enough scrap');
+      return null;
+    }
+    case 'SOCKET_GEM': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (!item) return fail('R16', 'NO_ITEM', 'the lord does not own that item');
+      if (!lord.gems.some((gem) => gem.id === command.gemId)) {
+        return fail('R20', 'NO_GEM', 'the lord does not own that gem');
+      }
+      if (gemHolder(lord, command.gemId)) return fail('R20', 'GEM_IN_USE', 'the gem is set in an item');
+      if ((item.gems ?? []).length >= socketsOf(cfg, item)) return fail('R20', 'NO_SOCKET', 'no free socket');
+      return null;
+    }
+    case 'UNSOCKET_GEM': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (!item) return fail('R16', 'NO_ITEM', 'the lord does not own that item');
+      if (!item.gems?.includes(command.gemId)) return fail('R20', 'NO_GEM', 'that gem is not in the item');
+      return null;
+    }
   }
+}
+
+/** Whether `to` can be seen and reached from every source. */
+function reachRules(state: GameState, lordId: string, sources: Town[], to: Town): RuleError | null {
+  if (to.privateTo !== null && to.privateTo !== lordId) {
+    return fail('R14', 'UNKNOWN_TOWN', 'that town is not visible to this lord');
+  }
+  for (const from of sources) {
+    if (from.id === to.id) return fail('R09', 'SAME_TOWN', 'target is the source');
+    if (!islesLinked(state, from.isleId, to.isleId)) {
+      return fail('R10', 'UNREACHABLE', 'target isle has no lane to the source isle');
+    }
+  }
+  return null;
 }
 
 /** Rules about where marches from `sources` may go; only attacks count against the march limit. */
@@ -135,15 +215,8 @@ function targetRules(
   now: number,
 ): RuleError | null {
   const cfg = state.config;
-  if (to.privateTo !== null && to.privateTo !== lordId) {
-    return fail('R14', 'UNKNOWN_TOWN', 'that town is not visible to this lord');
-  }
-  for (const from of sources) {
-    if (from.id === to.id) return fail('R09', 'SAME_TOWN', 'target is the source');
-    if (!islesLinked(state, from.isleId, to.isleId)) {
-      return fail('R10', 'UNREACHABLE', 'target isle has no lane to the source isle');
-    }
-  }
+  const reach = reachRules(state, lordId, sources, to);
+  if (reach) return reach;
   if (to.isThrone && !state.throneUnsealed) return fail('R11', 'THRONE_SEALED', 'the Throne is sealed');
   if (!isAttack(state, lordId, to)) return null;
   if (cfg.rules.capitalImmune && to.isCapital) {
@@ -177,9 +250,9 @@ export function applyCommand(
     case 'UPGRADE': {
       const town = state.towns[command.townId];
       if (!town) return null;
-      const plan = upgradePlan(state.config, town.tier, lord.gold, command.levels ?? 1);
+      const plan = upgradePlan(state.config, town.tier, lord.dev ? Infinity : lord.gold, command.levels ?? 1);
       if (plan.levels === 0) return null;
-      lord.gold -= plan.cost;
+      if (!lord.dev) lord.gold -= plan.cost;
       town.invested += plan.cost;
       town.tier += plan.levels;
       events.push({
@@ -198,6 +271,12 @@ export function applyCommand(
       if (from && to) launchMarch(state, lordId, from, to, command.troops, now, events);
       return null;
     }
+    case 'SCOUT': {
+      const from = state.towns[command.from];
+      const to = state.towns[command.to];
+      if (from && to) launchMarch(state, lordId, from, to, 1, now, events, true);
+      return null;
+    }
     case 'SEND_GROUP': {
       const to = state.towns[command.to];
       const sources = command.from.flatMap((id) => (state.towns[id] ? [state.towns[id] as Town] : []));
@@ -210,6 +289,40 @@ export function applyCommand(
     case 'EQUIP': {
       const item = lord.items.find((owned) => owned.id === command.itemId);
       if (item) equipItem(lord, item, now, events);
+      return null;
+    }
+    case 'DESTROY_ITEM': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (!item) return null;
+      const scrap = destroyScrap(state.config, item);
+      lord.items = lord.items.filter((owned) => owned !== item);
+      lord.scrap += scrap;
+      events.push({ type: 'ITEM_DESTROYED', at: now, lordId, item: { ...item }, scrap });
+      return null;
+    }
+    case 'UPGRADE_ITEM': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (!item) return null;
+      // A test lord levels items without spending scrap (see dev.ts).
+      const cost = lord.dev ? 0 : upgradeScrapCost(state.config, item);
+      lord.scrap -= cost;
+      item.level = itemLevel(item) + 1;
+      item.scrap = (item.scrap ?? 0) + cost;
+      events.push({ type: 'ITEM_UPGRADED', at: now, lordId, item: { ...item }, cost });
+      return null;
+    }
+    case 'SOCKET_GEM': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (!item) return null;
+      item.gems = [...(item.gems ?? []), command.gemId];
+      events.push({ type: 'GEM_SOCKETED', at: now, lordId, itemId: item.id, gemId: command.gemId });
+      return null;
+    }
+    case 'UNSOCKET_GEM': {
+      const item = lord.items.find((owned) => owned.id === command.itemId);
+      if (!item) return null;
+      item.gems = (item.gems ?? []).filter((id) => id !== command.gemId);
+      events.push({ type: 'GEM_UNSOCKETED', at: now, lordId, itemId: item.id, gemId: command.gemId });
       return null;
     }
   }

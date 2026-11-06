@@ -37,11 +37,11 @@ describe('config', () => {
     ],
     [
       'a lowest league that relegates',
-      { leagues: [{ id: 'X', legacyMult: 1, promoteShare: 0, relegateShare: 0.5 }] },
+      { leagues: [{ id: 'X', legacyMult: 1, promoteShare: 0, relegateShare: 0.5, gemBonus: 0.025 }] },
     ],
     [
       'a top league that promotes',
-      { leagues: [{ id: 'X', legacyMult: 1, promoteShare: 0.5, relegateShare: 0 }] },
+      { leagues: [{ id: 'X', legacyMult: 1, promoteShare: 0.5, relegateShare: 0, gemBonus: 0.025 }] },
     ],
     ['drop odds without four weights', { gear: { dropOdds: [{ minLevel: 1, weights: [1, 1] }] } }],
     ['isle tiers that do not match the bands', { map: { isle: { tiers: [3, 2] } } }],
@@ -69,7 +69,7 @@ describe('live preset', () => {
 
   it('rejects rewards that do not end at the whole field and paid default styles', () => {
     expect(() =>
-      withOverrides(defaultConfig, { rewards: { tiers: [{ topShare: 0.5, legacy: 1 }] } }),
+      withOverrides(defaultConfig, { rewards: { tiers: [{ topShare: 0.5, legacy: 1, gems: 1 }] } }),
     ).toThrow();
     expect(() => withOverrides(defaultConfig, { cosmetics: { styles: [{ id: 'x', cost: 5 }] } })).toThrow();
   });

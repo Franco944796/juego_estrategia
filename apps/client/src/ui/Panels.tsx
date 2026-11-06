@@ -1,8 +1,18 @@
-import type { BattleReport, LordView } from '@si/engine';
+import type { BattleReport, LordView, ScoutView } from '@si/engine';
 import type { ClanRankingRow } from '@si/protocol';
 import { useEffect, useState, type ReactNode } from 'react';
-import { formatDuration, formatNumber, formatRange } from '../format';
-import { abandonGame, chooseMapMode, loadClanRanking, rememberLang, setSpeed, SPEEDS } from '../game/session';
+import { formatDecimal, formatDuration, formatNumber, formatRange } from '../format';
+import {
+  abandonGame,
+  chooseMapMode,
+  chooseQuality,
+  devTool,
+  loadClanRanking,
+  rememberLang,
+  setSpeed,
+  SPEEDS,
+} from '../game/session';
+import { QUALITY_SETTINGS } from '../map3d/quality';
 import { LANGS, t, type Lang, type MessageKey } from '../i18n';
 import { toRealMs, useGame, type Panel } from '../store';
 import { useGameNow } from './hooks';
@@ -58,7 +68,7 @@ function MarchesPanel({ view, lang }: { view: LordView; lang: Lang }) {
                     name: ownerName(lang, view, m.owner),
                     town: townLabel(lang, view, m.to),
                   })
-                : t(lang, 'outgoing', {
+                : t(lang, m.scout ? 'outgoingScout' : 'outgoing', {
                     from: m.legs > 1 ? t(lang, 'groupFrom', { n: m.legs }) : townLabel(lang, view, m.from),
                     to: townLabel(lang, view, m.to),
                   })}
@@ -85,11 +95,50 @@ function reportTitle(me: string, r: BattleReport): { key: MessageKey; tone: stri
   return r.captured ? { key: 'allyLost', tone: 'bad' } : { key: 'allyDefended', tone: 'good' };
 }
 
+function ScoutItem({ view, lang, r }: { view: LordView; lang: Lang; r: ScoutView }) {
+  const town = townLabel(lang, view, r.townId);
+  if (r.scout !== view.me.id) {
+    return (
+      <li className="report" data-testid="report-item">
+        <p className="tone-bad">
+          <strong>{t(lang, 'scoutedBy', { name: ownerName(lang, view, r.scout), town })}</strong>
+        </p>
+      </li>
+    );
+  }
+  return (
+    <li className="report" data-testid="report-item">
+      <p>
+        <strong>{t(lang, 'scoutedTown', { town })}</strong>{' '}
+        <span className="muted">{t(lang, 'against', { name: ownerName(lang, view, r.owner) })}</span>
+      </p>
+      {r.troops !== null && r.defenseMult !== null && r.walls !== null && r.defense !== null && (
+        <p className="muted" data-testid="scout-defense">
+          {t(lang, 'defenseReport', {
+            troops: formatNumber(r.troops, lang),
+            mult: formatDecimal(r.defenseMult, lang, 2),
+            walls: formatNumber(r.walls, lang),
+            total: formatNumber(Math.round(r.defense), lang),
+          })}
+        </p>
+      )}
+    </li>
+  );
+}
+
 function ReportsPanel({ view, lang }: { view: LordView; lang: Lang }) {
-  if (view.reports.length === 0) return <p className="muted">{t(lang, 'noReports')}</p>;
+  if (view.reports.length === 0 && view.scouts.length === 0) {
+    return <p className="muted">{t(lang, 'noReports')}</p>;
+  }
+  const items = [
+    ...view.reports.map((r) => ({ at: r.at, id: r.id, battle: r, scout: null })),
+    ...view.scouts.map((r) => ({ at: r.at, id: r.id, battle: null, scout: r })),
+  ].sort((a, b) => b.at - a.at || b.id - a.id);
   return (
     <ul className="list">
-      {view.reports.map((r) => {
+      {items.map(({ battle: r, scout }) => {
+        if (scout) return <ScoutItem key={`s${scout.id}`} view={view} lang={lang} r={scout} />;
+        if (!r) return null;
         const attacking = r.attacker === view.me.id;
         const asAlly = r.allies.find((a) => a.lordId === view.me.id);
         const lost = attacking ? r.attackerLost : (asAlly?.lost ?? r.defenderLost);
@@ -115,6 +164,16 @@ function ReportsPanel({ view, lang }: { view: LordView; lang: Lang }) {
                 <> · {t(lang, 'plunder', { n: formatNumber(r.plunder, lang) })}</>
               )}
             </p>
+            {attacking && r.defenseMult !== undefined && (
+              <p className="muted" data-testid="report-defense">
+                {t(lang, 'defenseReport', {
+                  troops: formatNumber(r.defenderTroops, lang),
+                  mult: formatDecimal(r.defenseMult, lang, 2),
+                  walls: formatNumber(r.walls, lang),
+                  total: formatNumber(Math.round(r.defenderPower), lang),
+                })}
+              </p>
+            )}
             {(recovered > 0 || (rewards && rewards.xp > 0)) && (
               <p className="muted">
                 {recovered > 0 && t(lang, 'recovered', { n: formatNumber(recovered, lang) })}
@@ -229,7 +288,9 @@ function MenuPanel({ lang }: { lang: Lang }) {
   const clock = useGame((s) => s.clock);
   const setLang = useGame((s) => s.setLang);
   const online = useGame((s) => s.mode === 'online');
+  const view = useGame((s) => s.view);
   const mapMode = useGame((s) => s.mapMode);
+  const quality = useGame((s) => s.quality);
   const [confirming, setConfirming] = useState(false);
   const help: MessageKey[] = ['help1', 'help2', 'help3', 'help4', 'help7', 'help8', 'help5', 'help6'];
   return (
@@ -289,6 +350,45 @@ function MenuPanel({ lang }: { lang: Lang }) {
           </button>
         ))}
       </div>
+      {mapMode === '3d' && (
+        <>
+          <h3>{t(lang, 'graphics')}</h3>
+          <div className="segmented" role="group" aria-label={t(lang, 'graphics')}>
+            {QUALITY_SETTINGS.map((q) => (
+              <button
+                key={q}
+                type="button"
+                aria-pressed={quality === q}
+                data-testid={`quality-${q}`}
+                onClick={() => chooseQuality(q)}
+              >
+                {t(lang, `quality${q}`)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {online && view?.me.dev && (
+        <>
+          <h3>{t(lang, 'devTitle')}</h3>
+          <p className="muted">{t(lang, 'devHint')}</p>
+          <div className="segmented" role="group" aria-label={t(lang, 'devTitle')}>
+            {[1, 10].map((n) => (
+              <button
+                key={n}
+                type="button"
+                data-testid={`dev-levels-${n}`}
+                onClick={() => void devTool({ type: 'LEVELS', levels: n })}
+              >
+                {n === 1 ? t(lang, 'devOneLevel') : t(lang, 'devLevels', { n })}
+              </button>
+            ))}
+            <button type="button" onClick={() => void devTool({ type: 'LEVELS', levels: 1000 })}>
+              {t(lang, 'devMaxLevel')}
+            </button>
+          </div>
+        </>
+      )}
       <h3>{t(lang, 'howToPlay')}</h3>
       <ul className="help">
         {help.map((key) => (

@@ -30,6 +30,8 @@ interface Turn {
   /** Towns this lord already has a march heading to. */
   targeted: Set<number>;
   attackable: Map<string, boolean>;
+  /** Share of each isle's public towns still neutral, by isle id. */
+  freeShare: Map<number, number>;
 }
 
 /** One bot decision round. Bots act only through applyCommand, so they obey the same rules as players. */
@@ -49,6 +51,7 @@ export function botTurn(state: GameState, lordId: string, now: number, events: D
     busy: new Set(),
     targeted: new Set(state.marches.filter((m) => m.owner === lordId).map((m) => m.to)),
     attackable: new Map(),
+    freeShare: new Map(),
   };
   learn(turn);
   defend(turn);
@@ -235,6 +238,24 @@ function attackable(turn: Turn, ownerId: string): boolean {
   return ok;
 }
 
+function freeShare(turn: Turn, isleId: number): number {
+  let share = turn.freeShare.get(isleId);
+  if (share === undefined) {
+    const open = (turn.state.isles[isleId]?.townIds ?? [])
+      .map((id) => turn.state.towns[id] as Town)
+      .filter((t) => t.privateTo === null && !t.isThrone);
+    share = open.length > 0 ? open.filter((t) => t.owner === null).length / open.length : 0;
+    turn.freeShare.set(isleId, share);
+  }
+  return share;
+}
+
+/** Personalities set how soon bots reach across the lanes: raiders at once, wardens only when home is spent. */
+function crossFactor(turn: Turn, from: Town, to: Town): number {
+  if (to.isleId === from.isleId) return 1;
+  return freeShare(turn, from.isleId) <= turn.p.crossFreeShare ? turn.p.crossWeight : 0;
+}
+
 function targetsNear(turn: Turn, from: Town): Town[] {
   const { state, lord } = turn;
   const capitalImmune = state.config.rules.capitalImmune;
@@ -256,6 +277,7 @@ function attack(turn: Turn): void {
   let slots = Math.min(p.attacksPerTurn, attackSlots(turn));
   if (slots <= 0) return;
   const options: { from: Town; to: Town; troops: number; score: number }[] = [];
+  const cfgSlack = state.config.bots.crossSlack;
 
   const sources = townsOf(state, lord.id)
     .filter((from) => !turn.busy.has(from.id))
@@ -266,13 +288,22 @@ function attack(turn: Turn): void {
   for (const { from, troops } of sources) {
     for (const to of targetsNear(turn, from)) {
       if (turn.targeted.has(to.id)) continue;
-      const value = targetValue(turn, to);
+      const value = targetValue(turn, to) * crossFactor(turn, from, to);
       if (value <= 0) continue;
       const outcome = predictAttack(turn, troops, turn.mods.attack, to, knownGarrison(turn, to));
-      if (outcome.attackerPower < outcome.defenderPower * p.attackMargin) continue;
-      const travel = travelInfo(state, lord.id, from, to, troops, now, turn.mods);
+      const needed = outcome.defenderPower * p.attackMargin;
+      if (outcome.attackerPower < needed) continue;
+      // Bigger marches fly slower: sent whole, a garrison takes a third of the season to cross.
+      const sent =
+        to.isleId === from.isleId
+          ? troops
+          : Math.min(
+              troops,
+              Math.max(p.minAttackTroops, Math.ceil((troops * needed * cfgSlack) / outcome.attackerPower)),
+            );
+      const travel = travelInfo(state, lord.id, from, to, sent, now, turn.mods);
       if (travel.sky && travel.windFactor < p.minWindFactor) continue;
-      options.push({ from, to, troops, score: value / travel.durationMs });
+      options.push({ from, to, troops: sent, score: value / travel.durationMs });
     }
   }
 

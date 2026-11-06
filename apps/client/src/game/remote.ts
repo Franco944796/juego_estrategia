@@ -1,4 +1,12 @@
-import type { Command, DomainEvent, LordView, RuleError, GroupPreview, SendPreview } from '@si/engine';
+import type {
+  Command,
+  DevAction,
+  DomainEvent,
+  LordView,
+  RuleError,
+  GroupPreview,
+  SendPreview,
+} from '@si/engine';
 import type { ChatChannel, ChatMessage, ClientMessage, ClockInfo, ServerMessage } from '@si/protocol';
 import type { GameClient } from './client';
 
@@ -122,6 +130,15 @@ export class RemoteGameClient implements GameClient {
     return new Promise((resolve) => {
       this.groupPreviews.set(id, resolve);
       this.send({ type: 'previewGroup', id, from, to });
+    });
+  }
+
+  /** Test tools; the server refuses them unless the account is listed as a test account. */
+  dev(action: DevAction): Promise<RuleError | null> {
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.results.set(id, resolve);
+      this.send({ type: 'dev', id, action });
     });
   }
 

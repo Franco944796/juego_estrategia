@@ -9,6 +9,48 @@
   --good: #7bd88f;
   --bad: #ff6b6b;
   --accent: #4cc9f0;
+  /* Framed panels, in the gold of the map's banners. */
+  --frame: rgba(214, 178, 102, 0.42);
+  --panel-grad: linear-gradient(180deg, rgba(33, 53, 90, 0.95) 0%, rgba(12, 24, 45, 0.95) 100%);
+  --panel-solid-grad: linear-gradient(180deg, #213558 0%, #0f1f3a 100%);
+  --bevel: inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+  --lift: 0 3px 10px rgba(0, 0, 0, 0.3);
+  --heading: 'Cinzel', Georgia, 'Palatino Linotype', serif;
+  --heading-color: #f3dfae;
+  /* One gem per kind of figure (see ui/Gem.tsx). */
+  --topaz: #f2b632;
+  --ruby: #e0405a;
+  --sapphire: #3f7fe8;
+  --amethyst: #a35ee8;
+  --emerald: #2fbf71;
+  /* Icons inside gems: dark reads at 4.4:1 or more on all five (white does not on topaz). */
+  --on-gem: #1a120b;
+  /* Gold brackets on the corners of panels, layered over their background. */
+  --corner-gold: rgba(232, 196, 112, 0.85);
+  --corners:
+    linear-gradient(var(--corner-gold), var(--corner-gold)) left 5px top 5px / 18px 2px no-repeat,
+    linear-gradient(var(--corner-gold), var(--corner-gold)) left 5px top 5px / 2px 18px no-repeat,
+    linear-gradient(var(--corner-gold), var(--corner-gold)) right 5px top 5px / 18px 2px no-repeat,
+    linear-gradient(var(--corner-gold), var(--corner-gold)) right 5px top 5px / 2px 18px no-repeat,
+    linear-gradient(var(--corner-gold), var(--corner-gold)) left 5px bottom 5px / 18px 2px no-repeat,
+    linear-gradient(var(--corner-gold), var(--corner-gold)) left 5px bottom 5px / 2px 18px no-repeat,
+    linear-gradient(var(--corner-gold), var(--corner-gold)) right 5px bottom 5px / 18px 2px no-repeat,
+    linear-gradient(var(--corner-gold), var(--corner-gold)) right 5px bottom 5px / 2px 18px no-repeat;
+  --page-bg: #0b1734;
+  --title-bg: radial-gradient(120% 80% at 50% 0%, #2d5d8f 0%, #13284f 55%, #0b1734 100%);
+  --button-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0.05) 100%);
+  --button-hover: rgba(255, 255, 255, 0.14);
+  --subtle: rgba(255, 255, 255, 0.08);
+  --track: rgba(255, 255, 255, 0.15);
+  --tint-gold: rgba(255, 209, 102, 0.08);
+  --section: #cdb88a;
+  --icon-ruby: #ff8095;
+  --icon-sapphire: #82b0ff;
+  --icon-emerald: #6fe0a2;
+  --rail-bg: radial-gradient(circle at 50% 30%, #2a4372 0%, #13264a 70%, #0d1b35 100%);
+  --rail-bg-hover: radial-gradient(circle at 50% 30%, #35548a 0%, #1a3260 70%, #11234a 100%);
+  --rail-ring: rgba(8, 16, 32, 0.85);
+  --title-shadow: 0 2px 0 rgba(60, 40, 10, 0.6), 0 6px 24px rgba(0, 0, 0, 0.5);
   --radius: 14px;
   /* Five rail buttons must end above a full-height drawer on a 844 px phone (its close button). */
   --rail-w: 44px;
@@ -17,14 +59,68 @@
   --safe-top: env(safe-area-inset-top, 0px);
   color-scheme: dark;
   font-family:
+    'Nunito',
     system-ui,
     -apple-system,
     'Segoe UI',
     Roboto,
     sans-serif;
   color: var(--text);
-  background: #0b1734;
+  background: var(--page-bg);
   -webkit-text-size-adjust: 100%;
+}
+
+/* «Pergamino» by day; the night look above is the default (see theme.ts for the hours). */
+:root[data-theme='pergamino'] {
+  color-scheme: light;
+  --ink: #2b1f14;
+  --panel: rgba(244, 234, 213, 0.95);
+  --panel-solid: #f4ead5;
+  --line: rgba(74, 48, 25, 0.22);
+  --text: #2b1f14;
+  --muted: #6b5641;
+  --gold: #7a5410;
+  --good: #256a30;
+  --bad: #b3261e;
+  --accent: #2c64b0;
+  --frame: rgba(110, 74, 43, 0.6);
+  --panel-grad: linear-gradient(180deg, rgba(247, 239, 222, 0.97) 0%, rgba(233, 220, 191, 0.97) 100%);
+  --panel-solid-grad: linear-gradient(180deg, #f7efde 0%, #e9dcbf 100%);
+  --bevel: inset 0 1px 0 rgba(255, 250, 240, 0.7), inset 0 -1px 0 rgba(74, 48, 25, 0.18);
+  --lift: 0 3px 10px rgba(43, 31, 20, 0.25);
+  --heading-color: #6e4a2b;
+  --corner-gold: rgba(192, 138, 34, 0.9);
+  --page-bg: #e9dcbf;
+  --title-bg: radial-gradient(120% 80% at 50% 0%, #a9d0f0 0%, #e7e2d4 55%, #f4ead5 100%);
+  --button-bg: linear-gradient(180deg, rgba(255, 250, 240, 0.85) 0%, rgba(220, 202, 163, 0.6) 100%);
+  --button-hover: rgba(255, 250, 240, 0.95);
+  --subtle: rgba(110, 74, 43, 0.1);
+  --track: rgba(74, 48, 25, 0.18);
+  --tint-gold: rgba(192, 138, 34, 0.12);
+  --section: #76572e;
+  --icon-ruby: #c0304a;
+  --icon-sapphire: #2c64b0;
+  --icon-emerald: #1f8a50;
+  --rail-bg: radial-gradient(circle at 50% 30%, #fffaf0 0%, #ecdfc2 70%, #dccaa3 100%);
+  --rail-bg-hover: radial-gradient(circle at 50% 30%, #ffffff 0%, #f2e7cf 70%, #e3d3b0 100%);
+  --rail-ring: rgba(110, 74, 43, 0.55);
+  --title-shadow: 0 2px 0 rgba(255, 250, 240, 0.8);
+}
+
+:root[data-theme='pergamino'] .rarity-COMMON {
+  --rarity: #5d6068;
+}
+
+:root[data-theme='pergamino'] .rarity-RARE {
+  --rarity: #1a5f91;
+}
+
+:root[data-theme='pergamino'] .rarity-EPIC {
+  --rarity: #6a3bb5;
+}
+
+:root[data-theme='pergamino'] .rarity-LEGENDARY {
+  --rarity: #7d5509;
 }
 
 * {
@@ -37,7 +133,7 @@ body,
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #0b1734;
+  background: var(--page-bg);
 }
 
 button,
@@ -49,7 +145,8 @@ select {
 button {
   cursor: pointer;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--button-bg);
+  box-shadow: var(--bevel);
   border-radius: 10px;
   padding: 10px 14px;
   min-height: 44px;
@@ -57,7 +154,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--button-hover);
 }
 
 button:disabled {
@@ -73,20 +170,27 @@ input:focus-visible {
 }
 
 button.primary {
-  background: var(--gold);
+  background: linear-gradient(180deg, #ffe39a 0%, #f5bf55 55%, #e4a53c 100%);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
   color: var(--ink);
-  border-color: transparent;
+  border-color: #a8772b;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 2px 0 #7d5418;
   font-weight: 700;
 }
 
 button.primary:hover:not(:disabled) {
-  background: #ffdc8a;
+  background: linear-gradient(180deg, #ffecb5 0%, #ffcb6b 55%, #eeb04a 100%);
 }
 
 button.danger {
-  background: var(--bad);
+  background: linear-gradient(180deg, #ff8f8f 0%, #f05a5a 100%);
   color: var(--ink);
-  border-color: transparent;
+  border-color: #a83a3a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 2px 0 #7a2424;
   font-weight: 700;
 }
 
@@ -186,8 +290,9 @@ button[aria-pressed='true'] {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--panel-grad);
+  border: 1px solid var(--frame);
+  box-shadow: var(--bevel), var(--lift);
   border-radius: 12px;
   padding: 5px 9px;
   min-width: 0;
@@ -210,7 +315,7 @@ button[aria-pressed='true'] {
 }
 
 .meter-fill.level {
-  background: var(--good);
+  background: linear-gradient(90deg, #1f9a58, var(--emerald));
 }
 
 .stat-icon.points {
@@ -242,7 +347,7 @@ button[aria-pressed='true'] {
   height: 5px;
   margin-top: 3px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--track);
   overflow: hidden;
 }
 
@@ -258,6 +363,78 @@ button[aria-pressed='true'] {
   gap: 8px;
   font-size: 14px;
   margin: 0 0 10px;
+}
+
+.gear-row {
+  flex-wrap: wrap;
+}
+
+.gem-sockets {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A set gem is its own button: tapping it takes the gem out. */
+.gem-socket {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.gem-level {
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.gem-empty {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px dashed var(--frame);
+  background: var(--subtle);
+}
+
+.gem-sockets select {
+  min-height: 36px;
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-solid);
+  color: var(--text);
+  padding: 4px 8px;
+}
+
+.gear-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.skill:has(.skill-confirm) {
+  flex-wrap: wrap;
+}
+
+.skill-confirm {
+  flex-basis: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--frame);
+  border-radius: 10px;
+  background: var(--tint-gold);
+}
+
+.skill-confirm p {
+  margin: 0 0 8px;
+  font-size: 14px;
 }
 
 .skill {
@@ -291,8 +468,9 @@ button[aria-pressed='true'] {
 }
 
 .chip {
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--panel-grad);
+  border: 1px solid var(--frame);
+  box-shadow: var(--bevel), var(--lift);
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
@@ -307,8 +485,9 @@ button[aria-pressed='true'] {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--panel-grad);
+  border: 1px solid var(--frame);
+  box-shadow: var(--bevel), var(--lift);
   border-radius: 14px;
   padding: 6px 4px;
   font-size: 12px;
@@ -350,11 +529,13 @@ button[aria-pressed='true'] {
 
 .bubble {
   max-width: min(440px, 100%);
-  background: var(--panel-solid);
+  background: var(--panel-solid-grad);
   border: 1px solid var(--gold);
   border-radius: var(--radius);
   padding: 10px 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow:
+    var(--bevel),
+    0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 .bubble p {
@@ -380,12 +561,15 @@ button[aria-pressed='true'] {
 .toast {
   pointer-events: auto;
   min-height: 0;
-  background: var(--panel-solid);
+  background: var(--panel-solid-grad);
+  border: 1px solid var(--frame);
   border-radius: 999px;
   padding: 7px 14px;
   font-size: 14px;
   text-align: center;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    var(--bevel),
+    0 6px 18px rgba(0, 0, 0, 0.3);
 }
 
 .pick-banner {
@@ -399,7 +583,8 @@ button[aria-pressed='true'] {
   align-items: center;
   gap: 10px;
   max-width: calc(100% - 16px);
-  background: var(--panel-solid);
+  background: var(--panel-solid-grad);
+  box-shadow: var(--bevel), var(--lift);
   border: 1px solid var(--gold);
   border-radius: 999px;
   padding: 6px 6px 6px 16px;
@@ -414,12 +599,14 @@ button[aria-pressed='true'] {
   max-height: 54dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: var(--panel);
+  background: var(--corners), var(--panel-grad);
   backdrop-filter: blur(6px);
-  border: 1px solid var(--line);
+  border: 1px solid var(--frame);
   border-radius: var(--radius);
   padding: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    var(--bevel),
+    0 10px 30px rgba(0, 0, 0, 0.45);
   user-select: text;
   -webkit-user-select: text;
 }
@@ -429,6 +616,8 @@ button[aria-pressed='true'] {
   align-items: flex-start;
   gap: 10px;
   margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--frame);
 }
 
 .drawer-title {
@@ -440,6 +629,8 @@ button[aria-pressed='true'] {
   margin: 0;
   font-size: 18px;
   overflow-wrap: anywhere;
+  font-family: var(--heading);
+  color: var(--heading-color);
 }
 
 .drawer-title p {
@@ -448,9 +639,11 @@ button[aria-pressed='true'] {
 }
 
 .drawer h3 {
-  font-size: 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   margin: 14px 0 6px;
-  color: var(--muted);
+  color: var(--section);
   font-weight: 600;
 }
 
@@ -483,6 +676,7 @@ button[aria-pressed='true'] {
   flex-direction: column;
   gap: 6px;
   font-size: 14px;
+  padding: 4px 0;
 }
 
 .fact {
@@ -495,7 +689,100 @@ button[aria-pressed='true'] {
 .fact-label {
   color: var(--muted);
   font-size: 13px;
-  min-width: 88px;
+  min-width: 80px;
+}
+
+.facts-title {
+  margin: 6px 0 0;
+  font-family: var(--heading);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--section);
+}
+
+.facts-title:first-child {
+  margin-top: 0;
+}
+
+.gem {
+  --g: var(--topaz);
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  color: var(--on-gem);
+  /* An octagon cut, lit from the top left like a faceted stone. */
+  clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--g) 40%, white) 0%,
+    var(--g) 42%,
+    color-mix(in srgb, var(--g) 50%, black) 100%
+  );
+}
+
+.gem::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.5) 0 18%, transparent 19%),
+    linear-gradient(330deg, rgba(0, 0, 0, 0.25) 0 22%, transparent 23%);
+}
+
+.gem svg {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.35));
+}
+
+.gem-sm {
+  width: 22px;
+  height: 22px;
+}
+
+.gem-topaz {
+  --g: var(--topaz);
+}
+
+.gem-ruby {
+  --g: var(--ruby);
+}
+
+.gem-sapphire {
+  --g: var(--sapphire);
+}
+
+.gem-amethyst {
+  --g: var(--amethyst);
+}
+
+.gem-emerald {
+  --g: var(--emerald);
+}
+
+.rail-button[data-gem='ruby'] svg {
+  color: var(--icon-ruby);
+}
+
+.rail-button[data-gem='sapphire'] svg {
+  color: var(--icon-sapphire);
+}
+
+.rail-button[data-gem='topaz'] svg {
+  color: var(--topaz);
+}
+
+.rail-button[data-gem='emerald'] svg {
+  color: var(--icon-emerald);
+}
+
+.rail-button[data-gem='gold'] svg {
+  color: var(--heading-color);
 }
 
 .troop {
@@ -655,19 +942,26 @@ button[aria-pressed='true'] {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--panel-solid);
-  border: 1px solid var(--line);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  background: var(--rail-bg);
+  border: 1px solid var(--frame);
+  box-shadow:
+    var(--bevel),
+    0 0 0 2px var(--rail-ring),
+    0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .rail-button.active {
   color: var(--gold);
   border-color: var(--gold);
+  box-shadow:
+    var(--bevel),
+    0 0 0 2px var(--rail-ring),
+    0 0 12px rgba(255, 209, 102, 0.45);
 }
 
 /* Solid on hover too: the generic translucent hover would let the map show through. */
 .rail-button:hover:not(:disabled) {
-  background: #1b3159;
+  background: var(--rail-bg-hover);
 }
 
 .rail-button .badge {
@@ -695,7 +989,7 @@ button[aria-pressed='true'] {
   flex-shrink: 0;
   border-radius: 50%;
   border: 2px solid;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--subtle);
 }
 
 .inline-badge {
@@ -751,7 +1045,7 @@ button[aria-pressed='true'] {
 }
 
 .gear-slot.selected {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--subtle);
 }
 
 .gear-slot-name {
@@ -846,7 +1140,10 @@ button[aria-pressed='true'] {
   width: min(440px, 100%);
   max-height: 100%;
   overflow-y: auto;
-  background: var(--panel-solid);
+  background: var(--corners), var(--panel-solid-grad);
+  box-shadow:
+    var(--bevel),
+    0 12px 40px rgba(0, 0, 0, 0.5);
   border: 1px solid var(--gold);
   border-radius: var(--radius);
   padding: 18px;
@@ -857,6 +1154,8 @@ button[aria-pressed='true'] {
 
 .modal-card h2 {
   margin: 0;
+  font-family: var(--heading);
+  color: var(--heading-color);
 }
 
 .modal-card p {
@@ -908,7 +1207,7 @@ button[aria-pressed='true'] {
   place-items: center;
   padding: 24px 16px;
   overflow-y: auto;
-  background: radial-gradient(120% 80% at 50% 0%, #2d5d8f 0%, #13284f 55%, #0b1734 100%);
+  background: var(--title-bg);
 }
 
 .title-card {
@@ -929,6 +1228,9 @@ button[aria-pressed='true'] {
   margin: 0;
   font-size: clamp(32px, 9vw, 48px);
   letter-spacing: 0.02em;
+  font-family: var(--heading);
+  color: var(--heading-color);
+  text-shadow: var(--title-shadow);
 }
 
 .tagline {
@@ -942,8 +1244,9 @@ button[aria-pressed='true'] {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--panel-grad);
+  border: 1px solid var(--frame);
+  box-shadow: var(--bevel), var(--lift);
   border-radius: 12px;
   padding: 8px 12px;
 }
@@ -968,8 +1271,9 @@ button[aria-pressed='true'] {
   flex-direction: column;
   gap: 10px;
   text-align: left;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--panel-grad);
+  border: 1px solid var(--frame);
+  box-shadow: var(--bevel), var(--lift);
   border-radius: var(--radius);
   padding: 14px;
 }
@@ -977,6 +1281,8 @@ button[aria-pressed='true'] {
 .card-block h2 {
   margin: 0;
   font-size: 18px;
+  font-family: var(--heading);
+  color: var(--heading-color);
 }
 
 .card-block p {

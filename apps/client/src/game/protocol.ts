@@ -2,9 +2,10 @@ import { defaultConfig } from '@si/config';
 import type {
   Command,
   DomainEvent,
-  GroupPreview,
   GameState,
   GearSlot,
+  Gem,
+  GroupPreview,
   Item,
   LordView,
   RuleError,
@@ -30,6 +31,9 @@ export interface NewGameOptions {
 export interface Armory {
   items: Item[];
   gear: Partial<Record<GearSlot, string>>;
+  /** Missing in armories saved before scrap existed. */
+  scrap?: number;
+  gems?: Gem[];
 }
 
 export interface Save {

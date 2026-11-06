@@ -27,6 +27,10 @@ export const GEAR_EFFECTS: Readonly<
 export const RARITIES = ['COMMON', 'RARE', 'EPIC', 'LEGENDARY'] as const;
 export type Rarity = (typeof RARITIES)[number];
 
+/** Gem colors and what each adds to (see `gems` in the config): the interface's one gem per figure. */
+export const GEM_COLORS = ['TOPAZ', 'RUBY', 'SAPPHIRE', 'AMETHYST', 'EMERALD'] as const;
+export type GemColor = (typeof GEM_COLORS)[number];
+
 export const PERSONALITIES = ['RAIDER', 'BUILDER', 'WARDEN', 'CLIMBER'] as const;
 export type Personality = (typeof PERSONALITIES)[number];
 

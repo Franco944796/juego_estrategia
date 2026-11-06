@@ -34,6 +34,8 @@ export interface SeasonMetrics {
   medianLevel: number;
   /** Isles at the end: a new one is born when the newest is full or fully conquered. */
   islesAtEnd: number;
+  /** Lords who captured a town on an isle other than their capital's. */
+  crossLordShare: number;
   runtimeMs: number;
 }
 
@@ -86,6 +88,10 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
   const skyMinutes: number[] = [];
   const firstCapture = new Map<string, number>();
   const firstBeacon = new Map<string, number>();
+  const crossed = new Set<string>();
+  const homeIsle = new Map(
+    state.lordOrder.map((id) => [id, state.towns[state.lords[id]?.capitalId ?? -1]?.isleId]),
+  );
 
   for (const e of events) {
     switch (e.type) {
@@ -106,6 +112,7 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
         captures++;
         if (e.from !== null) pvpCaptures++;
         if (!firstCapture.has(e.to)) firstCapture.set(e.to, minutes(e.at));
+        if (state.towns[e.townId]?.isleId !== homeIsle.get(e.to)) crossed.add(e.to);
         break;
       case 'MARCH_LAUNCHED': {
         const duration = (e.march.arriveAt - e.march.departAt) / MINUTE_MS;
@@ -166,6 +173,7 @@ export function simulateSeason(config: GameConfig, seed: number, bots: number): 
     winnerShare: total > 0 ? (standings[0]?.dominion ?? 0) / total : 0,
     medianLevel: median(state.lordOrder.map((id) => state.lords[id]?.level ?? 1)),
     islesAtEnd: state.isles.length,
+    crossLordShare: crossed.size / bots,
     runtimeMs: performance.now() - started,
   };
 }
@@ -258,6 +266,7 @@ export function renderReport(runs: SeasonMetrics[], header: string, targets: Tar
     ['Lord level at season end (median)', 'medianLevel', 1],
     ['Lost troops recovered in a capital', 'recoveredShare', 2],
     ['Isles at season end', 'islesAtEnd', 1],
+    ['Lords who took a town on another isle', 'crossLordShare', 2],
     ['Exiles per season', 'exiles', 1],
     ['Eliminations per season', 'eliminations', 1],
     ['Runtime per season (ms)', 'runtimeMs', 0],

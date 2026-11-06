@@ -1,5 +1,7 @@
 import type { LordView, TownView } from '@si/engine';
+import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { DEV_ACCOUNTS } from '../playwright.config';
 
 async function gameView(page: Page): Promise<LordView> {
   await page.waitForFunction(() => Boolean(window.__shatteredIsles?.view()));
@@ -90,4 +92,43 @@ test('two players share the online world, fight neutrals and keep their session'
   const again = await gameView(ana);
   expect(again.me.capitalId).toBe(capitalId);
   expect(again.towns.find((t) => t.id === target.id)?.owner).toBe(again.me.id);
+});
+
+test('a test account upgrades for free and gets the test tools', async ({ browser }) => {
+  const page = await (
+    await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, locale: 'es-AR' })
+  ).newPage();
+  const suffix = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+  const view = await enter(page, `Dev${suffix}`);
+  const token = await page.evaluate(() => localStorage.getItem('shattered-isles:token'));
+  if (!token) throw new Error('no token');
+  writeFileSync(DEV_ACCOUNTS, `# e2e\n${token}\n`);
+  await page.reload();
+  await page.getByTestId('enter-world').click();
+  await page.waitForFunction(() => window.__shatteredIsles?.view()?.me.dev === true);
+  await expect(page.getByTestId('hud-gold')).toContainText('∞');
+
+  await page.getByTestId('nav-menu').click();
+  await page.getByTestId('dev-levels-10').click();
+  await page.waitForFunction(() => (window.__shatteredIsles?.view()?.me.level ?? 0) >= 11);
+  await page.screenshot({ path: test.info().outputPath('dev-menu.png') });
+  await page.getByTestId('nav-menu').click();
+
+  const capital = view.me.capitalId ?? -1;
+  await page.evaluate((id) => window.__shatteredIsles?.centerOn(id), capital);
+  await tapTown(page, capital);
+  await page.getByTestId('dev-troops-1000000').click();
+  await page.waitForFunction(
+    (id) => (window.__shatteredIsles?.view()?.towns.find((t) => t.id === id)?.garrison ?? 0) >= 1_000_000,
+    capital,
+  );
+  await page.getByTestId('upgrade-max').click();
+  await page.waitForFunction(
+    (id) => window.__shatteredIsles?.view()?.towns.find((t) => t.id === id)?.tier === 100,
+    capital,
+  );
+  await page.screenshot({ path: test.info().outputPath('dev-town.png') });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+  ).toBeLessThanOrEqual(0);
 });

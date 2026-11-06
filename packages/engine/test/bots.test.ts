@@ -127,6 +127,45 @@ describe('bot decisions', () => {
     expect(launched).toBeDefined();
   });
 
+  function withPersonality(personality: LordInit['personality']): GameState {
+    const bot: LordInit = { ...(bots(1)[0] as LordInit), personality };
+    // Flat wind, so the seed's weather does not decide whether they fly.
+    return game({
+      lords: [...humans(1), bot],
+      config: { ...NO_PRODUCTION, wind: { tailwindMax: 1, headwindMin: 1 } },
+    });
+  }
+
+  it('reaches across the lanes once home is spent, sending only what the siege needs', () => {
+    const state = withPersonality('RAIDER');
+    const capital = capitalOf(state, 'b1');
+    growTo(state, 2);
+    for (const t of state.towns) {
+      if (t.isleId === capital.isleId && t.owner === null && t.privateTo !== 'h1') give(state, t, 'b1', 0);
+    }
+    capital.garrison = 50_000;
+    const events: DomainEvent[] = [];
+    botTurn(state, 'b1', T0, events);
+    const across = events.find(
+      (e) => e.type === 'MARCH_LAUNCHED' && state.towns[e.march.to]?.isleId !== capital.isleId,
+    );
+    if (!across || across.type !== 'MARCH_LAUNCHED') throw new Error('no march across the lanes');
+    expect(across.march.from).toBe(capital.id);
+    expect(across.march.troops).toBeLessThan(50_000 * (1 - state.config.bots.personalities.RAIDER.keepHome));
+  });
+
+  it('keeps a builder on its own isle while it still has free towns', () => {
+    const state = withPersonality('BUILDER');
+    const capital = capitalOf(state, 'b1');
+    growTo(state, 2);
+    capital.garrison = 50_000;
+    const events: DomainEvent[] = [];
+    botTurn(state, 'b1', T0, events);
+    const targets = events.flatMap((e) => (e.type === 'MARCH_LAUNCHED' ? [state.towns[e.march.to]] : []));
+    expect(targets.length).toBeGreaterThan(0);
+    for (const t of targets) expect(t?.isleId).toBe(capital.isleId);
+  });
+
   it('pushes the stock of an inner town toward the frontier', () => {
     const state = duel();
     for (const t of state.towns) if (t.owner === null) t.garrison = 10_000;
@@ -143,9 +182,11 @@ describe('bot decisions', () => {
   });
 
   it('judges unseen garrisons by their ceiling, not their real size', () => {
+    // A raider: it looks across the lanes even while its own isle has free towns.
+    const raider: LordInit = { ...warden, personality: 'RAIDER' };
     const fog = (hops: number): DomainEvent[] => {
       const state = game({
-        lords: [...humans(1), warden],
+        lords: [...humans(1), raider],
         config: {
           ...NO_PRODUCTION,
           vision: { hops },

@@ -21,6 +21,7 @@ export function computeRewards(
       rank: s.rank,
       tier,
       legacy: Math.round((tiers[tier]?.legacy ?? 0) * legacyMult),
+      gems: tiers[tier]?.gems ?? 0,
     };
   });
 }

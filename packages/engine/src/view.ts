@@ -20,6 +20,7 @@ import type {
   GameState,
   GearSlot,
   Isle,
+  Gem,
   Item,
   Lane,
   LordStats,
@@ -81,6 +82,20 @@ export interface MarchView {
   allied: boolean;
   /** Shared by the marches of one synchronized group. */
   groupId: number | null;
+  /** A lone scout: it does not attack, so it is never `incoming`. */
+  scout: boolean;
+}
+
+export interface ScoutView {
+  id: number;
+  at: number;
+  townId: number;
+  scout: string;
+  owner: string | null;
+  troops: number | null;
+  walls: number | null;
+  defenseMult: number | null;
+  defense: number | null;
 }
 
 export interface WindView {
@@ -93,6 +108,8 @@ export interface MeView {
   id: string;
   name: string;
   color: string;
+  /** A test account: unlimited gold for upgrades and the test tools (see dev.ts). */
+  dev: boolean;
   gold: number;
   goldPerMin: number;
   dominion: number;
@@ -108,6 +125,26 @@ export interface MeView {
   /** Bonus of an item by rarity (0.03 = +3 %); the chest uses `refundBonus`. */
   gearBonus: Record<Item['rarity'], number>;
   refundBonus: Record<Item['rarity'], number>;
+  /** Scrap to spend on item levels. */
+  scrap: number;
+  /** Every gem the lord owns; items list the ones set in them. */
+  gems: Gem[];
+  /** How gems work; see `gems` and `leagues` in the config. */
+  gemRules: {
+    sockets: Record<Item['rarity'], number>;
+    /** Base value of a gem by the league it was won in. */
+    leagueBonus: number[];
+    levelShare: number;
+    maxLevel: number;
+  };
+  /** How items level up; see `gear` in the config. */
+  itemRules: {
+    levelBonus: Record<Item['rarity'], number>;
+    maxLevel: number;
+    copiesPerLevel: number;
+    scrapByRarity: Record<Item['rarity'], number>;
+    upgradeScrap: number;
+  };
   /** Troops plus walls; see `power` in the config for what it changes. */
   power: number;
   /** Power ratios (theirs over yours) that set the experience of an attack; see config `power`. */
@@ -160,6 +197,8 @@ export interface LordView {
   wind: WindView;
   season: SeasonView;
   reports: BattleReport[];
+  /** Newest first; the details are only for the lord who scouted (null for the scouted owner). */
+  scouts: ScoutView[];
   standings: Standing[];
 }
 
@@ -187,7 +226,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
         goldPerMin: rates.gold,
         troopsPerMin: rates.troops,
         upgradeCost: upgradeCost(state, town),
-        upgradeMax: upgradePlan(cfg, town.tier, gold, cfg.towns.maxTier),
+        upgradeMax: upgradePlan(cfg, town.tier, lord.dev ? Infinity : gold, cfg.towns.maxTier),
       };
     }
     const seen: TownView = {
@@ -223,7 +262,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       const mine = m.owner === lordId;
       const allied = areAllies(state, lordId, m.owner);
       const toMe = state.towns[m.to]?.owner === lordId;
-      const incoming = !mine && !allied && toMe;
+      const incoming = !mine && !allied && toMe && !m.scout;
       return {
         id: m.id,
         owner: m.owner,
@@ -242,6 +281,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
         incoming,
         allied,
         groupId: m.groupId,
+        scout: m.scout === true,
       };
     });
 
@@ -261,6 +301,7 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       id: lord.id,
       name: lord.name,
       color: lord.color,
+      dev: lord.dev === true,
       gold,
       goldPerMin: goldRate(state, lordId),
       dominion: projectedDominion(state, lordId, t),
@@ -269,10 +310,25 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       skillPoints: unspentPoints(lord),
       skillPerPoint: { ...cfg.skills.perPoint },
       recovery: { attacker: cfg.league.attackerRecovery, defender: cfg.league.defenderRecovery },
-      items: lord.items.map((item) => ({ ...item })),
+      items: lord.items.map((item) => ({ ...item, ...(item.gems ? { gems: [...item.gems] } : {}) })),
       gear: { ...lord.gear },
       gearBonus: { ...cfg.gear.rarityBonus },
       refundBonus: { ...cfg.gear.refundByRarity },
+      scrap: lord.scrap,
+      gems: lord.gems.map((gem) => ({ ...gem })),
+      gemRules: {
+        sockets: { ...cfg.gear.sockets },
+        leagueBonus: cfg.leagues.map((l) => l.gemBonus),
+        levelShare: cfg.gems.levelShare,
+        maxLevel: cfg.gems.maxLevel,
+      },
+      itemRules: {
+        levelBonus: { ...cfg.gear.levelBonus },
+        maxLevel: cfg.gear.maxItemLevel,
+        copiesPerLevel: cfg.gear.copiesPerLevel,
+        scrapByRarity: { ...cfg.gear.scrapByRarity },
+        upgradeScrap: cfg.gear.upgradeScrap,
+      },
       power: lordPower(state, lordId, t),
       powerRules: { ...cfg.power },
       capitalId: lord.capitalId,
@@ -332,6 +388,23 @@ export function view(state: GameState, lordId: string, now: number): LordView {
       .filter(
         (r) => r.attacker === lordId || r.defender === lordId || r.allies.some((a) => a.lordId === lordId),
       )
+      .reverse(),
+    scouts: state.scouts
+      .filter((r) => r.scout === lordId || r.owner === lordId)
+      .map((r) => {
+        const mine = r.scout === lordId;
+        return {
+          id: r.id,
+          at: r.at,
+          townId: r.townId,
+          scout: r.scout,
+          owner: r.owner,
+          troops: mine ? r.troops : null,
+          walls: mine ? r.walls : null,
+          defenseMult: mine ? r.defenseMult : null,
+          defense: mine ? r.defense : null,
+        };
+      })
       .reverse(),
     standings: computeStandings(state, t),
   };

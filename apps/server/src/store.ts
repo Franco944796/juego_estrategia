@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { GearSlot, Item } from '@si/engine';
+import type { Gem, GearSlot, Item } from '@si/engine';
 import type { ChatMessage, ClanMedal, ClanMember, ClanRole, ClanSummary, Medal } from '@si/protocol';
 
 export interface Account {
@@ -17,6 +17,10 @@ export interface Account {
   gear: Partial<Record<GearSlot, string>>;
   /** Index into `leagues`; it picks the world the account plays in. */
   league: number;
+  /** From destroyed items; kept across seasons like the items. */
+  scrap: number;
+  /** Gems won at season ends; items list the ones set in them. */
+  gems: Gem[];
   createdAt: number;
 }
 
@@ -31,7 +35,7 @@ export interface FinishedSeason extends SeasonRow {
   results: unknown;
 }
 
-export type LogKind = 'join' | 'command' | 'style' | 'clan' | 'item';
+export type LogKind = 'join' | 'command' | 'style' | 'clan' | 'item' | 'dev';
 
 export interface LogEntry {
   seq: number;
@@ -52,6 +56,8 @@ interface AccountRecord {
   items: string;
   gear: string;
   league: number;
+  scrap: number;
+  gems: string;
   created_at: number;
 }
 
@@ -68,6 +74,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   items TEXT NOT NULL DEFAULT '[]',
   gear TEXT NOT NULL DEFAULT '{}',
   league INTEGER NOT NULL DEFAULT 0,
+  scrap INTEGER NOT NULL DEFAULT 0,
+  gems TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS seasons (
@@ -136,6 +144,8 @@ function toAccount(r: AccountRecord): Account {
     items: JSON.parse(r.items) as Item[],
     gear: JSON.parse(r.gear) as Partial<Record<GearSlot, string>>,
     league: r.league,
+    scrap: r.scrap,
+    gems: JSON.parse(r.gems) as Gem[],
     createdAt: r.created_at,
   };
 }
@@ -154,6 +164,8 @@ export class Store {
     if (!has('items')) this.db.exec("ALTER TABLE accounts ADD COLUMN items TEXT NOT NULL DEFAULT '[]'");
     if (!has('gear')) this.db.exec("ALTER TABLE accounts ADD COLUMN gear TEXT NOT NULL DEFAULT '{}'");
     if (!has('league')) this.db.exec('ALTER TABLE accounts ADD COLUMN league INTEGER NOT NULL DEFAULT 0');
+    if (!has('scrap')) this.db.exec('ALTER TABLE accounts ADD COLUMN scrap INTEGER NOT NULL DEFAULT 0');
+    if (!has('gems')) this.db.exec("ALTER TABLE accounts ADD COLUMN gems TEXT NOT NULL DEFAULT '[]'");
     // Seasons from before leagues all belonged to the one world, which is now the lowest league.
     const seasonColumns = this.db.prepare('PRAGMA table_info(seasons)').all() as { name: string }[];
     if (!seasonColumns.some((c) => c.name === 'league')) {
@@ -200,7 +212,7 @@ export class Store {
   saveAccount(a: Account): void {
     this.db
       .prepare(
-        'UPDATE accounts SET name = ?, legacy = ?, legacy_total = ?, styles = ?, style = ?, medals = ?, items = ?, gear = ?, league = ? WHERE id = ?',
+        'UPDATE accounts SET name = ?, legacy = ?, legacy_total = ?, styles = ?, style = ?, medals = ?, items = ?, gear = ?, league = ?, scrap = ?, gems = ? WHERE id = ?',
       )
       .run(
         a.name,
@@ -212,6 +224,8 @@ export class Store {
         JSON.stringify(a.items),
         JSON.stringify(a.gear),
         a.league,
+        a.scrap,
+        JSON.stringify(a.gems),
         a.id,
       );
   }

@@ -61,6 +61,243 @@
 
 - Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
 
+## Hecho: islas nuevas, bots que cruzan y puentes de luz (2026-11-06; sin commitear)
+
+Decisiones de Franco: cruce según personalidad; crecimiento de islas en línea y un jugador; rutas 3D
+como puente de luz rúnico; verificar con simulador + prueba.
+
+- Config: `map.growth.enabled: true`; por personalidad `crossFreeShare` (mira otras islas cuando la
+  parte de neutrales públicos libres de su isla es ≤ esto) y `crossWeight` (peso de esos objetivos):
+  Saqueador 1/×20, Escalador 0,2/×1, Constructor 0/×1, Guardián 0/×0,01; `bots.crossSlack` 1,5 (al
+  cruzar manda lo que pide el asedio ×1,5, no toda la guarnición: las marchas grandes vuelan lento).
+- Motor: `bots.ts` (`freeShare`, `crossFactor`, tropas justas al cruzar). Pruebas nuevas en
+  `bots.test.ts` (cruza con tropas justas; el Constructor no cruza con libres en casa); la de niebla
+  usa un Saqueador; `join.test.ts` apaga el crecimiento a mano en la prueba de mundo lleno.
+- Simulador: métrica «Lords who took a town on another isle». Un jugador (6 semillas): Saqueadores
+  12/12 desde el 15 % de la temporada, Constructores 10/12 desde el 33 %, Guardianes 6/12 después del
+  74 %; 0,74 de los señores cruzan, 2,8 islas, tensión 0,18 (era 0,20). En línea: 8 islas, todos
+  cruzan en el primer 4 %, 66 ciudades por señor a mitad de temporada (ver etapa de equilibrio).
+- Cliente 3D: `map3d/bridges.ts` (cinta en arco entre costas, runas que corren, celeste de las
+  piedras rúnicas en reposo; al enviar, las de la isla de origen toman el color del viento) y etiqueta
+  «×factor» en la cima (`overlay3d.ts`, `World3D.bridgeTop`). La niebla se aleja con la cámara
+  (`fitFog`): antes, al alejarse para ver varias islas, desaparecían.
+- Verificado: lint, tipos, 241 tests, simulador, revisión visual en escritorio (envío y vista lejana).
+
+## Hecho: gemas del equipo (2026-11-06; sin commitear)
+
+Decisiones de Franco:
+- Engarces por rareza: común 0, raro 1, épico 4, legendario 9.
+- Cada gema suma según su color: topacio +% oro, rubí +% tropas, zafiro +% defensa, amatista +%
+  Dominio, esmeralda +% experiencia.
+- La calidad depende de la liga donde se ganó: Bronce 2,5 %, Plata 5 %, Oro 10 % (y así, el doble
+  por liga).
+- Suben de nivel con copias como el equipo (misma gema = mismo color y liga; 2 × nivel copias),
+  hasta nivel 10; cada nivel suma la mitad de su valor base.
+- Premio al cerrar la temporada, según el puesto: 5 % superior 5 gemas, hasta 25 % 3, hasta 50 % 2,
+  resto 1; color al azar, calidad de la liga. Se sacan y ponen libremente; destruir un objeto
+  devuelve sus gemas a la bolsa.
+
+Mías (avisadas): las gemas suman solo en piezas puestas; amatista multiplica el Dominio por minuto
+y esmeralda la experiencia de las batallas (modificadores nuevos `dominion` y `xp`); en el modo un
+jugador el premio se calcula al terminar la temporada (`SEASON_ENDED`), se guarda en
+`shattered-isles:gem-rewards` y se suma a la bolsa al empezar la siguiente; en línea lo reparte el
+servidor al cerrar (color con `random`, id `temporada-liga-cuenta-n`); una gema en nivel 10 no
+toma más copias (queda aparte).
+
+Hecho: config `gear.sockets`, `gems.maxLevel/levelShare`, `leagues[].gemBonus`,
+`rewards.tiers[].gems`; `GEM_COLORS`; `Gem`, `Item.gems`, `Lord.gems`; `gems.ts` (`gemValue`,
+`stockGem`, `gemBonuses`); órdenes `SOCKET_GEM`/`UNSOCKET_GEM` (R20: NO_GEM, GEM_IN_USE,
+NO_SOCKET); servidor: columna `gems`, premio por puesto, `Reward.gems`; cliente: engarces en la
+pestaña Equipo (tocar una gema la saca, selector para poner), total de gemas, avisos de fin de
+temporada. Verificado: lint, tipos, 239 tests (`engine/test/gems.test.ts`, premios en
+`server/test/world.test.ts`), 29 de Playwright (poner y sacar gema; premio del modo un jugador),
+revisión visual en celular.
+
+## Hecho: equipo con niveles, dragón solo en la capital, confirmar habilidades (2026-11-06; sin commitear)
+
+Decisiones de Franco:
+- Dragón: solo sobre la capital de nivel 100 (posado, a veces vuela una vuelta); los demás
+  castillos de nivel 100 quedan sin dragón.
+- Sumar un punto de habilidad pide confirmación.
+- Equipo: duplicado (misma pieza y rareza) = copia; con 2 copias sube a nivel 2, 4 más a nivel 3,
+  6 más a nivel 4… Destruir da sobrantes (común 10, raro 25, épico 60, legendario 150, + la mitad
+  de lo puesto). Mejorar con sobrantes: 20 × nivel. Cada nivel suma común +1 %, raro +2 %, épico
+  +3 %, legendario +5 %; tope nivel 20. El cofre no sube de nivel.
+
+Mías (avisadas): no se destruye un objeto puesto; destruir pide confirmación; un cofre repetido o
+un repetido de un objeto en nivel 20 queda como objeto aparte (para destruirlo); los sobrantes se
+guardan en la cuenta (columna `scrap`) o en el navegador (armería); la cuenta de prueba mejora
+gratis y ve ∞ sobrantes.
+
+Hecho: config `gear.levelBonus/maxItemLevel/copiesPerLevel/scrapByRarity/upgradeScrap`;
+`Item.level/copies/scrap`, `Lord.scrap`; `stockItem`, `destroyScrap`, `upgradeScrapCost` en
+`gear.ts`; órdenes `DESTROY_ITEM` y `UPGRADE_ITEM` (R19: ITEM_EQUIPPED, CHEST_FIXED,
+MAX_ITEM_LEVEL, NO_SCRAP); eventos ITEM_DESTROYED/ITEM_UPGRADED, `ITEM_FOUND.into`; servidor:
+`syncGear` copia la lista entera y los sobrantes a la cuenta, la tienda apila copias; cliente:
+pestaña Equipo con sobrantes, nivel y copias, Mejorar y Destruir. Verificado: lint, tipos, 235
+tests (`engine/test/items.test.ts`, `server/test/items.test.ts`), 29 de Playwright (recorrido de
+equipo con destruir y mejorar; habilidades con confirmar y cancelar), revisión visual en celular.
+
+## Hecho: sistema de diseño del artefacto (2026-11-06)
+
+Segunda tanda (versión 1793982415-cefa, decisiones de Franco): dragón solo en la capital de nivel
+100; sección «Equipo» (copias, sobrantes, niveles); componente nuevo FichaObjeto (rareza con un
+cuadradito con contorno, porque esos colores no llegan a 4,5:1 como texto sobre el pergamino);
+principio 7 «Lo que no se deshace, se confirma» y su clase `si-confirmar`. Revisión visual de
+FichaObjeto en los dos temas.
+
+Tercera tanda (versión 1793985351-8c4a, aprobada por Franco): sección «Gemas» completa (engarces
+0/1/4/9, efecto por color, valor por liga, niveles por copias hasta 10, premio 5/3/2/1, se ponen y
+sacan libres); FichaObjeto con fila de engarces (`si-engarces`, `si-gema-nivel`,
+`si-engarce-libre`) y selector; formato de nombre de gema en «Voz». Revisión visual en los dos temas.
+
+Artefacto: https://claude.ai/artifact/MyxD3JV2Q8pTP6F8TMdaad («Reino Pintado», tipo Design System).
+Franco pidió adaptarlo a lo decidido, preguntando cada cambio. Decisiones:
+
+1. Renombrar a «Shattered Isles» y quitar la mención a Million Lords (estilo propio).
+2. MarcadorCiudad con las 6 etapas del juego y el dragón en el nivel 100; principio «El dragón
+   corona el nivel 100».
+3. Gemas: 5 tokens, regla «una gema por dato», BarraRecursos con gemas; gemas del equipo: en la tercera tanda.
+4. Color de dueño como el juego: cada señor su color (8), neutral gris, aliado anillo celeste,
+   amenaza roja para lo que viene contra vos.
+5. Personajes: señores humanos con heráldica + dragones (sin animales antropomórficos).
+6. Tema según la hora del día: «Pergamino» de día y «Noche de las islas» (azul noche, oro, gemas)
+   de noche, automático. Después: hacer lo mismo en el juego.
+7. Mundo: islas flotantes, mar de nubes, costa irregular, cascadas, montañas nevadas, lagos,
+   cristales, runas, faros arcanos, territorios, viento; tokens de terreno nuevos.
+8. Cinzel + Nunito; después sumarlas al juego (archivos servidos por el servidor).
+9. Íconos nuevos: dragón, explorar (catalejo), gema, faro arcano.
+10. FichaTropa por misión (espada ataque, escudo refuerzo, catalejo exploración), amenaza en rojo,
+    grupo con cantidad de ciudades, rango para tropas ajenas.
+11. «Qué evitar»: se permite el degradado azul noche sutil; nada de violeta/neón ni cristal.
+12. Voz con textos reales del juego, voseo.
+
+Hecho y publicado (versión 1793970879-9b6a): README, tokens (72: temas Pergamino/Noche de las
+islas, 12 colores de señor, aliado, amenaza, 5 gemas, terreno), bundle.css (prefijo `si-`), los 5
+componentes y la portada; íconos nuevos subidos (dragón, catalejo, gema, faro). Revisión visual de
+los previews en los dos temas con un armado local. El nombre de la pestaña del artefacto sigue
+«Reino Pintado»: se cambia desde la página (las herramientas no renombran artefactos de tipo).
+
+Llevado al juego (2026-11-06, sin commitear): tema según la hora (`src/theme.ts`: Pergamino de
+7:00 a 18:59 hora local, Noche de las islas el resto; `localStorage['shattered-isles:theme']`
+lo fuerza, solo para pruebas y capturas; variables en `styles.css` con contrastes medidos ≥ 4,5:1),
+fuentes Cinzel 700 y Nunito variable (Fontsource, OFL, solo latín, dentro del HTML: +65 KB gzip;
+`src/fonts.css`), íconos oscuros dentro de las gemas. Revisión visual del tema de día en celular y
+escritorio (portada, ficha, perfil, menú).
+## Hecho: cuentas de prueba y sin HTML de demo (2026-11-06; sin commitear)
+
+Decisiones de Franco: recursos de prueba por cuenta (no por IP); oro infinito, tropas, niveles y
+Legado infinito; la cuenta de prueba queda fuera del ranking, del Legado, de las medallas y de los
+cambios de liga; se borró solo `demo/shattered-isles.html` (el modo un jugador sigue en la app).
+
+- Cómo se usa: copiar el código de recuperación (Menú → Cuenta) en
+  `apps/server/data/dev-accounts.txt` (uno por línea, `#` comenta; ya está creado con
+  instrucciones), y volver a entrar al mundo. El servidor relee el archivo cuando cambia. Otra ruta:
+  variable `DEV_ACCOUNTS`.
+- Qué da: mejoras gratis (oro ∞ en el HUD, «Hasta nivel 100»), +1M / +1T tropas en la ficha de
+  una ciudad propia, +1 / +10 niveles / nivel máximo en el menú, tienda de Legado y estilos gratis.
+- Mías (avisadas): el motor marca al señor con `Lord.dev` (orden `ENABLE` registrada en el log, así el
+  replay la repite) y lo saca de `computeStandings`, por eso queda fuera de recompensas, clanes y
+  salón de la fama; si el código se borra del archivo, al reconectar vuelve a ser normal (lo ya
+  ganado queda).
+- Motor: `dev.ts` (`devAction`: ENABLE, TROOPS, LEVELS). Servidor: `devAccountsPath`, mensaje `dev`
+  por WebSocket, log `dev`, Legado gratis. Cliente: `devTool`, botones en ficha y menú.
+- Sin demo: `pnpm build` (antes `build:demo`) deja el cliente en `apps/client/dist/index.html`; las
+  pruebas de Playwright lo abren desde ahí; se borró `apps/client/scripts/copy-demo.mjs`.
+- Verificado: lint, tipos, 229 tests (`engine/test/dev.test.ts`, `server/test/dev.test.ts`), 29 de
+  Playwright (prueba nueva en línea con cuenta de prueba), revisión visual (menú y ficha en celular).
+
+## Hecho en la etapa «fantasía y dragones» (2026-11-06, demo y en línea; sin commitear)
+
+Decisiones de Franco: dragón solo visual en los castillos nivel 100; «máscaras» = skins 3D por estilo
+cosmético; cristales y runas, cascadas al vacío, faros arcanos; interfaz con una gema por dato
+(oro = topacio, tropas = rubí, defensa = zafiro, Dominio = amatista, experiencia = esmeralda).
+
+Mías (avisadas): el dragón (del color del dueño, 1,6 veces la escala del castillo) descansa sobre el
+torreón abierto, cada 32 s despega, da una vuelta de radio 40 y vuelve; el castillo perdió la bandera
+de arriba (ahí está el nido). Skins: Clásico, Torre (pizarra), Hexágono (arenisca), Diamante (mármol y
+oro), Estrella (piedra clara y madera verde), Cristal (obsidiana con cristales); los techos siguen con
+el color del dueño. Faros: obelisco con bandas de runas que brillan y cristal flotante que gira.
+Hasta 3 arroyos por isla terminan en cascada; piedras rúnicas junto a ~22 % de los caminos; cristales
+en montañas. Interfaz: gemas facetadas en HUD, ficha por secciones (Defensa, Producción, Reino),
+habilidades y columna lateral; esquinas doradas en paneles.
+
+Hecho: `models.ts` (paleta por skin `SKINS`, `buildStages(style)`, `buildDragon`, faro arcano,
+`buildBeaconCrystal`, `DRAGON_PERCH`, anim de 3 canales), `animate.ts` (aleteo con `flap` por
+instancia), `world3d.ts` (sets de ciudades por estilo creados al vuelo, vuelo del dragón, cristales de
+faros, agua que corre), `terrain.ts` (arroyos y cascadas, cristales, runas), 2D con cascadas,
+`ui/Gem.tsx` y estilos. Verificado: lint, tipos, 226 tests, 28 de Playwright, revisión visual (skins,
+dragón posado y en vuelo, faros, cascada, ficha y HUD).
+
+## Hecho: exploración y costa irregular (2026-11-06, demo y en línea; sin commitear)
+
+- Barra de envío de a 10 % (redondeo hacia abajo, mínimo 1); su primera posición explora.
+- Decisiones de Franco: explorar no ataca, solo informa (tropas, muros, % de defensa, total); la tropa
+  se pierde al mirar; el dueño recibe «X exploró Y» sin detalle; sin límites (no cuenta para el tope
+  de 10, vale contra capitales, neutrales y débiles); velocidad normal de 1 tropa. Costa realista.
+- Mías (avisadas): botón «Explorar» en la ficha de toda ciudad ajena (abre el envío en la posición de
+  explorar); explorar una ciudad propia o aliada se rechaza (R18 `NOT_FOREIGN`); la marcha
+  exploradora se ve en el mapa pero no cuenta como ataque entrante; los informes de ataque también
+  muestran el desglose de la defensa (`BattleReport.defenseMult`, opcional).
+- Motor: orden `SCOUT`, `March.scout`, `ScoutReport` en `state.scouts` (`migrateState` lo agrega a
+  partidas viejas, sin subir `STATE_VERSION`), evento `SCOUTED`, `LordView.scouts`. Servidor: esquema
+  y filtro de eventos (al explorado le llegan los números en 0).
+- Costa: `IsleField.coastline()` (bahías, calas, borde irregular sobre la forma del motor; las
+  ciudades empujan la costa para tener 26 de tierra firme); agua de lagos recortada a la costa.
+- Verificado: lint, tipos, 226 tests (`scout.test.ts`), 28 de Playwright (prueba nueva de explorar
+  una capital), revisión visual (ficha, informe, costa 3D y 2D). La prueba de humo tiene 180 s de
+  límite (con todo en paralelo pasaba los 90).
+
+## Hecho en la etapa «territorios y biomas» (2026-11-06, demo y en línea; sin commitear)
+
+Franco pidió algo parecido a la textura de Million Lords: no se copia su aspecto (decisión del
+2026-10-30); se tomaron ideas generales del género, con estilo propio. Decisiones de Franco:
+
+- Territorio del dueño (suelo teñido y borde donde se toca con otro dueño), en 3D y en 2D.
+- Biomas variados: montañas con roca y nieve, lagos, praderas secas, bosques densos.
+- Colores más saturados y contornos más definidos.
+
+Mías (avisadas): territorio = celda de Voronoi de cada ciudad hasta 24 de radio; las neutrales no se
+tiñen; se repinta solo cuando cambia un dueño o un color; contorno (casco invertido) en ciudades y
+faros, solo Alta y Media; montañas y lagos solo lejos de ciudades y caminos (quedan en la franja
+silvestre cerca de la costa); en 2D, sombreado de relieve.
+
+Hecho: `map3d/territory.ts` (textura de territorios, grilla de búsqueda), mezcla en el shader del
+suelo (`withTerritory` en `terrain.ts`), montañas/lagos/paleta en `IsleField.height` y
+`paintGround`, plano de agua por isla (`WATER_LEVEL`), contornos (`Model.outline`, `Pair`),
+luz con más contraste, 2D con territorios, relieve y lagos. Verificado: lint, tipos, 224 tests,
+26 de Playwright, revisión visual (alta y media en escritorio, 2D). «Baja» por software: ~15 cuadros/s.
+
+## Hecho en la etapa «gráficos detallados» (2026-11-05, demo y en línea; sin commitear)
+
+Decisiones de Franco (vigentes):
+
+- Estilo «estilizado detallado» (low poly más trabajado, sigue siendo un solo HTML con modelos por
+  código). Alcance: terreno y vegetación, ciudades y faros, tropas y marchas, interfaz y mapa 2D.
+- Fondo (cielo y nubes alrededor y debajo de las islas): sin cambios.
+- Calidad automática Alta/Media/Baja según el equipo + opción «Gráficos» en el menú (solo con mapa
+  3D; clave `shattered-isles:quality`).
+
+Mías (avisadas): «Auto» baja un nivel una vez si la mediana de cuadros pasa de ~42 ms; WebGL por
+software → Baja; faros corridos a 16 de cualquier ciudad (solo en el dibujo); los anillos de selección
+se dibujan encima de todo; caminos = cada ciudad con sus 2 vecinas más cercanas (< 75).
+
+Hecho:
+
+- `map3d/quality.ts` (presets y detección), `animate.ts` (atributo `anim`: banderas, fuego y piernas
+  por shader), `terrain.ts` (relieve, textura del suelo por código, acantilado con capas, parte de
+  abajo, 7 tipos de vegetación, `flatIsle` para el 2D, `beaconSpot`), `models.ts` (6 etapas con
+  humo de chimenea, faro, soldado con color del dueño, estandarte), `world3d.ts` (sombras que siguen
+  la cámara, humo con el viento, polvo de marchas, soldados sobre el relieve).
+- 2D (`map/render.ts`): suelo pintado con copas de árboles, acantilado en capas, fichas con relieve.
+- Interfaz (`styles.css`): paneles con degradé y borde dorado, botones con relieve, títulos serif,
+  botones laterales tipo medallón.
+- Pruebas: prueba de poder pausada (con render lento el bot recuperaba poder); el recorrido prueba la
+  opción «Gráficos». Verificado: lint, tipos, 224 tests, 26 de Playwright, revisión visual (alta, media
+  y baja; celular y escritorio; 2D; ficha y menú). Demo: 1,18 MB (332 KB gzip).
+- Sin verificar: rendimiento en un celular real. En Chromium por software, «Baja» va a ~12–22 cuadros/s
+  (antes ~24).
+
 ## Tropas al subir de nivel (2026-11-03)
 
 - Franco: cada nivel del señor da tropas, en todos los niveles: 30 × escala del nivel nuevo en la
@@ -158,8 +395,7 @@ Hecho:
   vuelta automática al 2D sin WebGL. Demo: 1,15 MB (314 KB gzip).
 - Verificado: 209 tests unitarios (motor 99,6 % de líneas), 24 de Playwright (3D en Chromium sin
   pantalla), revisión visual de las 6 etapas, el castillo, marchas, vuelo entre islas y 2D.
-- Sin verificar: rendimiento en un celular real. Para probar sin servidor: pasar
-  `demo/shattered-isles.html` al celular y abrirlo.
+- Sin verificar: rendimiento en un celular real (probar con `pnpm serve` desde el celular).
 
 ## Hecho en la etapa «agrupar tropas y marchas» (2026-11-01, demo y en línea)
 
@@ -325,11 +561,10 @@ Hecho:
 
 ## Pendiente
 
+
 Preguntar a Franco los detalles al empezar cada uno:
 
-1. Bots que crucen a islas nuevas; después volver a prender el nacimiento de islas
-   (`map.growth.enabled`).
-2. Decidir si se reajusta el mundo en línea tras la regla de poder y las tropas por nivel (nivel 100
+1. Decidir si se reajusta el mundo en línea tras la regla de poder y las tropas por nivel (nivel 100
    en ~1 día, 5,5 pueblos por señor a mitad de temporada, ganador 0,35 del Dominio).
 
 Hecho por Franco (2026-11-02): probó el 3D en el celular, abrió el puerto 8787 y subió el repo a
@@ -339,7 +574,7 @@ GitHub (`Franco944796/juego_estrategia`, licencia PolyForm Noncommercial 1.0.0).
 
 - `pnpm install` · `pnpm check` (lint + typecheck + tests) · `pnpm coverage`
 - `pnpm sim --bots 8 --seed 1 --runs 5 [--write]`
-- `pnpm build:demo` → `demo/shattered-isles.html` · `pnpm e2e` · `pnpm dev`
+- `pnpm build` → `apps/client/dist/index.html` · `pnpm e2e` · `pnpm dev`
 - `pnpm serve` → mundo en línea en `http://localhost:8787` (datos en
   `apps/server/data/shattered-isles.db`; borrarlo reinicia el mundo)
 
@@ -347,8 +582,7 @@ GitHub (`Franco944796/juego_estrategia`, licencia PolyForm Noncommercial 1.0.0).
 
 - Balance (detalle en `docs/BALANCE.md`): tensión PvP baja (demo 0,17, en línea 0,06; objetivo
   0,2–0,4); con 90 % de recuperación las ciudades cambian de dueño muchísimo; señores y ciudades
-  llegan a nivel 100 bastante antes del fin de temporada; en línea los bots nunca cruzan a la
-  segunda isla (las ciudades enemigas de nivel alto valen más que los neutrales de nivel 1–3).
+  llegan a nivel 100 bastante antes del fin de temporada.
 - Tropas por encima de ~9·10¹⁵ pierden unidades por precisión de los números (determinista igual).
 
 ## Notas del motor (no obvias en el código)

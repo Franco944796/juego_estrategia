@@ -1,7 +1,7 @@
 # Shattered Isles
 
-An original real-time conquest game for phones and desktop browsers, drawn in low poly 3D (with a
-2D map as an option). Floating isles, a wind that
+An original real-time conquest game for phones and desktop browsers, drawn in detailed low poly 3D with
+shadows and animated flags, smoke and soldiers (with a 2D map as an option). Floating isles, a wind that
 shifts every half hour of game time and speeds up or slows down every flight between isles, towns
 that grow from level 1 to 100 behind their walls, a skill point per lord level, isles of 100 towns
 split into zones with a beacon each, and a world that grows a new isle whenever the newest one fills
@@ -11,10 +11,18 @@ up.
 - Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Balance report and tuning log: [docs/BALANCE.md](docs/BALANCE.md)
 
-## Play the demo
+## Play
 
-Open `demo/shattered-isles.html` in a browser. It works offline: one human lord against bots, with
-accelerated time (a season lasts about 18 real minutes at ×1).
+`pnpm serve` builds the client and starts the online world at `http://localhost:8787`. The title
+screen also offers a single-player season against bots, with accelerated time (a season lasts about
+18 real minutes at ×1).
+
+### Test accounts
+
+List recovery codes (from the profile, one per line, `#` starts a comment) in
+`apps/server/data/dev-accounts.txt`; the server re-reads it when it changes. A test account upgrades
+towns for free, buys Legacy items and styles for free, gets test tools (troops in the town sheet,
+levels in the menu) and stays out of the ranking, Legacy rewards, medals and league moves.
 
 ## Online world
 
@@ -44,8 +52,8 @@ Other commands:
 | Command                  | What it does                                                      |
 | ------------------------ | ----------------------------------------------------------------- |
 | `pnpm coverage`          | Unit tests with engine coverage (fails under 90% of lines)        |
-| `pnpm build:demo`        | Builds the single-file demo into `demo/shattered-isles.html`      |
-| `pnpm e2e`               | Playwright smoke tests on the built demo (390×844 and 1280×800)   |
+| `pnpm build`             | Builds the single-file client into `apps/client/dist/index.html`  |
+| `pnpm e2e`               | Playwright tests on the built client (390×844 and 1280×800)       |
 | `pnpm sim`               | Simulates demo seasons played by bots and prints the pacing table |
 | `pnpm sim --preset live` | Same for the 30-day online world                                  |
 | `pnpm sim --write`       | Also rewrites that preset's section of `docs/BALANCE.md`          |

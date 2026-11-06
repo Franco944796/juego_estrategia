@@ -54,11 +54,18 @@ describe('items found by leveling up', () => {
   it('is deterministic per seed', () => {
     const roll = (seed: number) => {
       const state = game({ seed });
-      gainXp(state, lord(state, 'h1'), xpUpTo(state, 60), T0, []);
-      return lord(state, 'h1').items;
+      const events: DomainEvent[] = [];
+      gainXp(state, lord(state, 'h1'), xpUpTo(state, 60), T0, events);
+      return { items: lord(state, 'h1').items, found: events.filter((e) => e.type === 'ITEM_FOUND').length };
     };
     expect(roll(3)).toEqual(roll(3));
-    expect(roll(3)).toHaveLength(12);
+    // Twelve finds; repeated ones joined an owned item as copies.
+    const { items, found } = roll(3);
+    expect(found).toBe(12);
+    const levels = items.reduce((sum, item) => sum + (item.level ?? 1) - 1, 0);
+    const copies = items.reduce((sum, item) => sum + (item.copies ?? 0), 0);
+    expect(items.length + copies + levels * 2).toBeGreaterThanOrEqual(12);
+    expect(items.length).toBeLessThanOrEqual(12);
   });
 });
 

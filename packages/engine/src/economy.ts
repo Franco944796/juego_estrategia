@@ -102,6 +102,7 @@ export function dominionRates(state: GameState): Map<string, number> {
   }
   const throne = state.throneTownId === null ? undefined : state.towns[state.throneTownId];
   if (throne?.owner) bump(throne.owner, cfg.throne.dominionPerMin);
+  for (const [id, rate] of rates) rates.set(id, rate * lordMods(state, id).dominion);
   return rates;
 }
 

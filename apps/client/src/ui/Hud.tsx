@@ -2,6 +2,7 @@ import { formatDuration, formatNumber, formatRate } from '../format';
 import { t, WIND_NAMES } from '../i18n';
 import { toRealMs, useGame } from '../store';
 import { useGameNow } from './hooks';
+import { Gem } from './Gem';
 import { CoinIcon, CrownIcon, HelmetIcon, WindArrow } from './icons';
 import { ownerName, townById } from './labels';
 
@@ -32,14 +33,20 @@ export function Hud() {
       <div className="hud-main">
         <div className="hud-stats">
           <div className="stat" data-testid="hud-gold" title={t(lang, 'gold')}>
-            <CoinIcon className="stat-icon gold" />
+            <Gem kind="topaz">
+              <CoinIcon size={16} />
+            </Gem>
             <span className="stat-text">
-              <span className="stat-value">{formatNumber(me.gold, lang)}</span>
+              <span className="stat-value">
+                {me.dev ? t(lang, 'unlimited') : formatNumber(me.gold, lang)}
+              </span>
               <span className="stat-sub">+{t(lang, 'perMin', { n: formatRate(me.goldPerMin, lang) })}</span>
             </span>
           </div>
           <div className="stat" data-testid="hud-dominion" title={t(lang, 'dominion')}>
-            <CrownIcon className="stat-icon dominion" />
+            <Gem kind="amethyst">
+              <CrownIcon size={16} />
+            </Gem>
             <span className="stat-text">
               <span className="stat-value">{formatNumber(me.dominion, lang)}</span>
               <span className="stat-sub">

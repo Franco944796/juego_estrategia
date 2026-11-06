@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/copy-demo.mjs",
+    "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p .",
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@fontsource-variable/nunito": "^5.3.0",
+    "@fontsource/cinzel": "^5.3.0",
     "@si/config": "workspace:*",
     "@si/engine": "workspace:*",
     "@si/protocol": "workspace:*",

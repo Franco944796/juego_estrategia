@@ -21,6 +21,10 @@ const personality = z.object({
   keepHome: fraction,
   minWindFactor: positive,
   minAttackTroops: count,
+  /** Looks at other isles only once the share of neutral towns left on the source's isle is at most this. */
+  crossFreeShare: fraction,
+  /** Weight of targets on another isle against those at home. */
+  crossWeight: nonNegative,
   /** Share of skill points the bot puts in each skill. */
   skillWeights: perSkill,
 });
@@ -127,6 +131,22 @@ export const gameConfigSchema = z
       dropOdds: z.array(z.object({ minLevel: count, weights: z.array(nonNegative).length(4) })).min(1),
       /** Legacy price of an item in the online shop. */
       prices: perRarity(intNonNegative),
+      /** Bonus each level past the first adds, by rarity, on top of `rarityBonus` (the chest never levels). */
+      levelBonus: perRarity(fraction),
+      maxItemLevel: count,
+      /** Duplicates pile up as copies: going from level n to n + 1 takes `copiesPerLevel` × n of them. */
+      copiesPerLevel: count,
+      /** Scrap a destroyed item gives, by rarity (plus half the scrap put into it). */
+      scrapByRarity: perRarity(intNonNegative),
+      /** Scrap to go from level n to n + 1 is `upgradeScrap` × n. */
+      upgradeScrap: count,
+      /** Gem sockets of an item by rarity. */
+      sockets: perRarity(intNonNegative),
+    }),
+    gems: z.object({
+      maxLevel: count,
+      /** Each level past the first adds this share of the gem's base value (its league's `gemBonus`). */
+      levelShare: fraction,
     }),
     /**
      * Power (troops + walls) of the lord attacked over the attacker's: below `forbidBelow` it cannot be
@@ -165,6 +185,8 @@ export const gameConfigSchema = z
       guessMin: nonNegative,
       /** A safe town keeps this many minutes of its production before pushing troops to the front. */
       hoardMin: nonNegative,
+      /** Attacks across the lanes send what the siege needs times this, not the whole garrison. */
+      crossSlack: positive,
       personalities: z.object({
         RAIDER: personality,
         BUILDER: personality,
@@ -201,11 +223,15 @@ export const gameConfigSchema = z
           legacyMult: positive,
           promoteShare: fraction,
           relegateShare: fraction,
+          /** What a level-1 gem won in this league adds (0.025 = +2.5 %). */
+          gemBonus: fraction,
         }),
       )
       .min(1),
     rewards: z.object({
-      tiers: z.array(z.object({ topShare: z.number().gt(0).max(1), legacy: intNonNegative })).min(1),
+      tiers: z
+        .array(z.object({ topShare: z.number().gt(0).max(1), legacy: intNonNegative, gems: intNonNegative }))
+        .min(1),
     }),
     cosmetics: z.object({
       styles: z.array(z.object({ id: z.string().min(1), cost: intNonNegative })).min(1),

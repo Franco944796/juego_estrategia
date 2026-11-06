@@ -1,5 +1,6 @@
 import { GEAR_EFFECTS, GEAR_SLOTS } from '@si/config/constants';
 import { equippedItem, itemBonus } from './gear';
+import { gemBonuses } from './gems';
 import type { GameState } from './types';
 
 /** Multipliers from skills and equipment; each bonus adds to 1 (+5 % and +3 % make ×1.08). */
@@ -19,6 +20,10 @@ export interface LordMods {
   refund: number;
   /** Production multiplier from owning many towns (1 when sprawl is off). */
   sprawl: number;
+  /** On the lord's Dominion per minute (amethyst gems). */
+  dominion: number;
+  /** On the experience the lord's battles give (emerald gems). */
+  xp: number;
 }
 
 export function neutralMods(): LordMods {
@@ -32,6 +37,8 @@ export function neutralMods(): LordMods {
     killGold: 1,
     refund: 0,
     sprawl: 1,
+    dominion: 1,
+    xp: 1,
   };
 }
 
@@ -71,6 +78,12 @@ export function lordMods(state: GameState, lordId: string | null, owned?: number
     const item = equippedItem(lord, slot);
     if (item) mods[GEAR_EFFECTS[slot]] += itemBonus(state, item);
   }
+  const gems = gemBonuses(state.config, lord);
+  mods.goldProd += gems.TOPAZ;
+  mods.troopProd += gems.RUBY;
+  mods.defense += gems.SAPPHIRE;
+  mods.dominion += gems.AMETHYST;
+  mods.xp += gems.EMERALD;
   const { freeTowns, penaltyPerTown } = state.config.towns.sprawl;
   if (penaltyPerTown > 0) {
     let count = owned;

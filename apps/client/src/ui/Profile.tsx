@@ -71,7 +71,7 @@ export function Profile() {
                 <button
                   type="button"
                   className="small"
-                  disabled={profile.legacy < style.cost}
+                  disabled={!profile.dev && profile.legacy < style.cost}
                   onClick={() => void unlockStyle(style.id)}
                 >
                   {t(lang, 'styleUnlock', { n: style.cost })}

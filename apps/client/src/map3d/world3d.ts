@@ -1,10 +1,12 @@
-import type { LordView } from '@si/engine';
+import { WIND_VECTORS, type LordView } from '@si/engine';
 import {
+  BackSide,
+  InstancedBufferAttribute,
+  CanvasTexture,
   Color,
-  ConeGeometry,
   DirectionalLight,
+  DoubleSide,
   DynamicDrawUsage,
-  ExtrudeGeometry,
   Fog,
   Group,
   HemisphereLight,
@@ -13,28 +15,42 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  MeshPhongMaterial,
   Object3D,
+  PCFSoftShadowMap,
   PerspectiveCamera,
+  RepeatWrapping,
   RingGeometry,
   Scene,
-  Shape,
+  SRGBColorSpace,
+  Texture,
+  Vector3,
   WebGLRenderer,
   type BufferGeometry,
   type Material,
 } from 'three';
 import type { Camera, Size, Vec } from '../map/camera';
 import { ownerColor, townById } from '../ui/labels';
-import { placeCamera } from './camera3d';
+import { animClock, animated, STEP_RATE } from './animate';
+import { Bridges, type BridgeTop } from './bridges';
+import { placeCamera, TILT } from './camera3d';
 import {
+  BEACON_CRYSTAL_HEIGHT,
   buildBanner,
   buildBeacon,
+  buildBeaconCrystal,
+  buildDragon,
   buildSoldier,
   buildStages,
+  DRAGON_PERCH,
   STAGE_SCALE,
   stageFor,
   UNIT_SCALE,
   type Model,
 } from './models';
+import { QUALITY, type Quality, type QualityPreset } from './quality';
+import { beaconSpot, buildIsle, groundArea, scatter, WATER_LEVEL, type IsleField } from './terrain';
+import { Territory } from './territory';
 
 export interface Scene3DInput {
   view: LordView;
@@ -51,27 +67,24 @@ export interface Scene3DInput {
 
 const SKY = '#5b8fc9';
 const NEUTRAL_ROOF = '#d9cfbf';
+const OUTLINE = '#1c1712';
 const UNLIT_FIRE = '#3a3f47';
-const ISLE_DEPTH = 10;
 /** Marching soldiers float this high on flights between isles. */
 export const FLIGHT_HEIGHT = 9;
 const SOLDIERS = 3;
 const CLOUDS = 28;
-const TREES_PER_ISLE = 70;
-/** Trees keep this far from towns and zone beacons. */
-const TREE_CLEARANCE = 9;
+const PUFFS = 3;
+const SMOKE_CAPACITY = 1200;
+const DUST_CAPACITY = 256 * PUFFS;
+/** Toward the sun: from the upper left, a little in front, so shadows fall right and back. */
+const SUN_DIR = new Vector3(-0.7, 1.1, 0.35).normalize();
+const SUN_DISTANCE = 700;
+const FOG_NEAR = 900;
+const FOG_FAR = 2600;
 
 const dummy = new Object3D();
 const tint = new Color();
-
-/** A seeded generator for scenery, so trees and clouds sit in the same place every time. */
-function scatter(seed: number): () => number {
-  let s = seed >>> 0 || 1;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 2 ** 32;
-  };
-}
+const spot = new Vector3();
 
 function lambert(color = '#ffffff', vertexColors = true): MeshLambertMaterial {
   return new MeshLambertMaterial({ color, vertexColors, flatShading: true });
@@ -81,24 +94,58 @@ function lambert(color = '#ffffff', vertexColors = true): MeshLambertMaterial {
 class Pair {
   readonly fixed: InstancedMesh;
   readonly team: InstancedMesh;
+  private readonly outline: InstancedMesh | null;
 
-  constructor(model: Model, capacity: number, parent: Group) {
-    this.fixed = new InstancedMesh(model.fixed, lambert(), capacity);
-    this.team = new InstancedMesh(model.team, lambert(), capacity);
+  /** Per-instance wing beat strength (dragons only); see animate.ts. */
+  private readonly flaps: InstancedBufferAttribute[] = [];
+
+  constructor(
+    model: Model,
+    capacity: number,
+    parent: Group,
+    team: Material = animated(lambert()),
+    outline: Material | null = null,
+    flapping = false,
+  ) {
+    if (flapping) {
+      for (const g of [model.fixed, model.team]) {
+        const flap = new InstancedBufferAttribute(new Float32Array(capacity), 1);
+        flap.setUsage(DynamicDrawUsage);
+        g.setAttribute('flap', flap);
+        this.flaps.push(flap);
+      }
+    }
+    this.fixed = new InstancedMesh(model.fixed, animated(lambert()), capacity);
+    this.team = new InstancedMesh(model.team, team, capacity);
+    this.outline = outline ? new InstancedMesh(model.outline, outline, capacity) : null;
+    if (this.outline) {
+      this.outline.instanceMatrix.setUsage(DynamicDrawUsage);
+      this.outline.count = 0;
+      this.outline.frustumCulled = false;
+      parent.add(this.outline);
+    }
     for (const mesh of [this.fixed, this.team]) {
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       mesh.count = 0;
       // Instances spread over the whole map; per-instance culling is not worth it here.
       mesh.frustumCulled = false;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       parent.add(mesh);
     }
     this.team.setColorAt(0, tint.set('#ffffff'));
   }
 
-  place(i: number, matrix: Object3D['matrix'], color: string): void {
+  get capacity(): number {
+    return this.fixed.instanceMatrix.count;
+  }
+
+  place(i: number, matrix: Object3D['matrix'], color: string, flap = 0): void {
+    for (const f of this.flaps) f.setX(i, flap);
     this.fixed.setMatrixAt(i, matrix);
     this.team.setMatrixAt(i, matrix);
     this.team.setColorAt(i, tint.set(color));
+    this.outline?.setMatrixAt(i, matrix);
   }
 
   finish(count: number): void {
@@ -107,59 +154,236 @@ class Pair {
     this.fixed.instanceMatrix.needsUpdate = true;
     this.team.instanceMatrix.needsUpdate = true;
     if (this.team.instanceColor) this.team.instanceColor.needsUpdate = true;
+    for (const f of this.flaps) f.needsUpdate = true;
+    if (this.outline) {
+      this.outline.count = count;
+      this.outline.instanceMatrix.needsUpdate = true;
+    }
   }
 }
 
-function isleShape(radius: number, shape: number[]): Shape {
-  const n = shape.length;
-  const s = new Shape();
-  shape.forEach((k, i) => {
-    const a = (i / n) * Math.PI * 2;
-    const x = Math.cos(a) * radius * k;
-    const y = Math.sin(a) * radius * k;
-    if (i === 0) s.moveTo(x, y);
-    else s.lineTo(x, y);
-  });
-  s.closePath();
-  return s;
+interface DragonHome {
+  /** The dragon's seat on the donjon, in world space. */
+  perch: Vector3;
+  x: number;
+  z: number;
+  turn: number;
+  scale: number;
+  color: string;
+  phase: number;
+}
+
+const DRAGON_STAGE = 5;
+const DRAGON_CAPACITY = 64;
+const DRAGON_CYCLE_MS = 32_000;
+/** Shares of the cycle: resting until TAKEOFF, rising until CIRCLE, circling until LAND. */
+const DRAGON_TAKEOFF = 0.55;
+const DRAGON_CIRCLE = 0.62;
+const DRAGON_LAND = 0.92;
+/** The dragon is bigger than the castle's own scale, so it is the first thing seen on the map. */
+const DRAGON_SCALE = 1.6;
+const DRAGON_RADIUS = 40;
+const DRAGON_ALTITUDE = 16;
+const DRAGON_BANK = 0.35;
+/** A resting dragon's wings still stir a little. */
+const DRAGON_REST_FLAP = 0.12;
+
+/** Where a castle's dragon is at cycle share `u` (wraps past 1). */
+function dragonAt(home: DragonHome, u: number, out: Vector3): Vector3 {
+  const t = fract(u);
+  const start = Math.atan2(home.perch.z - home.z, home.perch.x - home.x);
+  const circle = (a: number, v: Vector3): Vector3 =>
+    v.set(
+      home.x + Math.cos(a) * DRAGON_RADIUS,
+      home.perch.y + DRAGON_ALTITUDE + Math.sin(a * 2) * 1.5,
+      home.z + Math.sin(a) * DRAGON_RADIUS,
+    );
+  const ease = (x: number): number => x * x * (3 - 2 * x);
+  if (t < DRAGON_TAKEOFF) return out.copy(home.perch);
+  if (t < DRAGON_CIRCLE) {
+    const s = (t - DRAGON_TAKEOFF) / (DRAGON_CIRCLE - DRAGON_TAKEOFF);
+    circle(start, out);
+    return out.lerp(home.perch, 1 - ease(s)).setY(out.y + Math.sin(Math.PI * s) * 3);
+  }
+  if (t < DRAGON_LAND) {
+    return circle(start + ((t - DRAGON_CIRCLE) / (DRAGON_LAND - DRAGON_CIRCLE)) * Math.PI * 2, out);
+  }
+  const s = (t - DRAGON_LAND) / (1 - DRAGON_LAND);
+  circle(start, out);
+  return out.lerp(home.perch, ease(s)).setY(out.y + Math.sin(Math.PI * s) * 3);
+}
+
+/** Streaks of flowing water that tile vertically; scrolling it makes the water run. */
+function flowTexture(): CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.fillStyle = '#3f93d6';
+    ctx.fillRect(0, 0, 64, 128);
+    const rand = scatter(5);
+    for (let i = 0; i < 46; i++) {
+      const x = rand() * 64;
+      const y = rand() * 128;
+      const h = 10 + rand() * 30;
+      ctx.fillStyle = `rgba(225, 242, 255, ${0.25 + rand() * 0.45})`;
+      ctx.fillRect(x, y, 1.5 + rand() * 2.5, h);
+      // Wrap the streak, so the tile has no seam.
+      if (y + h > 128) ctx.fillRect(x, y - 128, 1.5, h);
+    }
+  }
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  return texture;
+}
+
+/** Soft puffs (chimney smoke, march dust) placed every frame. */
+function puffs(color: string, opacity: number, capacity: number, parent: Group): InstancedMesh {
+  const mesh = new InstancedMesh(
+    new IcosahedronGeometry(1, 1),
+    new MeshLambertMaterial({ color, transparent: true, opacity, depthWrite: false }),
+    capacity,
+  );
+  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+  mesh.frustumCulled = false;
+  mesh.count = 0;
+  parent.add(mesh);
+  return mesh;
+}
+
+function fract(x: number): number {
+  return x - Math.floor(x);
 }
 
 /** The isles, towns, beacons and marches of a lord's view, drawn with three.js. */
 export class World3D {
+  private readonly q: QualityPreset;
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera();
+  private readonly root = new Group();
+  private readonly sun = new DirectionalLight('#fff0d4', 2.8);
   private readonly stages = buildStages();
-  private readonly towns: Pair[];
+  /** Town models per cosmetic style, built the first time a lord with that style shows up. */
+  private readonly townSets = new Map<string, Pair[]>();
+  private readonly units = new Group();
+  private readonly outline: Material | null;
+  private readonly capacity: number;
+  private readonly dragons: Pair;
+  private dragonHomes: DragonHome[] = [];
+  private readonly crystals: InstancedMesh;
+  private beaconSpots: { x: number; z: number; color: string }[] = [];
   private readonly beacons: Pair;
   private readonly banners: Pair;
-  private readonly soldiers: InstancedMesh;
+  private readonly soldiers: Pair;
+  private readonly smoke: InstancedMesh;
+  private readonly dust: InstancedMesh;
   private readonly targets: InstancedMesh;
   private readonly selectedRing: Mesh;
   private readonly highlightRing: Mesh;
   private readonly isles = new Group();
-  private readonly owned: Material[] = [];
+  private readonly bridges: Bridges;
+  private readonly owned: (Material | Texture)[] = [];
+  private readonly sceneryMaterial = lambert();
+  private readonly rockMaterial = lambert();
+  private readonly waterMaterial = new MeshPhongMaterial({
+    color: '#3a8fd6',
+    specular: '#d8ecff',
+    shininess: 90,
+    transparent: true,
+    opacity: 0.88,
+  });
+  private territories: { territory: Territory; texture: CanvasTexture }[] = [];
+  private readonly glowMaterial = new MeshBasicMaterial({ vertexColors: true });
+  private readonly streamFlow = flowTexture();
+  private readonly fallFlow = flowTexture();
+  private readonly streamMaterial = new MeshBasicMaterial({
+    map: this.streamFlow,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  });
+  private readonly fallMaterial = new MeshBasicMaterial({
+    map: this.fallFlow,
+    transparent: true,
+    opacity: 0.85,
+    side: DoubleSide,
+    depthWrite: false,
+  });
+  private fields: IsleField[] = [];
+  /** Chimney tops in world space, with a phase each. */
+  private chimneys: { x: number; y: number; z: number; phase: number; scale: number }[] = [];
   private builtIsles = '';
   private lastView: LordView | null = null;
 
-  constructor(canvas: HTMLCanvasElement, capacity = 512) {
-    this.renderer = new WebGLRenderer({ canvas, antialias: true });
+  constructor(canvas: HTMLCanvasElement, quality: Quality, capacity = 512) {
+    this.q = QUALITY[quality];
+    this.renderer = new WebGLRenderer({ canvas, antialias: this.q.antialias });
     this.scene.background = new Color(SKY);
-    this.scene.fog = new Fog(SKY, 900, 2600);
-    this.scene.add(new HemisphereLight('#e6f0ff', '#4a3b2f', 1.6));
-    const sun = new DirectionalLight('#fff1d6', 2.4);
-    sun.position.set(-0.6, 1, 0.5);
-    this.scene.add(sun, this.isles);
+    this.scene.fog = new Fog(SKY, FOG_NEAR, FOG_FAR);
+    this.scene.add(new HemisphereLight('#dde9ff', '#5a4a36', 1.2));
+    this.scene.add(this.sun, this.sun.target, this.root);
+    if (this.q.shadowMap > 0) {
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = PCFSoftShadowMap;
+      this.sun.castShadow = true;
+      this.sun.shadow.mapSize.set(this.q.shadowMap, this.q.shadowMap);
+      this.sun.shadow.bias = -0.0004;
+      this.sun.shadow.normalBias = 0.35;
+      this.sun.shadow.camera.near = 1;
+      this.sun.shadow.camera.far = SUN_DISTANCE * 2;
+    }
+    this.owned.push(
+      this.sceneryMaterial,
+      this.rockMaterial,
+      this.waterMaterial,
+      this.glowMaterial,
+      this.streamMaterial,
+      this.fallMaterial,
+      this.streamFlow,
+      this.fallFlow,
+    );
+    this.root.add(this.isles);
+    const lanes = new Group();
+    this.root.add(lanes);
+    this.bridges = new Bridges(lanes);
 
-    const units = new Group();
-    this.scene.add(units);
-    this.towns = this.stages.map((model) => new Pair(model, capacity, units));
-    this.beacons = new Pair(buildBeacon(), 128, units);
+    const units = this.units;
+    this.root.add(units);
+    this.capacity = capacity;
+    const outline = this.q.outlines ? new MeshBasicMaterial({ color: OUTLINE, side: BackSide }) : null;
+    this.outline = outline;
+    if (outline) this.owned.push(outline);
+    this.townSets.set(
+      'classic',
+      this.stages.map((model) => new Pair(model, capacity, units, animated(lambert()), outline)),
+    );
+    this.dragons = new Pair(buildDragon(), DRAGON_CAPACITY, units, animated(lambert()), null, true);
+    this.crystals = new InstancedMesh(
+      buildBeaconCrystal(),
+      new MeshBasicMaterial({ vertexColors: true }),
+      128,
+    );
+    this.crystals.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.crystals.frustumCulled = false;
+    this.crystals.count = 0;
+    units.add(this.crystals);
+    this.beacons = new Pair(
+      buildBeacon(),
+      128,
+      units,
+      animated(new MeshBasicMaterial({ vertexColors: true })),
+      outline,
+    );
     this.banners = new Pair(buildBanner(), 256, units);
-    this.soldiers = new InstancedMesh(buildSoldier(), lambert(), 256 * SOLDIERS);
-    this.soldiers.frustumCulled = false;
-    this.soldiers.count = 0;
-    units.add(this.soldiers);
+    this.soldiers = new Pair(buildSoldier(), 256 * SOLDIERS, units);
+    this.smoke = puffs('#ebe7df', 0.45, SMOKE_CAPACITY, units);
+    this.dust = puffs('#c9b48e', 0.45, DUST_CAPACITY, units);
 
     const ring = (inner: number, outer: number): BufferGeometry =>
       new RingGeometry(inner, outer, 40).rotateX(-Math.PI / 2).translate(0, 0.2, 0);
@@ -172,12 +396,17 @@ export class World3D {
     this.targets.count = 0;
     this.selectedRing = new Mesh(ring(10, 11.8), new MeshBasicMaterial({ color: '#ffffff' }));
     this.highlightRing = new Mesh(ring(12, 14), new MeshBasicMaterial({ color: '#ffd166' }));
+    // Marks drawn over hills and yards, which a coarse terrain mesh can lift above y = 0.
+    for (const mark of [this.targets, this.selectedRing, this.highlightRing]) {
+      (mark.material as Material).depthTest = false;
+      mark.renderOrder = 10;
+    }
     units.add(this.targets, this.selectedRing, this.highlightRing);
     this.addClouds();
   }
 
   setSize(size: Size): void {
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.q.maxPixelRatio));
     this.renderer.setSize(size.width, size.height, false);
   }
 
@@ -193,22 +422,46 @@ export class World3D {
     return (this.stages[stage]?.radius ?? 5) * (STAGE_SCALE[stage] ?? 1);
   }
 
+  bridgeTop(a: number, b: number): BridgeTop | null {
+    return this.bridges.top(a, b);
+  }
+
+  /** Height of the ground at a map point (0 off the isles and on towns and roads). */
+  groundAt(p: Vec): number {
+    for (const f of this.fields) {
+      if (f.edge(p.x, p.y) < 1.05) return Math.max(WATER_LEVEL, f.height(p.x, p.y));
+    }
+    return 0;
+  }
+
   render(input: Scene3DInput): void {
     const { view, time } = input;
+    animClock.value = time / 1000;
+    // Water runs toward the coast along the streams and down the falls (texture v grows that way).
+    this.streamFlow.offset.y = -time / 2400;
+    this.fallFlow.offset.y = -time / 900;
     if (view !== this.lastView) {
       this.buildIsles(view);
+      for (const t of this.territories) if (t.territory.update(view)) t.texture.needsUpdate = true;
       this.placeTowns(view);
       this.placeBeacons(view);
       this.lastView = view;
     }
     this.placeMarches(input);
+    this.placeDragons(time);
+    this.placeCrystals(time);
+    this.placeSmoke(view, time);
     this.placeRings(input);
+    this.bridges.update(view, input.sendFrom, time);
     placeCamera(input.cam, input.size, this.camera);
-    this.isles.position.y = Math.sin(time / 2600) * 0.4;
+    this.fitFog();
+    if (this.q.shadowMap > 0) this.fitShadow(input.cam, input.size);
+    this.root.position.y = Math.sin(time / 2600) * 0.4;
     this.renderer.render(this.scene, this.camera);
   }
 
   dispose(): void {
+    this.bridges.dispose();
     this.scene.traverse((obj) => {
       if (obj instanceof Mesh) {
         obj.geometry.dispose();
@@ -217,7 +470,36 @@ export class World3D {
       }
     });
     for (const m of this.owned) m.dispose();
+    for (const t of this.territories) t.texture.dispose();
     this.renderer.dispose();
+  }
+
+  /** Fog starts past what the camera looks at, so zooming out over several isles does not hide them. */
+  private fitFog(): void {
+    const fog = this.scene.fog;
+    if (!(fog instanceof Fog)) return;
+    const distance = this.camera.position.y / Math.sin(TILT);
+    fog.near = distance + FOG_NEAR;
+    fog.far = distance * 2 + FOG_FAR;
+  }
+
+  /** Keeps the shadow map over what the camera sees, in steps, so shadows do not shimmer. */
+  private fitShadow(cam: Camera, size: Size): void {
+    const reach = Math.min(1100, Math.max(70, ((size.width + size.height) / cam.zoom) * 0.6));
+    const r = 2 ** (Math.ceil(Math.log2(reach) * 4) / 4);
+    const texel = (2 * r) / this.q.shadowMap;
+    const x = Math.round(cam.x / texel) * texel;
+    const z = Math.round((cam.y - r * 0.15) / texel) * texel;
+    this.sun.target.position.set(x, 0, z);
+    this.sun.position.set(x, 0, z).addScaledVector(SUN_DIR, SUN_DISTANCE);
+    const shadowCam = this.sun.shadow.camera;
+    if (shadowCam.right !== r) {
+      shadowCam.left = -r;
+      shadowCam.right = r;
+      shadowCam.top = r;
+      shadowCam.bottom = -r;
+      shadowCam.updateProjectionMatrix();
+    }
   }
 
   private addClouds(): void {
@@ -243,9 +525,12 @@ export class World3D {
     this.scene.add(clouds);
   }
 
-  /** Isles change only when the map grows, so they are rebuilt from scratch then. */
+  /**
+   * Isles are rebuilt only when the map grows or the town count changes (roads, hills and trees keep
+   * clear of towns, and a lord joining online can add one).
+   */
   private buildIsles(view: LordView): void {
-    const key = view.isles.map((i) => i.id).join();
+    const key = `${view.isles.map((i) => i.id).join()}|${view.towns.length}`;
     if (key === this.builtIsles) return;
     this.builtIsles = key;
     for (const child of [...this.isles.children]) {
@@ -254,107 +539,182 @@ export class World3D {
         if (obj instanceof Mesh) obj.geometry.dispose();
       });
     }
-    const grass = lambert('#6fbf4b', false);
-    const cliff = lambert('#8a6a4a', false);
-    const rock = lambert('#6b5442', false);
-    const bark = lambert('#6b4226', false);
-    const leaves = lambert('#2f8f4e', false);
-    this.owned.push(grass, cliff, rock, bark, leaves);
+    this.fields = [];
+    const anisotropy = Math.min(this.q.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
+    const materials = {
+      scenery: this.sceneryMaterial,
+      glow: this.glowMaterial,
+      rock: this.rockMaterial,
+      water: this.waterMaterial,
+      stream: this.streamMaterial,
+      fall: this.fallMaterial,
+    };
+    for (const t of this.territories) t.texture.dispose();
+    this.territories = [];
     for (const isle of view.isles) {
-      const top = new ExtrudeGeometry(isleShape(isle.radius, isle.shape), {
-        depth: ISLE_DEPTH,
-        bevelEnabled: false,
-        curveSegments: 2,
-      });
-      top.rotateX(Math.PI / 2);
-      const land = new Mesh(top, [grass, cliff]);
-      land.position.set(isle.pos.x, 0, isle.pos.y);
-      const under = new Mesh(new ConeGeometry(isle.radius * 0.9, isle.radius * 0.85, 11), rock);
-      under.rotation.x = Math.PI;
-      under.position.set(isle.pos.x, -ISLE_DEPTH - isle.radius * 0.42, isle.pos.y);
-      this.isles.add(land, under);
-      this.isles.add(this.trees(view, isle.id, bark, leaves));
+      const territory = new Territory(groundArea(isle), isle.id, this.q.territory);
+      const texture = new CanvasTexture(territory.canvas);
+      texture.colorSpace = SRGBColorSpace;
+      texture.premultiplyAlpha = true;
+      this.territories.push({ territory, texture });
+      const built = buildIsle(view, isle, this.q, materials, anisotropy, texture);
+      this.owned.push(...built.disposable);
+      this.fields.push(built.field);
+      this.isles.add(built.group);
     }
+    this.bridges.build(view, new Map(this.fields.map((f, i) => [view.isles[i]?.id ?? -1, f])));
   }
 
-  private trees(view: LordView, isleId: number, bark: Material, leaves: Material): Group {
-    const isle = view.isles[isleId];
-    const group = new Group();
-    if (!isle) return group;
-    const rand = scatter(isleId + 11);
-    const blockers: Vec[] = [
-      ...view.towns.filter((t) => t.isleId === isleId).map((t) => t.pos),
-      ...view.zones.filter((z) => z.isleId === isleId).map((z) => z.pos),
-    ];
-    const trunks = new InstancedMesh(
-      new ConeGeometry(0.5, 2.4, 5).translate(0, 1.2, 0),
-      bark,
-      TREES_PER_ISLE,
-    );
-    const crowns = new InstancedMesh(
-      new ConeGeometry(2.2, 5, 6).translate(0, 4.4, 0),
-      leaves,
-      TREES_PER_ISLE,
-    );
-    let n = 0;
-    for (let tries = 0; tries < TREES_PER_ISLE * 6 && n < TREES_PER_ISLE; tries++) {
-      const a = rand() * Math.PI * 2;
-      const r = Math.sqrt(rand()) * isle.radius * 0.88;
-      const p = { x: isle.pos.x + Math.cos(a) * r, y: isle.pos.y + Math.sin(a) * r };
-      if (blockers.some((b) => Math.hypot(b.x - p.x, b.y - p.y) < TREE_CLEARANCE)) continue;
-      dummy.position.set(p.x, 0, p.y);
-      dummy.rotation.set(0, rand() * Math.PI, 0);
-      dummy.scale.setScalar(0.8 + rand() * 0.6);
-      dummy.updateMatrix();
-      trunks.setMatrixAt(n, dummy.matrix);
-      crowns.setMatrixAt(n, dummy.matrix);
-      n++;
+  private townsFor(style: string): Pair[] {
+    let set = this.townSets.get(style);
+    if (!set) {
+      set = buildStages(style).map(
+        (model) => new Pair(model, this.capacity, this.units, animated(lambert()), this.outline),
+      );
+      this.townSets.set(style, set);
     }
-    dummy.rotation.set(0, 0, 0);
-    dummy.scale.setScalar(1);
-    trunks.count = n;
-    crowns.count = n;
-    group.add(trunks, crowns);
-    return group;
+    return set;
   }
 
   private placeTowns(view: LordView): void {
-    const counts = this.towns.map(() => 0);
+    const counts = new Map<Pair, number>();
+    const styles = new Map(view.lords.map((l) => [l.id, l.style]));
+    this.chimneys = [];
+    this.dragonHomes = [];
     for (const town of view.towns) {
       const stage = stageFor(town.tier);
-      const pair = this.towns[stage];
-      if (!pair || (counts[stage] ?? 0) >= pair.fixed.instanceMatrix.count) continue;
-      dummy.position.set(town.pos.x, 0, town.pos.y);
+      const style = (town.owner !== null && styles.get(town.owner)) || 'classic';
+      const pair = this.townsFor(style)[stage];
+      const n = pair ? (counts.get(pair) ?? 0) : 0;
+      if (!pair || n >= pair.capacity) continue;
+      const scale = STAGE_SCALE[stage] ?? 1;
       // A fixed turn per town, so neighbors do not all face the same way.
-      dummy.rotation.set(0, (town.id * 2.39996) % (Math.PI * 2), 0);
-      dummy.scale.setScalar(STAGE_SCALE[stage] ?? 1);
+      const turn = (town.id * 2.39996) % (Math.PI * 2);
+      dummy.position.set(town.pos.x, 0, town.pos.y);
+      dummy.rotation.set(0, turn, 0);
+      dummy.scale.setScalar(scale);
       dummy.updateMatrix();
       const color = town.owner === null ? NEUTRAL_ROOF : ownerColor(view, town.owner);
-      pair.place(counts[stage] ?? 0, dummy.matrix, color);
-      counts[stage] = (counts[stage] ?? 0) + 1;
+      pair.place(n, dummy.matrix, color);
+      counts.set(pair, n + 1);
+      for (const [k, local] of (this.stages[stage]?.smoke ?? []).entries()) {
+        spot.copy(local).applyMatrix4(dummy.matrix);
+        this.chimneys.push({
+          x: spot.x,
+          y: spot.y,
+          z: spot.z,
+          phase: fract(town.id * 0.618 + k * 0.37),
+          scale,
+        });
+      }
+      // Only a capital that reached the last stage keeps a dragon; other castles stay without one.
+      if (stage === DRAGON_STAGE && town.isCapital && this.dragonHomes.length < DRAGON_CAPACITY) {
+        this.dragonHomes.push({
+          perch: DRAGON_PERCH.clone().applyMatrix4(dummy.matrix),
+          x: town.pos.x,
+          z: town.pos.y,
+          turn,
+          scale,
+          color,
+          phase: fract(town.id * 0.377),
+        });
+      }
     }
     dummy.rotation.set(0, 0, 0);
     dummy.scale.setScalar(1);
-    this.towns.forEach((pair, i) => pair.finish(counts[i] ?? 0));
+    for (const set of this.townSets.values()) for (const pair of set) pair.finish(counts.get(pair) ?? 0);
+  }
+
+  /** A capital's dragon rests on its donjon, now and then takes off, circles the castle and lands. */
+  private placeDragons(time: number): void {
+    let n = 0;
+    for (const home of this.dragonHomes) {
+      const u = fract(time / DRAGON_CYCLE_MS + home.phase);
+      const pos = dragonAt(home, u, new Vector3());
+      const ahead = dragonAt(home, u + 0.004, new Vector3()).sub(pos);
+      const flying = u >= DRAGON_TAKEOFF;
+      const yaw = flying && ahead.lengthSq() > 1e-6 ? Math.atan2(ahead.x, ahead.z) : home.turn;
+      const circling = u >= DRAGON_CIRCLE && u < DRAGON_LAND;
+      const pitch = flying ? -Math.atan2(ahead.y, Math.hypot(ahead.x, ahead.z)) * 0.6 : 0;
+      dummy.position.copy(pos);
+      dummy.rotation.set(pitch, yaw, circling ? -DRAGON_BANK : 0, 'YXZ');
+      dummy.scale.setScalar(home.scale * DRAGON_SCALE);
+      dummy.updateMatrix();
+      this.dragons.place(n++, dummy.matrix, home.color, flying ? 1 : DRAGON_REST_FLAP);
+    }
+    dummy.rotation.set(0, 0, 0, 'XYZ');
+    dummy.scale.setScalar(1);
+    this.dragons.finish(n);
+  }
+
+  /** Beacon crystals float, turn and bob above their obelisks. */
+  private placeCrystals(time: number): void {
+    let n = 0;
+    for (const b of this.beaconSpots) {
+      const bob = Math.sin(time / 700 + b.x * 0.1) * 0.35;
+      dummy.position.set(b.x, (BEACON_CRYSTAL_HEIGHT + bob) * UNIT_SCALE, b.z);
+      dummy.rotation.set(0, time / 900 + b.z * 0.1, 0);
+      dummy.scale.setScalar(UNIT_SCALE);
+      dummy.updateMatrix();
+      this.crystals.setMatrixAt(n, dummy.matrix);
+      this.crystals.setColorAt(n++, tint.set(b.color));
+    }
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.setScalar(1);
+    this.crystals.count = n;
+    this.crystals.instanceMatrix.needsUpdate = true;
+    if (this.crystals.instanceColor) this.crystals.instanceColor.needsUpdate = true;
   }
 
   private placeBeacons(view: LordView): void {
     let n = 0;
+    this.beaconSpots = [];
     for (const zone of view.zones) {
-      dummy.position.set(zone.pos.x, 0, zone.pos.y);
+      if (n >= this.beacons.capacity) break;
+      const at = beaconSpot(view, zone);
+      dummy.position.set(at.x, 0, at.y);
       dummy.scale.setScalar(UNIT_SCALE);
       dummy.updateMatrix();
       const color = zone.beaconOwner ? ownerColor(view, zone.beaconOwner) : UNLIT_FIRE;
       this.beacons.place(n++, dummy.matrix, color);
+      this.beaconSpots.push({ x: at.x, z: at.y, color });
     }
     dummy.scale.setScalar(1);
     this.beacons.finish(n);
+  }
+
+  /** Smoke rises from chimneys and drifts with the wind. */
+  private placeSmoke(view: LordView, time: number): void {
+    if (!this.q.particles) return;
+    const wind = WIND_VECTORS[view.wind.dir] ?? { x: 0, y: 0 };
+    let n = 0;
+    for (const c of this.chimneys) {
+      for (let k = 0; k < PUFFS && n < SMOKE_CAPACITY; k++) {
+        const age = fract(time / 2800 + c.phase + k / PUFFS);
+        const drift = age * age * 5 * c.scale;
+        dummy.position.set(c.x + wind.x * drift, c.y + age * 5 * c.scale, c.z + wind.y * drift);
+        dummy.scale.setScalar((0.3 + age * 0.9) * (1 - age * age) * c.scale);
+        dummy.updateMatrix();
+        this.smoke.setMatrixAt(n++, dummy.matrix);
+      }
+    }
+    dummy.scale.setScalar(1);
+    this.smoke.count = n;
+    this.smoke.instanceMatrix.needsUpdate = true;
   }
 
   private placeMarches(input: Scene3DInput): void {
     const { view, gameNow, time } = input;
     let banners = 0;
     let soldiers = 0;
+    let dust = 0;
+    const put = (x: number, y: number, z: number, turn: number): void => {
+      dummy.position.set(x, y, z);
+      dummy.rotation.set(0, turn, 0);
+      dummy.updateMatrix();
+    };
+    // All soldiers march in step; the body is highest when the legs pass each other.
+    const bob = Math.abs(Math.cos((time / 1000) * STEP_RATE)) * 0.3;
     for (const m of view.marches) {
       const from = townById(view, m.from);
       const to = townById(view, m.to);
@@ -364,33 +724,43 @@ export class World3D {
       const x = from.pos.x + (to.pos.x - from.pos.x) * f;
       const z = from.pos.y + (to.pos.y - from.pos.y) * f;
       const heading = Math.atan2(to.pos.x - from.pos.x, to.pos.y - from.pos.y);
-      const lift = m.sky ? FLIGHT_HEIGHT + Math.sin(time / 300 + m.id) : 0;
+      const sin = Math.sin(heading);
+      const cos = Math.cos(heading);
+      const color = m.incoming ? '#ff4d4d' : ownerColor(view, m.owner);
+      const ground = (px: number, pz: number): number =>
+        m.sky ? FLIGHT_HEIGHT + Math.sin(time / 300 + m.id) : this.groundAt({ x: px, y: pz });
       dummy.scale.setScalar(UNIT_SCALE);
-      for (let k = 0; k < SOLDIERS; k++) {
+      for (let k = 0; k < SOLDIERS && soldiers < this.soldiers.capacity; k++) {
         const side = (k - (SOLDIERS - 1) / 2) * UNIT_SCALE;
         const back = (1.8 + Math.abs(side) * 0.7) * UNIT_SCALE;
-        const bob = Math.abs(Math.sin(time / 140 + m.id + k)) * 0.35;
-        dummy.position.set(
-          x - Math.sin(heading) * back + Math.cos(heading) * side * 1.5,
-          lift + bob,
-          z - Math.cos(heading) * back - Math.sin(heading) * side * 1.5,
-        );
-        dummy.rotation.set(0, heading, 0);
-        dummy.updateMatrix();
-        if (soldiers < this.soldiers.instanceMatrix.count)
-          this.soldiers.setMatrixAt(soldiers++, dummy.matrix);
+        const sx = x - sin * back + cos * side * 1.5;
+        const sz = z - cos * back - sin * side * 1.5;
+        put(sx, ground(sx, sz) + bob, sz, heading);
+        this.soldiers.place(soldiers++, dummy.matrix, color);
       }
-      dummy.position.set(x, lift, z);
-      dummy.rotation.set(0, heading - Math.PI / 2, 0);
-      dummy.updateMatrix();
-      const color = m.incoming ? '#ff4d4d' : ownerColor(view, m.owner);
-      if (banners < 256) this.banners.place(banners++, dummy.matrix, color);
+      if (banners < this.banners.capacity) {
+        put(x, ground(x, z), z, heading - Math.PI / 2);
+        this.banners.place(banners++, dummy.matrix, color);
+      }
+      if (!this.q.particles || m.sky || f <= 0 || f >= 1) continue;
+      for (let k = 0; k < PUFFS && dust < DUST_CAPACITY; k++) {
+        const age = fract(time / 900 + k / PUFFS + m.id * 0.17);
+        const back = (2.6 + age * 3) * UNIT_SCALE;
+        const wobble = Math.sin(m.id * 3.1 + k * 2.3) * 1.2 * UNIT_SCALE;
+        const dx = x - sin * back + cos * wobble;
+        const dz = z - cos * back - sin * wobble;
+        dummy.position.set(dx, ground(dx, dz) + 0.4 + age * 1.4, dz);
+        dummy.scale.setScalar((0.5 + age * 1.2) * (1 - age) * UNIT_SCALE);
+        dummy.updateMatrix();
+        this.dust.setMatrixAt(dust++, dummy.matrix);
+      }
     }
     dummy.rotation.set(0, 0, 0);
     dummy.scale.setScalar(1);
-    this.soldiers.count = soldiers;
-    this.soldiers.instanceMatrix.needsUpdate = true;
+    this.soldiers.finish(soldiers);
     this.banners.finish(banners);
+    this.dust.count = dust;
+    this.dust.instanceMatrix.needsUpdate = true;
   }
 
   private placeRings(input: Scene3DInput): void {

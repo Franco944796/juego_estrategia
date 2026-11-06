@@ -2,6 +2,9 @@ import { defaultConfig } from '@si/config';
 import { WIND_VECTORS, windFactor, type LordView, type TownView } from '@si/engine';
 import { formatNumber, formatRange } from '../format';
 import { isAlly, linkedIsles, NEUTRAL_COLOR, ownerColor, townById } from '../ui/labels';
+import { QUALITY } from '../map3d/quality';
+import { beaconSpot, flatIsle, type FlatIsle } from '../map3d/terrain';
+import { Territory } from '../map3d/territory';
 import { worldToScreen, type Camera, type Size, type Vec } from './camera';
 
 export interface SceneInput {
@@ -59,7 +62,7 @@ export function label(
   px: number,
   color = '#ffffff',
 ): void {
-  ctx.font = `600 ${px}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+  ctx.font = `800 ${px}px Nunito, system-ui, -apple-system, "Segoe UI", sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = 3;
@@ -98,25 +101,6 @@ function windStreaks(ctx: CanvasRenderingContext2D, input: SceneInput): void {
   }
 }
 
-function islePath(ctx: CanvasRenderingContext2D, c: Vec, r: number, shape: number[]): void {
-  const n = shape.length;
-  const pts = shape.map((k, i) => {
-    const a = (i / n) * Math.PI * 2;
-    return { x: c.x + Math.cos(a) * r * k, y: c.y + Math.sin(a) * r * k };
-  });
-  const mid = (p: Vec, q: Vec): Vec => ({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 });
-  const last = pts[n - 1] as Vec;
-  const first = pts[0] as Vec;
-  const start = mid(last, first);
-  ctx.beginPath();
-  ctx.moveTo(start.x, start.y);
-  pts.forEach((p, i) => {
-    const m = mid(p, pts[(i + 1) % n] as Vec);
-    ctx.quadraticCurveTo(p.x, p.y, m.x, m.y);
-  });
-  ctx.closePath();
-}
-
 function lanes(ctx: CanvasRenderingContext2D, input: SceneInput, sourceIsle: number | null): void {
   const { view, cam, size } = input;
   for (const lane of view.lanes) {
@@ -152,20 +136,87 @@ function lanes(ctx: CanvasRenderingContext2D, input: SceneInput, sourceIsle: num
   }
 }
 
+/** Painted isles, one per isle and town count (roads and fields keep clear of towns). */
+const flatCache = new Map<number, { key: string; flat: FlatIsle; territory: Territory }>();
+const FLAT_TEXTURE = 1536;
+const FLAT_TERRITORY = 768;
+const OUTLINE_POINTS = 120;
+/** Cliff height in world units, as it shows below the grass edge. */
+const CLIFF = 12;
+
+function flatFor(view: LordView, isle: LordView['isles'][number]): { flat: FlatIsle; territory: Territory } {
+  const key = `${view.towns.length}`;
+  const cached = flatCache.get(isle.id);
+  if (cached?.key === key) return cached;
+  const flat = flatIsle(view, isle, QUALITY.medium, FLAT_TEXTURE);
+  const entry = { key, flat, territory: new Territory(flat, isle.id, FLAT_TERRITORY) };
+  flatCache.set(isle.id, entry);
+  return entry;
+}
+
+function outline(ctx: CanvasRenderingContext2D, flat: FlatIsle, input: SceneInput, dy = 0, scale = 1): void {
+  const { pos } = flat.field.isle;
+  ctx.beginPath();
+  for (let i = 0; i < OUTLINE_POINTS; i++) {
+    const a = (i / OUTLINE_POINTS) * Math.PI * 2;
+    const r = flat.field.radiusAt(a) * scale;
+    const p = worldToScreen(input.cam, input.size, {
+      x: pos.x + Math.cos(a) * r,
+      y: pos.y + Math.sin(a) * r,
+    });
+    if (i === 0) ctx.moveTo(p.x, p.y + dy);
+    else ctx.lineTo(p.x, p.y + dy);
+  }
+  ctx.closePath();
+}
+
 function isles(ctx: CanvasRenderingContext2D, input: SceneInput): void {
   const { view, cam, size } = input;
   for (const isle of view.isles) {
     const c = worldToScreen(cam, size, isle.pos);
     const r = isle.radius * cam.zoom;
     if (c.x < -r * 2 || c.y < -r * 2 || c.x > size.width + r * 2 || c.y > size.height + r * 2) continue;
-    islePath(ctx, { x: c.x, y: c.y + r * 0.34 }, r * 0.86, isle.shape);
-    ctx.fillStyle = '#4f3b2c';
+    const { flat, territory } = flatFor(view, isle);
+    territory.update(view);
+    const under = ctx.createLinearGradient(0, c.y, 0, c.y + r * 1.2);
+    under.addColorStop(0, '#5d4a3a');
+    under.addColorStop(1, '#2a211b');
+    outline(ctx, flat, input, r * 0.34, 0.86);
+    ctx.fillStyle = under;
     ctx.fill();
-    islePath(ctx, c, r, isle.shape);
-    ctx.fillStyle = '#5b8f3e';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#2c4a1d';
+    const cliff = Math.max(3, CLIFF * cam.zoom);
+    for (const [k, color] of ['#6d5641', '#957a5c', '#76593f', '#8a6a4a', '#6b4f35'].entries()) {
+      outline(ctx, flat, input, cliff * (1 - k / 5));
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+    // Waterfalls pour from the streams' mouths down the cliff and the rock below.
+    for (const st of flat.field.streams) {
+      const mouth = worldToScreen(cam, size, st.b);
+      const w = Math.max(2, 3.2 * cam.zoom);
+      const fall = ctx.createLinearGradient(0, mouth.y, 0, mouth.y + cliff + r * 0.25);
+      fall.addColorStop(0, 'rgba(120, 190, 240, 0.95)');
+      fall.addColorStop(0.6, 'rgba(200, 232, 255, 0.7)');
+      fall.addColorStop(1, 'rgba(230, 245, 255, 0)');
+      ctx.fillStyle = fall;
+      ctx.beginPath();
+      ctx.moveTo(mouth.x - w / 2, mouth.y);
+      ctx.lineTo(mouth.x + w / 2, mouth.y);
+      ctx.lineTo(mouth.x + w, mouth.y + cliff + r * 0.25);
+      ctx.lineTo(mouth.x - w, mouth.y + cliff + r * 0.25);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.save();
+    outline(ctx, flat, input);
+    ctx.clip();
+    const corner = worldToScreen(cam, size, { x: flat.x0, y: flat.z0 });
+    ctx.drawImage(flat.canvas, corner.x, corner.y, flat.span * cam.zoom, flat.span * cam.zoom);
+    ctx.drawImage(territory.canvas, corner.x, corner.y, flat.span * cam.zoom, flat.span * cam.zoom);
+    ctx.restore();
+    outline(ctx, flat, input);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(50, 70, 28, 0.9)';
     ctx.stroke();
   }
 }
@@ -176,7 +227,7 @@ function zones(ctx: CanvasRenderingContext2D, input: SceneInput): void {
   const glow = TOWN_RADIUS * 1.9 * cam.zoom;
   const post = Math.max(7, 16 * cam.zoom);
   for (const zone of view.zones) {
-    const c = worldToScreen(cam, size, zone.pos);
+    const c = worldToScreen(cam, size, beaconSpot(view, zone));
     if (c.x < -200 || c.y < -200 || c.x > size.width + 200 || c.y > size.height + 200) continue;
     const owner = zone.beaconOwner;
     if (owner) {
@@ -372,6 +423,12 @@ function towns(ctx: CanvasRenderingContext2D, input: SceneInput, targets: Set<nu
     ctx.fill();
     townShape(ctx, style, p, rr);
     ctx.fillStyle = town.owner === null ? NEUTRAL_COLOR : ownerColor(view, town.owner);
+    ctx.fill();
+    const bevel = ctx.createRadialGradient(p.x - rr * 0.35, p.y - rr * 0.4, rr * 0.1, p.x, p.y, rr * 1.15);
+    bevel.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+    bevel.addColorStop(0.55, 'rgba(255, 255, 255, 0)');
+    bevel.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+    ctx.fillStyle = bevel;
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = INK;

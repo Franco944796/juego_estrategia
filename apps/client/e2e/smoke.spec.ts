@@ -1,7 +1,8 @@
 import type { LordView, TownView } from '@si/engine';
 import { expect, test, type Page } from '@playwright/test';
 
-const DEMO = new URL('../../../demo/shattered-isles.html', import.meta.url).href;
+// The single-file client build, opened straight from disk: single-player needs no server.
+const DEMO = new URL('../dist/index.html', import.meta.url).href;
 
 async function gameView(page: Page): Promise<LordView> {
   await page.waitForFunction(() => Boolean(window.__shatteredIsles?.view()));
@@ -40,6 +41,8 @@ function clipped(page: Page): Promise<string[]> {
 }
 
 test('plays the opening, wins a battle and fits the screen', async ({ page }, testInfo) => {
+  // The longest walk-through; with every test sharing a software renderer it can pass 90 s.
+  test.setTimeout(180_000);
   const touch = testInfo.project.name === 'mobile';
   await page.goto(DEMO);
   await page.getByTestId('new-game').click();
@@ -63,7 +66,13 @@ test('plays the opening, wins a battle and fits the screen', async ({ page }, te
   await page.screenshot({ path: testInfo.outputPath('pick.png') });
   await tapTown(page, target.id, touch);
   await expect(page.getByTestId('send-sheet')).toBeVisible();
+  // The slider moves in tenths; its lowest stop scouts with a single troop.
+  await page.getByTestId('troop-slider').fill('3');
+  await expect(page.getByTestId('troop-amount')).toContainText('30 %');
+  await page.getByTestId('send-scout').click();
+  await expect(page.getByTestId('troop-amount')).toContainText(/· 1\//);
   await page.getByTestId('send-all').click();
+  await expect(page.getByTestId('troop-amount')).toContainText('100 %');
   await expect(page.getByTestId('confirm-send')).toBeEnabled();
   await expect(page.getByTestId('eta')).not.toContainText('—');
   await page.waitForFunction(() => window.__shatteredIsles?.cameraSettled() ?? false);
@@ -78,6 +87,7 @@ test('plays the opening, wins a battle and fits the screen', async ({ page }, te
   await page.getByTestId('speed-4').click();
   await page.getByTestId('nav-reports').click();
   await expect(page.getByTestId('report-item').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('report-defense').first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('reports.png') });
 
   await page.getByTestId('nav-ranking').click();

@@ -30,9 +30,8 @@ logged in `docs/BALANCE.md`). Config keys are written as `section.key`.
   that lord sees and may attack until someone owns them. Capitals and private towns leave their zones.
   Only when an isle has no neutral town left does the capital go on a shore slot, as it used to.
   Lords go to the newest isle with room.
-- **Growth is off for now** (`map.growth.enabled: false`, demo and online): every season keeps its
-  first isle while the 3D map is tried out, and joining fails with `WORLD_FULL` once its 10 slots are
-  taken. With growth on, the rules below apply.
+- Growth is on in the demo and online (`map.growth.enabled`); with it off, a season keeps its first
+  isle and joining fails with `WORLD_FULL` once its 10 slots are taken.
 - **A new isle is born** when the newest isle is full (every slot taken) or fully conquered (every
   public town owned), at most `map.growth.maxPerDay` (3) per 24 game hours, not counting the first. New
   isles go in rings of 6, 12, 18… around the first, `map.growth.isleSpacing` apart.
@@ -263,6 +262,13 @@ API as players, and reads only what its vision allows (unseen garrisons are gues
 weighs only the `bots.targetsPerTown` (12) nearest targets of each town, plus a few on each linked
 isle, from its strongest towns.
 
+Crossing to another isle depends on the personality: targets over a lane count only once the share
+of neutral public towns left on the source's isle is at most `crossFreeShare`, and then weigh
+`crossWeight` times their value. Raiders look across at once (1, ×20), Climbers when a fifth is left
+(0.2, ×1), Builders when home is spent (0, ×1) and Wardens almost never (0, ×0.01). An attack over a
+lane sends what the siege needs times `bots.crossSlack` (1.5), not the whole garrison: marches fly
+slower the bigger they are.
+
 | Personality | Behavior                                                                      |
 | ----------- | ----------------------------------------------------------------------------- |
 | Raider      | Attacks at low margins, favors tailwinds, puts points into Attack.            |
@@ -284,13 +290,63 @@ more than `bots.hoardMin` (30) minutes of production to the most exposed of thei
 - Screen: the map with the HUD on top (gold, Dominion, and the portrait with the lord level, which
   opens the profile: Gear, Skills, Stats) and a column of picture buttons on the right (marches,
   reports, ranking, social online, menu).
+- Sending troops: one slider in tenths of the town's troops (10 % … 100 %, rounded down, at least 1);
+  its lowest stop scouts. Every attack report shows the defense it met: defending troops × multiplier
+  (fortification × the owner's defense from gear) + walls = total.
+- Scouting (`SCOUT`, also from a «Scout» button on any foreign town): one troop travels at the normal
+  speed of a lone troop, never fights and is lost at the target. Its report gives the same defense
+  breakdown; the scouted owner only learns who scouted which town. No limits: it does not count
+  against the attacks in flight and works on capitals, neutrals and lords too weak to attack. Own and
+  allied towns are not scouted.
+- Isle coasts (drawn only): the engine's gentle shape plus bays, headlands, coves and a ragged edge;
+  towns keep firm ground between them and the sea of clouds.
 - **3D map** (default; the menu switches to the lighter 2D map, also used when WebGL is missing):
-  low poly floating isles with trees and clouds, seen from a tilted tabletop camera (drag to move,
-  pinch or wheel to zoom, no rotation). Towns are built in code by stage, roofs and flags in the
-  owner's color: hut (levels 1–9), fenced house (10–29), village with a watchtower (30–59), palisade
-  fort (60–89), stone citadel (90–99) and a full castle at level 100. Marches are a few soldiers
-  behind a banner in the owner's color (red when they come for you). Levels, garrisons and march
-  sizes are drawn as labels over the scene.
+  detailed low poly floating isles seen from a tilted tabletop camera (drag to move, pinch or wheel to
+  zoom, no rotation): sun shadows, low hills away from towns and roads, a ground texture painted in
+  code (grass shades, meadows, forest floor, roads between neighboring towns, farm fields), layered
+  cliffs and a rocky underside, forests of pines, oaks and birches, bushes, rocks, grass and flowers.
+  In the wild ground near the shore rise rocky mountains with snowy tops and lie small lakes. Each
+  lord's territory (the ground nearer one of their towns than to any other town, up to 24 units)
+  is tinted in their color, with a line where it meets another lord's.
+  Towns are built in code by stage, roofs and flags in the owner's color: hut with a campfire
+  (levels 1–9), half-timbered house with a well and a field inside a fence (10–29), village with a
+  watchtower inside a palisade (30–59), log fort with corner towers and a stone keep (60–89), stone
+  citadel with round towers and a gatehouse (90–99) and a full castle at level 100. Flags and fires
+  flutter, chimneys smoke with the wind. Marches are soldiers (helmet, shield, spear, tunic in the
+  owner's color) walking in step behind a banner, raising dust (red when they come for you). Levels,
+  garrisons and march sizes are drawn as labels over the scene. Graphics quality (menu: Auto, High,
+  Medium, Low) sets shadows, resolution, scenery density, smoke and dust; Auto guesses from the
+  device and steps down once if the map runs under ~24 frames per second.
+- **Item levels**: a duplicate (same slot and rarity) joins the owned item as a copy; 2 × level copies
+  raise it a level. Destroying an unequipped item gives scrap (common 10, rare 25, epic 60,
+  legendary 150, plus half the scrap put into it); a level costs 20 × level scrap. Each level adds
+  +1/+2/+3/+5 % (common/rare/epic/legendary) to the item's bonus, up to level 20; the chest never
+  levels. Spending a skill point asks for confirmation first.
+- **Gems**: sockets by rarity (common 0, rare 1, epic 4, legendary 9). A gem adds by color: topaz
+  gold, ruby troops, sapphire defense, amethyst Dominion, emerald experience; only in worn items.
+  Its value comes from the league it was won in (Bronze 2.5 %, Silver 5 %, Gold 10 %) and grows by
+  half of that per level; repeats join as copies like items (2 × level), up to level 10. Gems are
+  won only at a season end, by rank: top 5 % five gems, top 25 % three, top half two, the rest one
+  (single player: Bronze). They go in and out of sockets freely; destroying an item frees its gems.
+- **Fantasy look**: a capital at level 100 keeps a dragon in its owner's color on the open top of its
+  donjon; now and then it takes off, circles the castle and lands (purely visual). The cosmetic
+  styles are 3D skins (classic, slate tower, sandstone hex, marble-and-gold diamond, elven star,
+  obsidian crystal); roofs and flags keep the owner's color. Beacons are arcane obelisks with glowing
+  rune bands and a floating crystal in the holder's color. Glowing crystals dot the mountains, rune
+  stones stand by some roads, and a few streams pour off the coast as waterfalls. Sky lanes are arched
+  light bridges between the coasts with runes running along them, crystal blue at rest; while sending,
+  the source isle's bridges take the wind's color and show its factor.
+- **Test accounts** (online, for the developer): recovery codes listed in the server's
+  `dev-accounts.txt` mark accounts whose lords upgrade for free, may add troops and levels, buy Legacy
+  items and styles for free, and stay out of the standings (so no Legacy, medals or league moves).
+- **Themes**: the interface follows the local hour: «Pergamino» (parchment and wood) from 7:00 to
+  18:59, «Noche de las islas» (night blue and gold) the rest; the map does not change. Titles in
+  Cinzel, the rest in Nunito, both served inside the client build.
+- **Interface**: one gem per kind of figure, the same everywhere: gold topaz, troops ruby, defense
+  sapphire, Dominion amethyst, experience emerald. Panels have gold corners; the town sheet is split
+  into Defense, Production and Realm.
+- **2D map**: the same painted ground with relief shading, lakes, tree crowns seen from above and the
+  lords' territories, layered cliffs, and shaded town tokens.
 - Onboarding: tap your capital → send troops to a neutral town on your isle → watch the wind → upgrade a
   town. First conquest in under 60 real seconds.
 - Acceptance (15 real minutes): finish onboarding, hold 6+ towns, light a beacon, spend a skill point, see a

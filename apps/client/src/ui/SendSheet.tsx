@@ -6,11 +6,16 @@ import { RULE_TEXT, t, type Lang } from '../i18n';
 import { toRealMs, useGame, type Clock } from '../store';
 import { useGameNow } from './hooks';
 import { CloseIcon, TroopIcon } from './icons';
-import { linkedIsles, townById, townLabel } from './labels';
+import { isAlly, linkedIsles, townById, townLabel } from './labels';
 
 const PREVIEW_DEBOUNCE_MS = 120;
-/** Slider steps: the army is chosen as a share, since garrisons run into the billions. */
-const SHARE_STEPS = 100;
+/** Rules a scout must also meet; the rest (capitals, too weak, march limit) only bind attacks. */
+const SCOUT_RULES = new Set(['NOT_OWNER', 'NOT_ENOUGH_TROOPS', 'UNKNOWN_TOWN', 'SAME_TOWN', 'UNREACHABLE']);
+/**
+ * Slider stops: the army is chosen as a share, since garrisons run into the billions. Stop 0 sends a
+ * single troop to scout; stop k sends k tenths.
+ */
+const SHARE_STEPS = 10;
 
 function travelText(lang: Lang, p: SendPreview): string {
   if (!p.travel) return '';
@@ -44,7 +49,7 @@ function waitHint(lang: Lang, p: SendPreview, clock: Clock, now: number): string
   return t(lang, 'waitWind', { wait, t: arrive, f: formatDecimal(better.windFactor, lang) });
 }
 
-export function SendSheet({ from, to }: { from: number; to: number }) {
+export function SendSheet({ from, to, scout = false }: { from: number; to: number; scout?: boolean }) {
   const view = useGame((s) => s.view);
   const lang = useGame((s) => s.lang);
   const clock = useGame((s) => s.clock);
@@ -60,7 +65,7 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
     (source?.owner === view?.me.id
       ? source?.garrison
       : source?.stationed?.find((s) => s.lordId === view?.me.id)?.troops) ?? 0;
-  const [share, setShare] = useState(1);
+  const [step, setStep] = useState(scout ? 0 : SHARE_STEPS);
   const [preview, setPreview] = useState<SendPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const windDir = view?.wind.dir;
@@ -69,7 +74,8 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
     if (tutorial === 1) setTutorial(2);
   }, [tutorial, setTutorial]);
 
-  const amount = Math.floor(available * share);
+  // Rounded down, but never 0 while there are troops: the lowest stop scouts with one.
+  const amount = available === 0 ? 0 : Math.max(1, Math.floor((available * step) / SHARE_STEPS));
 
   useEffect(() => {
     let cancelled = false;
@@ -94,15 +100,19 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
       linkedIsles(view, town.isleId).has(target.isleId),
   );
   const total = amount;
-  const outcome = preview ? outcomeText(lang, preview) : null;
-  const hint = preview ? waitHint(lang, preview, clock, now) : null;
-  const error =
-    preview?.error && total > 0 ? (RULE_TEXT[lang][preview.error.code] ?? preview.error.message) : null;
+  // The lowest stop scouts a foreign town; toward an own or allied town it just sends one troop.
+  const scouting = step === 0 && target.owner !== view.me.id && !isAlly(view, target.owner);
+  const outcome = preview && !scouting ? outcomeText(lang, preview) : null;
+  const hint = preview ? (scouting ? t(lang, 'scoutHint') : waitHint(lang, preview, clock, now)) : null;
+  const rule = preview?.error && (!scouting || SCOUT_RULES.has(preview.error.code)) ? preview.error : null;
+  const error = rule && total > 0 ? (RULE_TEXT[lang][rule.code] ?? rule.message) : null;
   const eta = preview?.travel ? formatDuration(toRealMs(clock, preview.travel.durationMs)) : '—';
 
   const send = async (): Promise<void> => {
     setBusy(true);
-    const ok = await command({ type: 'SEND', from, to, troops: amount });
+    const ok = await command(
+      scouting ? { type: 'SCOUT', from, to } : { type: 'SEND', from, to, troops: amount },
+    );
     setBusy(false);
     if (ok) closeSheet();
   };
@@ -128,7 +138,7 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
               type="button"
               className={`small${town.id === from ? ' selected' : ''}`}
               aria-pressed={town.id === from}
-              onClick={() => openSend(town.id, to)}
+              onClick={() => openSend(town.id, to, step === 0)}
             >
               {townLabel(lang, view, town.id)} · {formatNumber(town.garrison ?? 0, lang)}
             </button>
@@ -147,25 +157,26 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
             min={0}
             max={SHARE_STEPS}
             step={1}
-            value={Math.round(share * SHARE_STEPS)}
+            value={step}
             disabled={available === 0}
             data-testid="troop-slider"
-            onChange={(e) => setShare(Number(e.target.value) / SHARE_STEPS)}
+            onChange={(e) => setStep(Number(e.target.value))}
           />
-          <span className="slider-value">
+          <span className="slider-value" data-testid="troop-amount">
+            {step === 0 ? t(lang, 'scoutValue') : `${(step * 100) / SHARE_STEPS} %`} ·{' '}
             {formatNumber(amount, lang)}/{formatNumber(available, lang)}
           </span>
         </label>
       </div>
       <div className="quick">
-        <button type="button" className="small" data-testid="send-all" onClick={() => setShare(1)}>
+        <button type="button" className="small" data-testid="send-all" onClick={() => setStep(SHARE_STEPS)}>
           {t(lang, 'all')}
         </button>
-        <button type="button" className="small" onClick={() => setShare(0.5)}>
+        <button type="button" className="small" onClick={() => setStep(SHARE_STEPS / 2)}>
           {t(lang, 'half')}
         </button>
-        <button type="button" className="small" onClick={() => setShare(0)}>
-          {t(lang, 'none')}
+        <button type="button" className="small" data-testid="send-scout" onClick={() => setStep(0)}>
+          {t(lang, 'scout')}
         </button>
       </div>
 
@@ -187,7 +198,7 @@ export function SendSheet({ from, to }: { from: number; to: number }) {
           disabled={busy || total === 0 || error !== null}
           onClick={() => void send()}
         >
-          {t(lang, 'confirmSend')}
+          {t(lang, scouting ? 'confirmScout' : 'confirmSend')}
         </button>
       </div>
     </section>

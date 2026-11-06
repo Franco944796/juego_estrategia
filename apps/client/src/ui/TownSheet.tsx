@@ -1,9 +1,10 @@
 import type { LordView, TownView } from '@si/engine';
 import { formatDecimal, formatNumber, formatRate } from '../format';
-import { command } from '../game/session';
+import { command, devTool } from '../game/session';
 import { t } from '../i18n';
 import { useGame } from '../store';
-import { CloseIcon, CrownIcon, ShieldIcon, StarIcon, TroopIcon } from './icons';
+import { Gem } from './Gem';
+import { CloseIcon, CoinIcon, CrownIcon, ShieldIcon, StarIcon, TroopIcon } from './icons';
 import { attackXp, isAlly, linkedIsles, ownerColor, ownerName, townById, townLabel } from './labels';
 
 /** The player's town with the most troops that can reach `target`, if any. */
@@ -68,11 +69,14 @@ export function TownSheet({ townId }: { townId: number }) {
       </header>
 
       <div className="facts">
+        <h3 className="facts-title">{t(lang, 'sectionDefense')}</h3>
         <div className="fact">
+          <Gem kind="ruby" small>
+            <TroopIcon size={13} />
+          </Gem>
           <span className="fact-label">{t(lang, 'garrison')}</span>
           {town.garrison !== null ? (
             <span className="troop" data-testid="garrison">
-              <TroopIcon size={15} />
               {formatNumber(town.garrison, lang)}
             </span>
           ) : (
@@ -80,15 +84,48 @@ export function TownSheet({ townId }: { townId: number }) {
           )}
         </div>
         <div className="fact" data-testid="walls">
-          <ShieldIcon size={15} />
+          <Gem kind="sapphire" small>
+            <ShieldIcon size={13} />
+          </Gem>
           <span>
             {t(lang, 'walls', { n: formatNumber(town.walls, lang) })} ·{' '}
             {t(lang, 'defense', { n: formatDecimal(town.fort, lang, 2) })}
           </span>
         </div>
+        {town.stationed && town.stationed.length > 0 && (
+          <div className="fact" data-testid="stationed">
+            <Gem kind="ruby" small>
+              <TroopIcon size={13} />
+            </Gem>
+            <span className="fact-label">{t(lang, 'allies')}</span>
+            <span>
+              {town.stationed
+                .map((s) => `${ownerName(lang, view, s.lordId)} · ${formatNumber(s.troops, lang)}`)
+                .join(' — ')}
+            </span>
+          </div>
+        )}
+        {own && (
+          <>
+            <h3 className="facts-title">{t(lang, 'production')}</h3>
+            <div className="fact">
+              <Gem kind="topaz" small>
+                <CoinIcon size={13} />
+              </Gem>
+              <span>{t(lang, 'goldRate', { n: formatRate(own.goldPerMin, lang) })}</span>
+              <Gem kind="ruby" small>
+                <TroopIcon size={13} />
+              </Gem>
+              <span>{t(lang, 'troopRate', { n: formatRate(own.troopsPerMin, lang) })}</span>
+            </div>
+          </>
+        )}
+        {((enemyLord && !tooWeak) || zone) && <h3 className="facts-title">{t(lang, 'sectionRealm')}</h3>}
         {enemyLord && !tooWeak && (
           <div className="fact" data-testid="lord-power">
-            <StarIcon size={15} />
+            <Gem kind="amethyst" small>
+              <StarIcon size={13} />
+            </Gem>
             <span>
               {t(lang, 'lordPower', {
                 name: ownerName(lang, view, town.owner),
@@ -98,22 +135,15 @@ export function TownSheet({ townId }: { townId: number }) {
             </span>
           </div>
         )}
-        {own && (
-          <div className="fact">
-            <span className="fact-label">{t(lang, 'production')}</span>
+        {zone && (
+          <div className="fact" data-testid="zone">
+            <Gem kind="amethyst" small>
+              <CrownIcon size={13} />
+            </Gem>
             <span>
-              {t(lang, 'goldRate', { n: formatRate(own.goldPerMin, lang) })} ·{' '}
-              {t(lang, 'troopRate', { n: formatRate(own.troopsPerMin, lang) })}
-            </span>
-          </div>
-        )}
-        {town.stationed && town.stationed.length > 0 && (
-          <div className="fact" data-testid="stationed">
-            <span className="fact-label">{t(lang, 'allies')}</span>
-            <span>
-              {town.stationed
-                .map((s) => `${ownerName(lang, view, s.lordId)} · ${formatNumber(s.troops, lang)}`)
-                .join(' — ')}
+              {zone.beaconOwner
+                ? t(lang, 'beacon', { name: ownerName(lang, view, zone.beaconOwner) })
+                : t(lang, 'zoneProgress', { n: zoneMine, total: zone.townIds.length })}
             </span>
           </div>
         )}
@@ -121,16 +151,6 @@ export function TownSheet({ townId }: { townId: number }) {
           <p className="muted" data-testid="private-town">
             {t(lang, 'privateTown')}
           </p>
-        )}
-        {zone && (
-          <div className="fact" data-testid="zone">
-            <CrownIcon size={15} />
-            <span>
-              {zone.beaconOwner
-                ? t(lang, 'beacon', { name: ownerName(lang, view, zone.beaconOwner) })
-                : t(lang, 'zoneProgress', { n: zoneMine, total: zone.townIds.length })}
-            </span>
-          </div>
         )}
       </div>
 
@@ -155,7 +175,7 @@ export function TownSheet({ townId }: { townId: number }) {
             <button
               type="button"
               data-testid="upgrade-button"
-              disabled={!own || own.upgradeCost === null || gold < own.upgradeCost}
+              disabled={!own || own.upgradeCost === null || (!view.me.dev && gold < own.upgradeCost)}
               onClick={() => void command({ type: 'UPGRADE', townId: town.id })}
             >
               {own?.upgradeCost == null
@@ -212,6 +232,26 @@ export function TownSheet({ townId }: { townId: number }) {
           </button>
         ) : (
           <p className="muted">{t(lang, 'noSource')}</p>
+        )}
+        {!mine && !ally && source && (
+          <button type="button" data-testid="scout-button" onClick={() => openSend(source.id, town.id, true)}>
+            {t(lang, 'confirmScout')}
+          </button>
+        )}
+        {mine && view.me.dev && (
+          <div className="segmented" role="group" aria-label={t(lang, 'devTitle')}>
+            {[1e6, 1e12].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className="small"
+                data-testid={`dev-troops-${n}`}
+                onClick={() => void devTool({ type: 'TROOPS', townId: town.id, amount: n })}
+              >
+                {t(lang, 'devTroops', { n: formatNumber(n, lang) })}
+              </button>
+            ))}
+          </div>
         )}
         {canGroup && (
           <button type="button" data-testid="group-button" onClick={() => openGroup(town.id)}>

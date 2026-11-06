@@ -1,16 +1,22 @@
 import { defaultConfig } from '@si/config';
-import type {
-  Command,
-  DomainEvent,
-  GearSlot,
-  GroupPreview,
-  Item,
-  LordView,
-  Rarity,
-  SendPreview,
+import { GEM_COLORS } from '@si/config/constants';
+import {
+  stockGem,
+  type Command,
+  type DevAction,
+  type DomainEvent,
+  type GearSlot,
+  type Gem,
+  type GroupPreview,
+  type Item,
+  type LordView,
+  type Rarity,
+  type SendPreview,
+  type Standing,
 } from '@si/engine';
 import { formatDuration, formatNumber } from '../format';
 import { BOT_NAMES, RULE_TEXT, SERVER_TEXT, t, WIND_NAMES } from '../i18n';
+import { QUALITY_SETTINGS, type QualitySetting } from '../map3d/quality';
 import { toRealMs, useGame, type MapMode, type SeasonNews } from '../store';
 import { isAlly, itemName, townLabel } from '../ui/labels';
 import { LocalGameClient, type GameClient } from './client';
@@ -24,7 +30,10 @@ const LANG_KEY = 'shattered-isles:lang';
 const TUTORIAL_KEY = 'shattered-isles:tutorial-done';
 const TOKEN_KEY = 'shattered-isles:token';
 const ARMORY_KEY = 'shattered-isles:armory';
+/** Gems won at a single-player season end, added to the armory when the next season starts. */
+const GEM_REWARDS_KEY = 'shattered-isles:gem-rewards';
 const MAP_KEY = 'shattered-isles:map';
+const QUALITY_KEY = 'shattered-isles:quality';
 
 let client: GameClient | null = null;
 let remote: RemoteGameClient | null = null;
@@ -78,6 +87,16 @@ export function chooseMapMode(mode: MapMode): void {
   useGame.getState().setMapMode(mode);
 }
 
+export function savedQuality(): QualitySetting | null {
+  const quality = read(QUALITY_KEY);
+  return QUALITY_SETTINGS.find((q) => q === quality) ?? null;
+}
+
+export function chooseQuality(quality: QualitySetting): void {
+  write(QUALITY_KEY, quality);
+  useGame.getState().setQuality(quality);
+}
+
 export function savedLang(): 'es' | 'en' | null {
   const lang = read(LANG_KEY);
   return lang === 'es' || lang === 'en' ? lang : null;
@@ -98,10 +117,60 @@ function readArmory(): Armory {
   return { items: [], gear: {} };
 }
 
+/**
+ * How many gems a single-player rank wins: the same bands as the online rewards (each holds the top
+ * `topShare` of the field, rounded up and never empty).
+ */
+export function seasonGemCount(standings: Standing[], lordId: string): number {
+  const tiers = defaultConfig.rewards.tiers;
+  const mine = standings.find((s) => s.lordId === lordId);
+  if (!mine) return 0;
+  const cutoffs = tiers.map((t) => Math.max(1, Math.ceil(standings.length * t.topShare)));
+  const found = cutoffs.findIndex((cutoff) => mine.rank <= cutoff);
+  return tiers[found < 0 ? tiers.length - 1 : found]?.gems ?? 0;
+}
+
+function readGemRewards(): Gem[] {
+  try {
+    const gems = JSON.parse(read(GEM_REWARDS_KEY) ?? '[]') as Gem[];
+    return Array.isArray(gems) ? gems : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Gems for a finished single-player season (league 1), colors at random. */
+function awardSeasonGems(count: number): void {
+  const won = readGemRewards();
+  const stamp = Date.now().toString(36);
+  for (let k = 0; k < count; k++) {
+    won.push({
+      id: `${stamp}-${k}`,
+      color: GEM_COLORS[Math.floor(Math.random() * GEM_COLORS.length)] ?? 'TOPAZ',
+      league: 0,
+    });
+  }
+  write(GEM_REWARDS_KEY, JSON.stringify(won));
+}
+
+/** The armory with the gems won since the last season; repeats join owned gems as copies. */
+function armoryWithRewards(): Armory {
+  const armory = readArmory();
+  const gems = armory.gems ? [...armory.gems] : [];
+  for (const gem of readGemRewards()) stockGem(defaultConfig, gems, gem);
+  write(GEM_REWARDS_KEY, null);
+  return { ...armory, gems };
+}
+
 let lastArmory = '';
 
 function keepArmory(view: LordView): void {
-  const text = JSON.stringify({ items: view.me.items, gear: view.me.gear });
+  const text = JSON.stringify({
+    items: view.me.items,
+    gear: view.me.gear,
+    scrap: view.me.scrap,
+    gems: view.me.gems,
+  });
   if (text === lastArmory) return;
   lastArmory = text;
   write(ARMORY_KEY, text);
@@ -129,7 +198,7 @@ export function startNewGame(bots: number): void {
     seed: Math.floor(Math.random() * 2 ** 31),
     humanName: t(lang, 'defaultName'),
     botNames: BOT_NAMES[lang].slice(0, bots),
-    armory: readArmory(),
+    armory: armoryWithRewards(),
   });
   useGame.setState({ screen: 'game', mode: 'offline', tutorial: read(TUTORIAL_KEY) ? null : 0 });
 }
@@ -157,6 +226,18 @@ export function finishTutorial(): void {
 export async function command(cmd: Command): Promise<boolean> {
   if (!client) return false;
   const error = await client.command(cmd);
+  if (error) {
+    const { lang, pushToast } = useGame.getState();
+    pushToast(RULE_TEXT[lang][error.code] ?? error.message, 'bad');
+    return false;
+  }
+  return true;
+}
+
+/** Runs a test tool in the online world (test accounts only). */
+export async function devTool(action: DevAction): Promise<boolean> {
+  if (!remote) return false;
+  const error = await remote.dev(action);
   if (error) {
     const { lang, pushToast } = useGame.getState();
     pushToast(RULE_TEXT[lang][error.code] ?? error.message, 'bad');
@@ -365,7 +446,7 @@ function notify(events: DomainEvent[]): void {
             t(lang, 'toastAllyHelp', { name: lordName(view, e.march.owner), town: town(e.march.to) }),
             'good',
           );
-        } else if (target?.owner === me) {
+        } else if (target?.owner === me && !e.march.scout) {
           const eta = formatDuration(toRealMs(store.clock, e.march.arriveAt - e.at));
           pushToast(
             t(lang, 'toastIncoming', { name: lordName(view, e.march.owner), town: town(e.march.to), t: eta }),
@@ -374,6 +455,16 @@ function notify(events: DomainEvent[]): void {
         }
         break;
       }
+      case 'SCOUTED':
+        if (e.report.scout === me)
+          pushToast(t(lang, 'toastScouted', { town: town(e.report.townId) }), 'good');
+        else if (e.report.owner === me) {
+          pushToast(
+            t(lang, 'toastScoutedBy', { name: lordName(view, e.report.scout), town: town(e.report.townId) }),
+            'bad',
+          );
+        }
+        break;
       case 'BATTLE': {
         const r = e.report;
         if (r.attacker === me) {
@@ -425,7 +516,18 @@ function notify(events: DomainEvent[]): void {
           pushToast(t(lang, 'toastThroneTaken', { name: lordName(view, e.to) }));
         break;
       case 'ITEM_FOUND':
-        if (e.lordId === me && e.source === 'LEVEL')
+        if (e.lordId === me && e.into) {
+          const level = e.into.level ?? 1;
+          pushToast(
+            t(lang, 'toastCopy', {
+              item: itemName(lang, e.item),
+              n: level,
+              c: e.into.copies ?? 0,
+              need: defaultConfig.gear.copiesPerLevel * level,
+            }),
+            'good',
+          );
+        } else if (e.lordId === me && e.source === 'LEVEL')
           pushToast(t(lang, 'toastItem', { item: itemName(lang, e.item) }), 'good');
         break;
       case 'LORD_EXILED':
@@ -433,6 +535,10 @@ function notify(events: DomainEvent[]): void {
         break;
       case 'LORD_ELIMINATED':
         if (e.lordId === me) pushToast(t(lang, 'toastEliminated'), 'bad');
+        break;
+      case 'SEASON_ENDED':
+        // Online the server hands out gems at the season end; single player keeps them here.
+        if (store.mode === 'offline') awardSeasonGems(seasonGemCount(e.standings, me));
         break;
       default:
         break;

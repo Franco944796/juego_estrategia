@@ -1,7 +1,7 @@
 import { defaultConfig } from '@si/config';
 import { GEAR_EFFECTS } from '@si/config/constants';
-import type { Item, LordView, MarchView, TownView } from '@si/engine';
-import { townName } from '../format';
+import type { Gem, Item, LordView, MarchView, TownView } from '@si/engine';
+import { formatDecimal, townName } from '../format';
 import { t, type Lang } from '../i18n';
 
 const townIndex = new WeakMap<LordView, Map<number, TownView>>();
@@ -51,13 +51,36 @@ export function isAlly(view: LordView, ownerId: string | null): boolean {
 
 /** «Casco · Épico». */
 export function itemName(lang: Lang, item: Item): string {
-  return `${t(lang, `slot${item.slot}`)} · ${t(lang, `rarity${item.rarity}`)}`;
+  const name = `${t(lang, `slot${item.slot}`)} · ${t(lang, `rarity${item.rarity}`)}`;
+  const level = item.level ?? 1;
+  return level > 1 ? `${name} · ${t(lang, 'itemLevelShort', { n: level })}` : name;
+}
+
+/** A gem's value, as the engine counts it (gemValue): its league's base and half of it per level. */
+export function gemPercent(view: LordView, gem: Gem): number {
+  const rules = view.me.gemRules;
+  const base = rules.leagueBonus[gem.league] ?? rules.leagueBonus[rules.leagueBonus.length - 1] ?? 0;
+  return Math.round(base * (1 + ((gem.level ?? 1) - 1) * rules.levelShare) * 1000) / 10;
+}
+
+/** «Rubí de Oro · Nv 2 (+15 % tropas)». */
+export function gemLabel(lang: Lang, view: LordView, gem: Gem): string {
+  const name = t(lang, 'gemName', {
+    color: t(lang, `gem${gem.color}`),
+    league: leagueName(lang, gem.league),
+    n: gem.level ?? 1,
+  });
+  const p = formatDecimal(gemPercent(view, gem), lang, gemPercent(view, gem) % 1 === 0 ? 0 : 1);
+  return `${name} (${t(lang, `gemEffect${gem.color}`, { p })})`;
 }
 
 /** «+10 % muros», with the bonus the view reports for the item's rarity. */
 export function itemEffect(lang: Lang, view: LordView, item: Item): string {
-  const table = item.slot === 'CHEST' ? view.me.refundBonus : view.me.gearBonus;
-  const p = Math.round(table[item.rarity] * 100);
+  const chest = item.slot === 'CHEST';
+  const base = chest ? view.me.refundBonus[item.rarity] : view.me.gearBonus[item.rarity];
+  // Levels add to everything but the chest (see itemBonus in the engine).
+  const bonus = chest ? base : base + ((item.level ?? 1) - 1) * view.me.itemRules.levelBonus[item.rarity];
+  const p = Math.round(bonus * 100);
   return t(lang, `effect${GEAR_EFFECTS[item.slot]}`, { p });
 }
 

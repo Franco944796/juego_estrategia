@@ -29,6 +29,10 @@ describe('previewSend', () => {
     if (!battle || battle.type !== 'BATTLE') throw new Error('no battle');
     expect(battle.report.attackerPower).toBe(preview.battle?.attackerPower);
     expect(battle.report.defenderPower).toBe(preview.battle?.defenderPower);
+    // The report breaks the defense down: troops × multiplier + walls.
+    const { defenderTroops, defenseMult = 0, walls, fort } = battle.report;
+    expect(defenseMult).toBe(fort);
+    expect(defenderTroops * defenseMult + walls).toBeCloseTo(battle.report.defenderPower);
   });
 
   it('lists the travel time after each forecast wind shift', () => {

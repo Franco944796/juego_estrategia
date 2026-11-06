@@ -109,6 +109,12 @@ describe('world service', () => {
     expect(w.hasJoined(ana.id)).toBe(false);
     const legacy = [store.account(ana.id), store.account(bo.id)].map((a) => a?.legacy).sort();
     expect(legacy).toEqual([10, 100]);
+    // The winner gets 5 gems and the other 1, all rubies here (random 0.25): the repeats are copies.
+    const gems = [store.account(ana.id), store.account(bo.id)]
+      .map((a) => a?.gems ?? [])
+      .sort((x, y) => (y[0]?.level ?? 1) - (x[0]?.level ?? 1));
+    expect(gems[0]).toEqual([expect.objectContaining({ color: 'RUBY', league: 0, level: 2, copies: 2 })]);
+    expect(gems[1]).toEqual([expect.objectContaining({ color: 'RUBY', league: 0 })]);
     expect(store.account(ana.id)?.medals).toHaveLength(1);
     expect(store.finishedSeasons(5)).toHaveLength(1);
     expect(w.join(ana)).toEqual({ ok: true });
@@ -177,6 +183,7 @@ describe('world service', () => {
     expect(leagues).toEqual([1, 2]);
     const legacy = [store.account(ana.id), store.account(bo.id)].map((a) => a?.legacy).sort();
     expect(legacy).toEqual([15, 150]);
+    expect(store.account(ana.id)?.gems[0]?.league).toBe(1);
     expect(store.account(ana.id)?.medals[0]?.league).toBe(1);
     expect(store.finishedSeasons(5, 1)).toHaveLength(1);
     expect(store.finishedSeasons(5, 0)).toHaveLength(1);

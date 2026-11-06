@@ -1,4 +1,13 @@
-import type { Command, DomainEvent, GroupPreview, Item, LordView, RuleError, SendPreview } from '@si/engine';
+import type {
+  Command,
+  DevAction,
+  DomainEvent,
+  GroupPreview,
+  Item,
+  LordView,
+  RuleError,
+  SendPreview,
+} from '@si/engine';
 
 /** Messages and REST payloads shared by apps/server and apps/client. Types only. */
 
@@ -25,6 +34,8 @@ export interface PublicAccount {
   items: Item[];
   /** Index into `leagues`. */
   league: number;
+  /** A test account (listed in the server's dev-accounts file): Legacy costs it nothing. */
+  dev?: boolean;
 }
 
 export interface SeasonSummary {
@@ -49,6 +60,8 @@ export interface Reward {
   rank: number;
   tier: number;
   legacy: number;
+  /** Gems of the season's league won by the rank. */
+  gems: number;
 }
 
 export interface ClockInfo {
@@ -118,6 +131,8 @@ export type ClientMessage =
   | { type: 'command'; id: number; command: Command }
   | { type: 'preview'; id: number; from: number; to: number; troops: number }
   | { type: 'previewGroup'; id: number; from: number[]; to: number }
+  /** Test tools, only for test accounts; answered with a `result`. */
+  | { type: 'dev'; id: number; action: DevAction }
   | { type: 'chat'; channel: ChatChannel; text: string };
 
 export type ServerMessage =

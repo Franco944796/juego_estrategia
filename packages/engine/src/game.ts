@@ -53,6 +53,7 @@ export function createGame(params: CreateGameParams): GameState {
     queue: [],
     seq: 0,
     reports: [],
+    scouts: [],
     nextReportId: 1,
     standings: null,
     growCheckAt: null,
@@ -161,9 +162,10 @@ export function execute(state: GameState, lordId: string, command: unknown, now:
 /** Ranking by Dominion, then level, then lord id. Frozen once the season has ended. */
 export function computeStandings(state: GameState, now: number): Standing[] {
   if (state.status === 'ENDED' && state.standings) return state.standings;
+  // Test accounts play outside the ranking, so they take no rewards from anyone.
   const lords = state.lordOrder.flatMap((id) => {
     const lord = state.lords[id];
-    return lord ? [lord] : [];
+    return lord && !lord.dev ? [lord] : [];
   });
   const rows = lords.map((lord) => ({
     lordId: lord.id,

@@ -1,10 +1,10 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import type { GameConfig } from '@si/config';
 import { GEAR_SLOTS, RARITIES, SKILL_IDS } from '@si/config/constants';
-import type { Command, DomainEvent, GameState } from '@si/engine';
+import { stockItem, type Command, type DevAction, type DomainEvent, type GameState } from '@si/engine';
 import type { ClanRankingRow, PublicAccount, ServerMessage } from '@si/protocol';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { WebSocket } from 'ws';
@@ -25,6 +25,8 @@ export interface AppOptions {
   viewEveryMs?: number;
   /** Game milliseconds per real millisecond; above 1 only for tests. */
   rate?: number;
+  /** File with the recovery codes of test accounts, one per line (`#` starts a comment). */
+  devAccountsPath?: string;
 }
 
 const NAME_MIN = 2;
@@ -53,6 +55,7 @@ const commandSchema = z.discriminatedUnion('type', [
     levels: z.number().int().min(1).default(1),
   }),
   z.object({ type: z.literal('SEND'), from: z.number().int(), to: z.number().int(), troops: troopsSchema }),
+  z.object({ type: z.literal('SCOUT'), from: z.number().int(), to: z.number().int() }),
   z.object({
     type: z.literal('SEND_GROUP'),
     from: z.array(z.number().int()).min(1).max(MAX_GROUP),
@@ -60,10 +63,15 @@ const commandSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('LEARN_SKILL'), skill: z.enum(SKILL_IDS) }),
   z.object({ type: z.literal('EQUIP'), itemId: z.string().max(200) }),
+  z.object({ type: z.literal('DESTROY_ITEM'), itemId: z.string().max(200) }),
+  z.object({ type: z.literal('UPGRADE_ITEM'), itemId: z.string().max(200) }),
+  z.object({ type: z.literal('SOCKET_GEM'), itemId: z.string().max(200), gemId: z.string().max(200) }),
+  z.object({ type: z.literal('UNSOCKET_GEM'), itemId: z.string().max(200), gemId: z.string().max(200) }),
 ]);
 const itemBody = z.object({ slot: z.enum(GEAR_SLOTS), rarity: z.enum(RARITIES) });
 const socketMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('command'), id: z.number().int(), command: commandSchema }),
+  z.object({ type: z.literal('dev'), id: z.number().int(), action: z.record(z.string(), z.unknown()) }),
   z.object({
     type: z.literal('preview'),
     id: z.number().int(),
@@ -93,7 +101,32 @@ export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function publicAccount(a: Account): PublicAccount {
+/** Hashes of the test accounts' recovery codes, read again whenever the file changes. */
+function devCodes(path: string | undefined): () => Set<string> {
+  let stamp = Number.NaN;
+  let hashes = new Set<string>();
+  return () => {
+    if (!path) return hashes;
+    let now: number;
+    try {
+      now = statSync(path).mtimeMs;
+    } catch {
+      now = -1;
+    }
+    if (now === stamp) return hashes;
+    stamp = now;
+    const lines = now < 0 ? [] : readFileSync(path, 'utf8').split(/\r?\n/);
+    hashes = new Set(
+      lines
+        .map((line) => line.replace(/#.*/, '').trim())
+        .filter((code) => code.length > 0)
+        .map(hashToken),
+    );
+    return hashes;
+  };
+}
+
+function publicAccount(a: Account, dev = false): PublicAccount {
   return {
     id: a.id,
     name: a.name,
@@ -104,6 +137,7 @@ function publicAccount(a: Account): PublicAccount {
     medals: a.medals,
     items: a.items,
     league: a.league,
+    ...(dev ? { dev: true } : {}),
   };
 }
 
@@ -119,6 +153,10 @@ export function eventsFor(lordId: string, events: DomainEvent[], state: GameStat
     ) {
       return { ...e, march: { ...e.march, troops: 0 } };
     }
+    // The scouted owner learns who looked and where, not what was seen.
+    if (e.type === 'SCOUTED' && e.report.scout !== lordId) {
+      return { ...e, report: { ...e.report, troops: 0, walls: 0, fort: 0, defenseMult: 0, defense: 0 } };
+    }
     return e;
   });
 }
@@ -130,6 +168,8 @@ function visibleTo(lordId: string, state: GameState): (e: DomainEvent) => boolea
       case 'MARCH_REINFORCED':
       case 'MARCH_REPELLED':
         return e.march.owner === lordId || state.towns[e.march.to]?.owner === lordId;
+      case 'SCOUTED':
+        return e.report.scout === lordId || e.report.owner === lordId;
       case 'BATTLE':
         return (
           e.report.attacker === lordId ||
@@ -140,6 +180,10 @@ function visibleTo(lordId: string, state: GameState): (e: DomainEvent) => boolea
       case 'SKILL_LEARNED':
       case 'ITEM_FOUND':
       case 'ITEM_EQUIPPED':
+      case 'ITEM_DESTROYED':
+      case 'ITEM_UPGRADED':
+      case 'GEM_SOCKETED':
+      case 'GEM_UNSOCKETED':
       case 'LORD_EXILED':
       case 'LORD_ELIMINATED':
         return e.lordId === lordId;
@@ -176,8 +220,18 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 16 * 1024 });
   await app.register(fastifyWebsocket);
 
-  const authenticate = (token: string | undefined): Account | null =>
-    token ? store.accountByToken(hashToken(token)) : null;
+  const devHashes = devCodes(opts.devAccountsPath);
+  /** Test accounts seen with their token since the file last listed them. */
+  const devIds = new Set<string>();
+  const authenticate = (token: string | undefined): Account | null => {
+    const account = token ? store.accountByToken(hashToken(token)) : null;
+    if (account && token) {
+      if (devHashes().has(hashToken(token))) devIds.add(account.id);
+      else devIds.delete(account.id);
+    }
+    return account;
+  };
+  const shown = (a: Account): PublicAccount => publicAccount(a, devIds.has(a.id));
   const bearer = (req: FastifyRequest): Account | null => {
     const header = req.headers.authorization ?? '';
     return authenticate(header.startsWith('Bearer ') ? header.slice('Bearer '.length) : undefined);
@@ -201,14 +255,14 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const token = randomBytes(TOKEN_BYTES).toString('hex');
     const style = config.cosmetics.styles[0]?.id ?? 'classic';
     const account = store.createAccount(randomUUID(), body.data.name, hashToken(token), style, opts.now());
-    return { token, account: publicAccount(account) };
+    return { token, account: shown(account) };
   });
 
   app.get('/api/me', async (req, reply) => {
     const account = bearer(req);
     if (!account) return reply.code(401).send({ error: 'UNAUTHORIZED' });
     return {
-      account: publicAccount(account),
+      account: shown(account),
       joined: worldOf(account.id).hasJoined(account.id),
       season: worldOf(account.id).currentSeason,
       clan: clans.myClan(account.id),
@@ -221,6 +275,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const world = worldOf(account.id);
     const result = world.join(account);
     if (!result.ok) return reply.code(409).send({ error: result.code });
+    world.setDev(account.id, devIds.has(account.id));
     return { ok: true, season: world.currentSeason };
   });
 
@@ -231,11 +286,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const style = config.cosmetics.styles.find((s) => body.success && s.id === body.data.style);
     if (!style) return reply.code(400).send({ error: 'UNKNOWN_STYLE' });
     if (account.styles.includes(style.id)) return reply.code(409).send({ error: 'ALREADY_OWNED' });
-    if (account.legacy < style.cost) return reply.code(409).send({ error: 'NOT_ENOUGH_LEGACY' });
-    account.legacy -= style.cost;
+    const free = devIds.has(account.id);
+    if (!free && account.legacy < style.cost) return reply.code(409).send({ error: 'NOT_ENOUGH_LEGACY' });
+    if (!free) account.legacy -= style.cost;
     account.styles.push(style.id);
     store.saveAccount(account);
-    return { account: publicAccount(account) };
+    return { account: shown(account) };
   });
 
   app.post('/api/items/buy', async (req, reply) => {
@@ -244,13 +300,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const body = itemBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'UNKNOWN_ITEM' });
     const price = config.gear.prices[body.data.rarity];
-    if (account.legacy < price) return reply.code(409).send({ error: 'NOT_ENOUGH_LEGACY' });
+    const free = devIds.has(account.id);
+    if (!free && account.legacy < price) return reply.code(409).send({ error: 'NOT_ENOUGH_LEGACY' });
     const item = { id: randomUUID(), slot: body.data.slot, rarity: body.data.rarity };
-    account.legacy -= price;
-    account.items.push(item);
+    if (!free) account.legacy -= price;
+    // A duplicate becomes a copy of the owned one (a joined season's sync then keeps the lord's list).
+    stockItem(config, account.items, item);
     store.saveAccount(account);
     worldOf(account.id).grantItem(account.id, item);
-    return { account: publicAccount(account), item };
+    return { account: shown(account), item };
   });
 
   app.post('/api/styles/equip', async (req, reply) => {
@@ -263,7 +321,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     account.style = body.data.style;
     store.saveAccount(account);
     worldOf(account.id).setStyle(account.id, account.style);
-    return { account: publicAccount(account) };
+    return { account: shown(account) };
   });
 
   app.get('/api/hall', async (req) => {
@@ -315,6 +373,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       return;
     }
     sockets.set(socket, account.id);
+    worldOf(account.id).setDev(account.id, devIds.has(account.id));
     pushView(socket, account.id);
     sendHistory(socket, account.id);
     let windowStart = opts.now();
@@ -337,6 +396,17 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (msg.data.type === 'command') {
         const result = worldOf(account.id).command(account.id, msg.data.command as Command);
         send(socket, { type: 'result', id: msg.data.id, error: result.ok ? null : result.error });
+        pushView(socket, account.id);
+      } else if (msg.data.type === 'dev') {
+        // The file may have changed since the socket opened.
+        authenticate(token);
+        const world = worldOf(account.id);
+        world.setDev(account.id, devIds.has(account.id));
+        const ok = devIds.has(account.id) && world.dev(account.id, msg.data.action as DevAction);
+        const error = ok
+          ? null
+          : { rule: 'R14' as const, code: 'DEV_REJECTED', message: 'not a test account' };
+        send(socket, { type: 'result', id: msg.data.id, error });
         pushView(socket, account.id);
       } else if (msg.data.type === 'preview') {
         const { id, from, to, troops } = msg.data;

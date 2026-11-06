@@ -1,8 +1,9 @@
 import type { LordView } from '@si/engine';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n';
 import { tiltedProjector } from '../map3d/camera3d';
 import { drawOverlay } from '../map3d/overlay3d';
+import { lowerAutoQuality, resolveQuality, type Quality } from '../map3d/quality';
 import { World3D } from '../map3d/world3d';
 import { estimateGameNow, useGame, type GameStore } from '../store';
 import { townById } from '../ui/labels';
@@ -18,6 +19,10 @@ const MAP_MARGIN = 120;
 /** Share of the remaining distance the camera covers each frame when it pans to a focus. */
 const FOCUS_EASE = 0.22;
 const FOCUS_DONE = 0.5;
+/** «Auto» graphics step down once if the median frame takes longer than this after warming up. */
+const SLOW_FRAME_MS = 1000 / 24;
+const WARMUP_FRAMES = 40;
+const MEASURED_FRAMES = 90;
 
 declare global {
   interface Window {
@@ -76,12 +81,16 @@ function flatPainter(canvas: HTMLCanvasElement): Painter | null {
 }
 
 /** Null when the browser has no WebGL; the map then falls back to 2D. */
-function tiltedPainter(canvas: HTMLCanvasElement, overlay: HTMLCanvasElement): Painter | null {
+function tiltedPainter(
+  canvas: HTMLCanvasElement,
+  overlay: HTMLCanvasElement,
+  quality: Quality,
+): Painter | null {
   const ctx = overlay.getContext('2d');
   if (!ctx) return null;
   let world: World3D;
   try {
-    world = new World3D(canvas);
+    world = new World3D(canvas, quality);
   } catch {
     return null;
   }
@@ -109,7 +118,14 @@ function tiltedPainter(canvas: HTMLCanvasElement, overlay: HTMLCanvasElement): P
         targets: source ? targetsFrom(view, source) : null,
       };
       world.render(input);
-      drawOverlay(ctx, input, top, (level) => world.modelRadius(level));
+      drawOverlay(
+        ctx,
+        input,
+        top,
+        (level) => world.modelRadius(level),
+        (p) => world.groundAt(p),
+        (a, b) => world.bridgeTop(a, b),
+      );
     },
     dispose: () => world.dispose(),
   };
@@ -139,12 +155,16 @@ export function MapCanvas() {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const lang = useGame((s) => s.lang);
   const mode = useGame((s) => s.mapMode);
+  const setting = useGame((s) => s.quality);
+  // Bumped when «auto» steps down, so the scene is built again at the lower level.
+  const [autoStep, setAutoStep] = useState(0);
+  const quality = resolveQuality(setting);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const overlay = overlayRef.current;
     if (!canvas || !overlay) return;
-    const painter = mode === '3d' ? tiltedPainter(canvas, overlay) : flatPainter(canvas);
+    const painter = mode === '3d' ? tiltedPainter(canvas, overlay, quality) : flatPainter(canvas);
     if (!painter) {
       if (mode === '3d') useGame.getState().setMapMode('2d');
       return;
@@ -158,6 +178,18 @@ export function MapCanvas() {
     let isleCount = 0;
     let raf = 0;
     let focus: Vec | null = null;
+    const frameTimes: number[] = [];
+    let lastFrame = 0;
+    const watchSpeed = (time: number): void => {
+      if (mode !== '3d' || setting !== 'auto' || frameTimes.length > WARMUP_FRAMES + MEASURED_FRAMES) return;
+      if (lastFrame) frameTimes.push(time - lastFrame);
+      lastFrame = time;
+      if (frameTimes.length !== WARMUP_FRAMES + MEASURED_FRAMES) return;
+      const sorted = frameTimes.slice(WARMUP_FRAMES).sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+      frameTimes.push(0);
+      if (median > SLOW_FRAME_MS && lowerAutoQuality()) setAutoStep((n) => n + 1);
+    };
 
     const resize = (): void => {
       size = { width: canvas.clientWidth, height: canvas.clientHeight };
@@ -225,6 +257,7 @@ export function MapCanvas() {
           if (Math.hypot(focus.x - cam.x, focus.y - cam.y) < FOCUS_DONE) focus = null;
         }
         painter.draw(st, view, cam, size, time);
+        watchSpeed(time);
       }
       raf = requestAnimationFrame(frame);
     };
@@ -351,12 +384,18 @@ export function MapCanvas() {
       painter.dispose();
       delete window.__shatteredIsles;
     };
-  }, [mode]);
+  }, [mode, quality, setting, autoStep]);
 
-  // A WebGL canvas cannot go back to 2D, so each mode gets a fresh canvas.
+  // A WebGL canvas cannot go back to 2D or change its antialiasing, so each gets a fresh canvas.
   return (
     <>
-      <canvas key={mode} ref={canvasRef} className="map" role="img" aria-label={t(lang, 'map')} />
+      <canvas
+        key={`${mode}-${quality}`}
+        ref={canvasRef}
+        className="map"
+        role="img"
+        aria-label={t(lang, 'map')}
+      />
       <canvas ref={overlayRef} className="map map-overlay" aria-hidden="true" hidden={mode !== '3d'} />
     </>
   );

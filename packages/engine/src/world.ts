@@ -27,7 +27,7 @@ export function foundLord(
     gold: cfg.lords.startGold,
     dominion: 0,
     skills: { GOLD: 0, TROOPS: 0, ATTACK: 0 },
-    items: (init.items ?? []).map((item) => ({ id: item.id, slot: item.slot, rarity: item.rarity })),
+    items: (init.items ?? []).map((item) => ({ ...item, ...(item.gems ? { gems: [...item.gems] } : {}) })),
     gear: {},
     capitalId: town.id,
     alive: true,
@@ -37,6 +37,8 @@ export function foundLord(
     clanId: init.clanId ?? null,
     level: 1,
     xp: 0,
+    scrap: init.scrap ?? 0,
+    gems: (init.gems ?? []).map((gem) => ({ ...gem })),
   };
   // Only owned items in their own slot can be worn.
   for (const [slot, id] of Object.entries(init.gear ?? {})) {
@@ -214,8 +216,11 @@ export function migrateState(state: GameState): GameState {
     lord.level ??= 1;
     lord.xp ??= 0;
     lord.style ??= state.config.cosmetics.styles[0]?.id ?? '';
+    lord.scrap ??= 0;
+    lord.gems ??= [];
   }
   for (const report of state.reports) report.allies ??= [];
+  state.scouts ??= [];
   return state;
 }
 

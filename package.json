@@ -17,9 +17,9 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "sim": "pnpm --filter @si/sim start",
     "dev": "pnpm --filter @si/client dev",
-    "build:demo": "pnpm --filter @si/client build",
-    "e2e": "pnpm build:demo && pnpm --filter @si/client e2e",
-    "serve": "pnpm build:demo && pnpm --filter @si/server start"
+    "build": "pnpm --filter @si/client build",
+    "e2e": "pnpm build && pnpm --filter @si/client e2e",
+    "serve": "pnpm build && pnpm --filter @si/server start"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

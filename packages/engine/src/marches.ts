@@ -5,7 +5,7 @@ import { distance, windFactor } from './geometry';
 import { lordMods, type LordMods } from './modifiers';
 import { xpMultiplier } from './power';
 import { schedule } from './queue';
-import type { BattleReport, DomainEvent, GameState, Lord, March, Town } from './types';
+import type { BattleReport, DomainEvent, GameState, Lord, March, ScoutReport, Town } from './types';
 import { areAllies, checkExile, gainXp, getLord, recoverTroops, setOwner } from './world';
 
 export function windShiftMs(state: GameState): number {
@@ -100,6 +100,7 @@ export function dispatchMarch(
   at: number,
   events: DomainEvent[],
   group?: { arriveAt: number; id: number },
+  scout = false,
 ): March {
   const travel = travelInfo(state, lordId, from, to, troops, at);
   const march: March = {
@@ -113,7 +114,8 @@ export function dispatchMarch(
     windFactor: travel.windFactor,
     sky: travel.sky,
     groupId: group?.id ?? null,
-    attack: isAttack(state, lordId, to),
+    attack: !scout && isAttack(state, lordId, to),
+    ...(scout ? { scout: true } : {}),
   };
   state.marches.push(march);
   schedule(state, march.arriveAt, { kind: 'MARCH_ARRIVAL', marchId: march.id });
@@ -130,6 +132,7 @@ export function launchMarch(
   troops: number,
   at: number,
   events: DomainEvent[],
+  scout = false,
 ): March {
   if (from.owner === lordId) {
     from.garrison -= troops;
@@ -138,7 +141,7 @@ export function launchMarch(
       .map((s) => (s.lordId === lordId ? { lordId, troops: s.troops - troops } : s))
       .filter((s) => s.troops > 0);
   }
-  return dispatchMarch(state, lordId, from, to, troops, at, events);
+  return dispatchMarch(state, lordId, from, to, troops, at, events, undefined, scout);
 }
 
 /**
@@ -191,6 +194,10 @@ export function arriveMarch(state: GameState, marchId: number, at: number, event
     events.push({ type: 'MARCH_STATIONED', at, march });
     return;
   }
+  if (march.scout) {
+    scoutTown(state, march, town, at, events);
+    return;
+  }
   // A neutral town can become someone's capital while a march is on its way.
   if (state.config.rules.capitalImmune && town.isCapital) {
     for (const leg of legs) {
@@ -201,6 +208,41 @@ export function arriveMarch(state: GameState, marchId: number, at: number, event
     return;
   }
   fight(state, march, town, at, events);
+}
+
+/** The scout counts the defense as a battle would, reports it and is lost; nothing else changes. */
+function scoutTown(state: GameState, march: March, town: Town, at: number, events: DomainEvent[]): void {
+  const cfg = state.config;
+  const contingents = [
+    { lordId: town.owner, troops: town.garrison },
+    ...town.stationed.map((s) => ({ lordId: s.lordId as string | null, troops: s.troops })),
+  ];
+  const fort = fortification(state, town);
+  const walls = townWalls(state, town);
+  const siege = resolveSiege(cfg, {
+    attacker: 0,
+    attackMult: 1,
+    defenders: contingents.map((c) => ({ troops: c.troops, defense: lordMods(state, c.lordId).defense })),
+    fort,
+    walls,
+  });
+  const report: ScoutReport = {
+    id: state.nextReportId++,
+    at,
+    townId: town.id,
+    marchId: march.id,
+    scout: march.owner,
+    owner: town.owner,
+    troops: contingents.reduce((sum, c) => sum + c.troops, 0),
+    walls,
+    fort,
+    defenseMult: fort * lordMods(state, town.owner).defense,
+    defense: siege.defenderPower,
+  };
+  state.scouts.push(report);
+  const excess = state.scouts.length - cfg.limits.reportsKept;
+  if (excess > 0) state.scouts.splice(0, excess);
+  events.push({ type: 'SCOUTED', at, report });
 }
 
 function fight(state: GameState, march: March, town: Town, at: number, events: DomainEvent[]): void {
@@ -239,7 +281,7 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
   if (attackerWon) attacker.stats.battlesWon++;
   else attacker.stats.battlesLost++;
   const rewards = {
-    attackerXp: killedByAttacker * cfg.kills.xp.attack * xpMult,
+    attackerXp: killedByAttacker * cfg.kills.xp.attack * xpMult * lordMods(state, attacker.id).xp,
     attackerGold: killedByAttacker * cfg.kills.gold.attack * lordMods(state, attacker.id).killGold,
     defenderXp: defenderId === null ? 0 : killedByDefenders * cfg.kills.xp.defend,
     defenderGold: 0,
@@ -304,6 +346,7 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
     defenderPower: outcome.defenderPower,
     fort,
     walls,
+    defenseMult: fort * lordMods(state, defenderId).defense,
     attackerLost: killedByDefenders,
     defenderLost: killedByAttacker,
     attackerRecovered,
@@ -327,7 +370,9 @@ function fight(state: GameState, march: March, town: Town, at: number, events: D
   events.splice(battleAt, 0, { type: 'BATTLE', at, report });
 
   gainXp(state, attacker, rewards.attackerXp, at, events);
-  for (const d of defenders) gainXp(state, d.lord, rewards.defenderXp * d.share, at, events);
+  for (const d of defenders) {
+    gainXp(state, d.lord, rewards.defenderXp * d.share * lordMods(state, d.lord.id).xp, at, events);
+  }
   checkExile(state, attacker.id, at, events);
   if (defenderId !== null) checkExile(state, defenderId, at, events);
 }

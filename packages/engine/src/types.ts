@@ -1,12 +1,32 @@
-import type { GameConfig, GearSlot, Personality, Rarity, SkillId } from '@si/config';
+import type { GameConfig, GearSlot, GemColor, Personality, Rarity, SkillId } from '@si/config';
 
-export type { GameConfig, GearSlot, Personality, Rarity, SkillId };
+export type { GameConfig, GearSlot, GemColor, Personality, Rarity, SkillId };
 
 /** Equipment belongs to the player's account and outlives seasons; the season state keeps a copy. */
 export interface Item {
   id: string;
   slot: GearSlot;
   rarity: Rarity;
+  /** 1 when left out. */
+  level?: number;
+  /** Duplicates gathered toward the next level. */
+  copies?: number;
+  /** Scrap put into it; destroying it gives half back. */
+  scrap?: number;
+  /** Ids of the gems set in its sockets (owned by the same lord). */
+  gems?: string[];
+}
+
+/** A gem: its color says what it adds, its league how much (see `gems` in the config). */
+export interface Gem {
+  id: string;
+  color: GemColor;
+  /** Index into `leagues` of the season it was won in. */
+  league: number;
+  /** 1 when left out. */
+  level?: number;
+  /** Duplicates gathered toward the next level. */
+  copies?: number;
 }
 
 export interface Vec {
@@ -110,6 +130,12 @@ export interface Lord {
   level: number;
   /** Experience toward the next level. */
   xp: number;
+  /** A test account (see dev.ts): free upgrades, out of the standings. Left out for everyone else. */
+  dev?: boolean;
+  /** From destroyed items; spent to level items up. */
+  scrap: number;
+  /** Every gem the lord owns, set in an item or loose. */
+  gems: Gem[];
 }
 
 export interface March {
@@ -126,6 +152,26 @@ export interface March {
   groupId: number | null;
   /** Aimed at a town that was neither own nor allied at departure; only these count for the limit. */
   attack: boolean;
+  /** A lone troop sent to look at a town: it never fights and is lost there. Left out otherwise. */
+  scout?: boolean;
+}
+
+/** What a scout saw; the scouted owner is only told who looked and where. */
+export interface ScoutReport {
+  id: number;
+  at: number;
+  townId: number;
+  marchId: number;
+  scout: string;
+  owner: string | null;
+  /** The owner's garrison plus allied contingents stationed there. */
+  troops: number;
+  walls: number;
+  fort: number;
+  /** What each of the owner's troops counts for: fortification × the owner's defense (skills, gear). */
+  defenseMult: number;
+  /** Total defense power, as a battle would count it. */
+  defense: number;
 }
 
 export type BattleWinner = 'ATTACKER' | 'DEFENDER';
@@ -143,6 +189,11 @@ export interface BattleReport {
   defenderPower: number;
   fort: number;
   walls: number;
+  /**
+   * What each of the owner's troops counted for: fortification × the owner's defense (skills, gear).
+   * Missing in reports saved before it was added.
+   */
+  defenseMult?: number;
   attackerLost: number;
   defenderLost: number;
   /** Lost troops that reappeared in their lords' capitals (league rule); allies count their own. */
@@ -206,6 +257,7 @@ export interface GameState {
   queue: QueueItem[];
   seq: number;
   reports: BattleReport[];
+  scouts: ScoutReport[];
   nextReportId: number;
   standings: Standing[] | null;
   /** When a growth check is already scheduled (daily isle cap reached), so it is not queued twice. */
@@ -224,6 +276,8 @@ export interface LordInit {
   items?: Item[];
   gear?: Partial<Record<GearSlot, string>>;
   clanId?: string | null;
+  scrap?: number;
+  gems?: Gem[];
 }
 
 export interface CreateGameParams {
@@ -250,8 +304,17 @@ export type Command =
   | { type: 'SEND'; from: number; to: number; troops: number }
   /** Every listed own town sends all its troops; they arrive together and fight as one army. */
   | { type: 'SEND_GROUP'; from: number[]; to: number }
+  /** One troop goes to look at a foreign town; it reports the defense and does not come back. */
+  | { type: 'SCOUT'; from: number; to: number }
   | { type: 'LEARN_SKILL'; skill: SkillId }
-  | { type: 'EQUIP'; itemId: string };
+  | { type: 'EQUIP'; itemId: string }
+  /** An unequipped item becomes scrap. */
+  | { type: 'DESTROY_ITEM'; itemId: string }
+  /** Spends scrap to raise an item one level (not the chest). */
+  | { type: 'UPGRADE_ITEM'; itemId: string }
+  /** Sets a loose gem in a free socket of an item; taking it out puts it back in the bag. */
+  | { type: 'SOCKET_GEM'; itemId: string; gemId: string }
+  | { type: 'UNSOCKET_GEM'; itemId: string; gemId: string };
 
 export type RuleId =
   | 'R01'
@@ -269,7 +332,10 @@ export type RuleId =
   | 'R14'
   | 'R15'
   | 'R16'
-  | 'R17';
+  | 'R17'
+  | 'R18'
+  | 'R19'
+  | 'R20';
 
 export interface RuleError {
   rule: RuleId;
@@ -285,13 +351,19 @@ export type DomainEvent =
   | { type: 'MARCH_LAUNCHED'; at: number; march: March }
   | { type: 'MARCH_REINFORCED'; at: number; march: March }
   | { type: 'BATTLE'; at: number; report: BattleReport }
+  | { type: 'SCOUTED'; at: number; report: ScoutReport }
   | { type: 'TOWN_CAPTURED'; at: number; townId: number; from: string | null; to: string }
   | { type: 'CAPITAL_MOVED'; at: number; lordId: string; townId: number | null }
   | { type: 'BEACON_CHANGED'; at: number; zoneId: number; owner: string | null }
   | { type: 'WIND_SHIFTED'; at: number; dir: number }
   | { type: 'THRONE_UNSEALED'; at: number }
   | { type: 'SKILL_LEARNED'; at: number; lordId: string; skill: SkillId; points: number }
-  | { type: 'ITEM_FOUND'; at: number; lordId: string; item: Item; source: 'LEVEL' | 'SHOP' }
+  /** `into`: the owned item a duplicate joined as a copy, as it is now. */
+  | { type: 'ITEM_FOUND'; at: number; lordId: string; item: Item; source: 'LEVEL' | 'SHOP'; into?: Item }
+  | { type: 'ITEM_DESTROYED'; at: number; lordId: string; item: Item; scrap: number }
+  | { type: 'ITEM_UPGRADED'; at: number; lordId: string; item: Item; cost: number }
+  | { type: 'GEM_SOCKETED'; at: number; lordId: string; itemId: string; gemId: string }
+  | { type: 'GEM_UNSOCKETED'; at: number; lordId: string; itemId: string; gemId: string }
   | { type: 'ITEM_EQUIPPED'; at: number; lordId: string; item: Item }
   | { type: 'LORD_EXILED'; at: number; lordId: string; townId: number }
   | { type: 'LORD_ELIMINATED'; at: number; lordId: string }

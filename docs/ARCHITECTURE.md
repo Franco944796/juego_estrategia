@@ -9,7 +9,6 @@ packages/protocol REST and WebSocket message types shared by server and client
 apps/client       React + Vite web client; engine and bots in a Web Worker, or the online world
 apps/server       Fastify + WebSocket server for the online world, node:sqlite storage
 tools/sim         headless balance simulator, writes docs/BALANCE.md
-demo/             single-file build of the client (shattered-isles.html), works offline
 ```
 
 The engine depends only on `@si/config/constants` at runtime (types come from `@si/config`, which

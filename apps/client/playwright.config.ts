@@ -4,6 +4,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const ONLINE_PORT = 8790;
 const ONLINE_URL = `http://127.0.0.1:${ONLINE_PORT}`;
+/** Test accounts of the e2e server; online.spec.ts writes it (fixed, so test workers find it too). */
+export const DEV_ACCOUNTS = join(tmpdir(), 'shattered-isles-e2e-dev-accounts.txt');
 
 export default defineConfig({
   testDir: './e2e',
@@ -20,6 +22,7 @@ export default defineConfig({
       PORT: String(ONLINE_PORT),
       TIME_SCALE: '20',
       DB_PATH: join(tmpdir(), `shattered-isles-e2e-${Date.now()}.db`),
+      DEV_ACCOUNTS,
     },
   },
   projects: [

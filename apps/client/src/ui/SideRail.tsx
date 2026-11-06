@@ -1,14 +1,16 @@
 import { t, type MessageKey } from '../i18n';
 import { useGame, type Panel } from '../store';
 import { ChatIcon, MarchIcon, MenuIcon, ScrollIcon, TrophyIcon } from './icons';
+import type { GemKind } from './Gem';
 import { mergeGroups } from './labels';
 
-const ITEMS: { panel: Panel; label: MessageKey; Icon: typeof MenuIcon }[] = [
-  { panel: 'marches', label: 'navMarches', Icon: MarchIcon },
-  { panel: 'reports', label: 'navReports', Icon: ScrollIcon },
-  { panel: 'ranking', label: 'navRanking', Icon: TrophyIcon },
-  { panel: 'social', label: 'navSocial', Icon: ChatIcon },
-  { panel: 'menu', label: 'navMenu', Icon: MenuIcon },
+/** Each button's icon wears the gem of what it is about (see Gem.tsx); the menu stays plain gold. */
+const ITEMS: { panel: Panel; label: MessageKey; Icon: typeof MenuIcon; gem: GemKind | 'gold' }[] = [
+  { panel: 'marches', label: 'navMarches', Icon: MarchIcon, gem: 'ruby' },
+  { panel: 'reports', label: 'navReports', Icon: ScrollIcon, gem: 'sapphire' },
+  { panel: 'ranking', label: 'navRanking', Icon: TrophyIcon, gem: 'topaz' },
+  { panel: 'social', label: 'navSocial', Icon: ChatIcon, gem: 'emerald' },
+  { panel: 'menu', label: 'navMenu', Icon: MenuIcon, gem: 'gold' },
 ];
 
 /** Picture buttons down the right edge of the map; the profile opens from the portrait in the HUD. */
@@ -33,12 +35,13 @@ export function SideRail() {
 
   return (
     <nav className="rail">
-      {items.map(({ panel, label, Icon }) => (
+      {items.map(({ panel, label, Icon, gem }) => (
         <button
           key={panel}
           type="button"
           className={`rail-button${current === panel ? ' active' : ''}`}
           data-testid={`nav-${panel}`}
+          data-gem={gem}
           aria-label={t(lang, label)}
           title={t(lang, label)}
           aria-pressed={current === panel}

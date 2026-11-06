@@ -14,10 +14,13 @@ function world(seed = 3): GameState {
   return createGame({ seed, config: liveConfig, startsAt: T0, lords: [] });
 }
 
-/** The online world with new isles turned on (they are off while the 3D map is tried out). */
 function growing(seed = 3): GameState {
-  const config = withOverrides(liveConfig, { map: { growth: { enabled: true } } });
-  return createGame({ seed, config, startsAt: T0, lords: [] });
+  return createGame({ seed, config: liveConfig, startsAt: T0, lords: [] });
+}
+
+function fixed(): GameState {
+  const config = withOverrides(liveConfig, { map: { growth: { enabled: false } } });
+  return createGame({ seed: 3, config, startsAt: T0, lords: [] });
 }
 
 function player(id: string): LordInit {
@@ -105,7 +108,7 @@ describe('joining a running season', () => {
   });
 
   it('keeps a single isle while growth is off and turns newcomers away once it is full', () => {
-    const state = world();
+    const state = fixed();
     const slots = state.config.map.spawn.slots;
     for (let i = 0; i < slots; i++) expect(joinLord(state, player(`p${i}`), T0).ok).toBe(true);
     expect(state.isles).toHaveLength(1);
