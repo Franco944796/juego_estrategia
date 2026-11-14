@@ -16,10 +16,15 @@ export interface QualityPreset {
   scenery: number;
   /** Texture filtering of the tilted ground; costly on weak GPUs. */
   anisotropy: number;
-  /** Rounder tree crowns (more triangles). */
-  roundCrowns: boolean;
-  /** Dark outlines around towns and beacons (one more inside-out copy of each). */
-  outlines: boolean;
+  /**
+   * Side in pixels of the photographed surface textures (stone, wood, grass…); 0 keeps the flat
+   * colors, the cheap lights and the simple trees of the first 3D map.
+   */
+  detail: 0 | 256 | 512;
+  /** Screen passes: `full` adds ambient occlusion and edge smoothing to the glow and color of `lite`. */
+  post: 'full' | 'lite' | 'none';
+  /** The sea of clouds under the isles (a shader over the whole background). */
+  cloudSea: boolean;
   /** Side of each isle's territory texture in pixels. */
   territory: number;
   /** Grass tufts and flowers. */
@@ -37,8 +42,9 @@ export const QUALITY: Record<Quality, QualityPreset> = {
     terrainStep: 7,
     scenery: 1,
     anisotropy: 8,
-    roundCrowns: true,
-    outlines: true,
+    detail: 512,
+    post: 'full',
+    cloudSea: true,
     territory: 768,
     groundCover: true,
     particles: true,
@@ -51,8 +57,9 @@ export const QUALITY: Record<Quality, QualityPreset> = {
     terrainStep: 9,
     scenery: 0.7,
     anisotropy: 4,
-    roundCrowns: true,
-    outlines: true,
+    detail: 256,
+    post: 'lite',
+    cloudSea: true,
     territory: 512,
     groundCover: true,
     particles: true,
@@ -65,8 +72,9 @@ export const QUALITY: Record<Quality, QualityPreset> = {
     terrainStep: 13,
     scenery: 0.4,
     anisotropy: 1,
-    roundCrowns: false,
-    outlines: false,
+    detail: 0,
+    post: 'none',
+    cloudSea: false,
     territory: 512,
     groundCover: false,
     particles: false,

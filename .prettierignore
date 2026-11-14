@@ -3,3 +3,4 @@ coverage/
 dist/
 demo/
 LICENSE.md
+apps/client/public/

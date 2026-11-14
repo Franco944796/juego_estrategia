@@ -1,7 +1,8 @@
 # Shattered Isles
 
-An original real-time conquest game for phones and desktop browsers, drawn in detailed low poly 3D with
-shadows and animated flags, smoke and soldiers (with a 2D map as an option). Floating isles, a wind that
+An original real-time conquest game for phones and desktop browsers, drawn in 3D with a realistic look:
+photographed surfaces, light that follows the hour, a sea of clouds, and animated flags, smoke and
+soldiers (with a 2D map as an option). Floating isles, a wind that
 shifts every half hour of game time and speeds up or slows down every flight between isles, towns
 that grow from level 1 to 100 behind their walls, a skill point per lord level, isles of 100 towns
 split into zones with a beacon each, and a world that grows a new isle whenever the newest one fills
@@ -49,16 +50,16 @@ pnpm dev              # client with hot reload at http://localhost:5173
 
 Other commands:
 
-| Command                  | What it does                                                      |
-| ------------------------ | ----------------------------------------------------------------- |
-| `pnpm coverage`          | Unit tests with engine coverage (fails under 90% of lines)        |
-| `pnpm build`             | Builds the single-file client into `apps/client/dist/index.html`  |
-| `pnpm e2e`               | Playwright tests on the built client (390×844 and 1280×800)       |
-| `pnpm sim`               | Simulates demo seasons played by bots and prints the pacing table |
-| `pnpm sim --preset live` | Same for the 30-day online world                                  |
-| `pnpm sim --write`       | Also rewrites that preset's section of `docs/BALANCE.md`          |
-| `pnpm format`            | Formats everything with Prettier                                  |
-| `pnpm serve`             | Builds the client and starts the online server (port 8787)        |
+| Command                  | What it does                                                       |
+| ------------------------ | ------------------------------------------------------------------ |
+| `pnpm coverage`          | Unit tests with engine coverage (fails under 90% of lines)         |
+| `pnpm build`             | Builds the client into `apps/client/dist` (one HTML plus `assets`) |
+| `pnpm e2e`               | Playwright tests on the built client (390×844 and 1280×800)        |
+| `pnpm sim`               | Simulates demo seasons played by bots and prints the pacing table  |
+| `pnpm sim --preset live` | Same for the 30-day online world                                   |
+| `pnpm sim --write`       | Also rewrites that preset's section of `docs/BALANCE.md`           |
+| `pnpm format`            | Formats everything with Prettier                                   |
+| `pnpm serve`             | Builds the client and starts the online server (port 8787)         |
 
 Playwright needs its browser once: `pnpm --filter @si/client exec playwright install chromium`.
 

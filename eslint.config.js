@@ -29,7 +29,9 @@ export default defineConfig([
   },
   {
     files: ['**/*.mjs'],
-    languageOptions: { globals: { console: 'readonly', URL: 'readonly' } },
+    languageOptions: {
+      globals: { console: 'readonly', URL: 'readonly', fetch: 'readonly', Buffer: 'readonly' },
+    },
   },
   prettier,
 ]);

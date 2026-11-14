@@ -7,12 +7,16 @@ import {
   Color,
   ConeGeometry,
   CylinderGeometry,
+  DataTexture,
   DodecahedronGeometry,
   Group,
   IcosahedronGeometry,
   InstancedMesh,
+  LinearFilter,
   Mesh,
   MeshLambertMaterial,
+  MeshPhongMaterial,
+  MeshStandardMaterial,
   Object3D,
   OctahedronGeometry,
   Shape,
@@ -24,6 +28,17 @@ import {
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Vec } from '../map/camera';
 import type { QualityPreset } from './quality';
+import {
+  birch as realBirch,
+  boulder,
+  bush as realBush,
+  grassTuft,
+  oak as realOak,
+  pine as realPine,
+  plain,
+} from './scenery';
+import { cloudShadow, ground, patched, projectUv, setSurf, water as waterPatch, worldPos } from './surface';
+import { layerOf, type LayerSet } from './textures';
 
 type IsleView = LordView['isles'][number];
 type ZoneView = LordView['zones'][number];
@@ -188,6 +203,7 @@ export class IsleField {
   readonly streams: (Segment & { angle: number })[] = [];
   readonly seed: number;
   private readonly coast: Float32Array;
+  private sampled: GroundSamples | null = null;
 
   constructor(
     readonly isle: IsleView,
@@ -331,6 +347,32 @@ export class IsleField {
     return fbm(x / 60 + 40, z / 60 - 25, this.seed + 3);
   }
 
+  /** Height, forest, edge and lake on a grid over the ground texture's square, worked out once. */
+  samples(): GroundSamples {
+    if (this.sampled) return this.sampled;
+    const { span, x0, z0 } = groundArea(this.isle);
+    const G = MACRO_GRID;
+    const out: GroundSamples = {
+      height: new Float32Array(G * G),
+      forest: new Float32Array(G * G),
+      edge: new Float32Array(G * G),
+      lake: new Float32Array(G * G),
+    };
+    for (let gy = 0; gy < G; gy++) {
+      for (let gx = 0; gx < G; gx++) {
+        const x = x0 + ((gx + 0.5) / G) * span;
+        const z = z0 + ((gy + 0.5) / G) * span;
+        const i = gy * G + gx;
+        out.height[i] = this.height(x, z);
+        out.forest[i] = this.forest(x, z);
+        out.edge[i] = this.edge(x, z);
+        out.lake[i] = this.lake(x, z);
+      }
+    }
+    this.sampled = out;
+    return out;
+  }
+
   inPatch(x: number, z: number, margin = 0): boolean {
     return this.patches.some((p) => {
       const dx = x - p.pos.x;
@@ -360,6 +402,14 @@ export class IsleField {
       });
     }
   }
+}
+
+/** Row `gy` runs along x at one z; rows go toward +z. */
+interface GroundSamples {
+  height: Float32Array;
+  forest: Float32Array;
+  edge: Float32Array;
+  lake: Float32Array;
 }
 
 /** The top of the isle: rings of near-equal triangles from the center out to the outline. */
@@ -444,16 +494,28 @@ class Faces {
     g.setAttribute('position', new BufferAttribute(new Float32Array(this.pos), 3));
     g.setAttribute('color', new BufferAttribute(new Float32Array(this.col), 3));
     g.computeVertexNormals();
-    return g;
+    // One photo of rock covers about nine units of cliff.
+    projectUv(g, 1 / 9);
+    return setSurf(g, layerOf('boulder'));
   }
 }
 
-const STRATA = ['#5f7d3c', '#6b4f35', '#8a6a4a', '#76593f', '#957a5c', '#6d5641'].map((c) => new Color(c));
+const hexes = (list: string[]): Color[] => list.map((c) => new Color(c));
+/** Cliff layers from the turf down, and the rock under the isle. */
+const FLAT_ROCK = {
+  strata: hexes(['#5f7d3c', '#6b4f35', '#8a6a4a', '#76593f', '#957a5c', '#6d5641']),
+  under: hexes(['#7a634c', '#6a5747', '#5d5049', '#4f4741']),
+};
+const REAL_ROCK = {
+  strata: hexes(['#66793f', '#6a5946', '#8d8272', '#7a7063', '#958b7b', '#6f675d']),
+  under: hexes(['#7d7466', '#6b645a', '#5c5750', '#4d4a46']),
+};
 const STRATA_Y = [0, -0.9, -3.2, -6, -8.6, -CLIFF_DEPTH];
-const UNDER = ['#7a634c', '#6a5747', '#5d5049', '#4f4741'].map((c) => new Color(c));
 
 /** Cliff walls with layers of soil and rock, and a jagged rocky cone under the isle. */
-function rockGeometry(f: IsleField, rim: Vec[]): BufferGeometry {
+function rockGeometry(f: IsleField, rim: Vec[], look = FLAT_ROCK): BufferGeometry {
+  const STRATA = look.strata;
+  const UNDER = look.under;
   const faces = new Faces();
   const { pos } = f.isle;
   const n = rim.length;
@@ -514,18 +576,79 @@ function paintDisc(ctx: CanvasRenderingContext2D, x: number, y: number, r: numbe
   ctx.fill();
 }
 
-const GRASS_A = new Color('#4b9a33');
-const GRASS_B = new Color('#78bf40');
-const DRY_PRAIRIE = new Color('#c6bf55');
-const FOREST_FLOOR = new Color('#2c6e2e');
-const HILL_ROCK = new Color('#8c8577');
-const SNOW = new Color('#f3f6f8');
-const SAND = new Color('#dcc78b');
-const WATER = new Color('#2f7fc1');
-const EDGE_DIRT = new Color('#8f7650');
+/** Colors of the painted ground: the vivid ones of the 2D map and of the simple 3D level, and the natural ones. */
+interface GroundLook {
+  grassA: Color;
+  grassB: Color;
+  dry: Color;
+  forest: Color;
+  rock: Color;
+  snow: Color;
+  sand: Color;
+  /** Lake beds; with real water drawn over them they are mud, without it they are the water. */
+  bed: Color;
+  edge: Color;
+  /** Fill and rows of the three kinds of field. */
+  fields: [string[], string[]];
+  yard: string;
+  /** Verge, surface and worn middle of roads; bank, bed and glint of streams. */
+  road: [string, string, string];
+  stream: [string, string, string];
+}
+
+const FLAT_LOOK: GroundLook = {
+  grassA: new Color('#4b9a33'),
+  grassB: new Color('#78bf40'),
+  dry: new Color('#c6bf55'),
+  forest: new Color('#2c6e2e'),
+  rock: new Color('#8c8577'),
+  snow: new Color('#f3f6f8'),
+  sand: new Color('#dcc78b'),
+  bed: new Color('#2f7fc1'),
+  edge: new Color('#8f7650'),
+  fields: [
+    ['#b39a5c', '#8c6b47', '#9aa64e'],
+    ['#d6c274', '#6a4f33', '#b8c262'],
+  ],
+  yard: 'rgba(140, 112, 72, 0.3)',
+  road: ['rgba(96, 78, 50, 0.6)', '#a48a62', 'rgba(190, 168, 125, 0.6)'],
+  stream: ['rgba(110, 92, 60, 0.8)', '#3f8fd0', 'rgba(190, 228, 255, 0.55)'],
+};
+
+const REAL_LOOK: GroundLook = {
+  grassA: new Color('#5d7c38'),
+  grassB: new Color('#7f9a45'),
+  dry: new Color('#968a55'),
+  forest: new Color('#44572f'),
+  rock: new Color('#8b867c'),
+  snow: new Color('#eef2f5'),
+  sand: new Color('#c9b78c'),
+  bed: new Color('#6a6a52'),
+  edge: new Color('#7c6a4e'),
+  fields: [
+    ['#a8935e', '#7d6348', '#8f9a52'],
+    ['#c4b271', '#665039', '#a6ae63'],
+  ],
+  yard: 'rgba(104, 86, 62, 0.7)',
+  road: ['rgba(84, 70, 50, 0.55)', '#7f6c50', 'rgba(150, 132, 100, 0.5)'],
+  stream: ['rgba(96, 86, 64, 0.8)', '#4d6a66', 'rgba(150, 190, 190, 0.4)'],
+};
+
+function roadCurve(ctx: CanvasRenderingContext2D, f: IsleField, to: (p: Vec) => [number, number]): void {
+  for (const r of f.roads) {
+    const [ax, ay] = to(r.a);
+    const [bx, by] = to(r.b);
+    // A gentle bend, the same on every pass.
+    const bend = (hash(Math.round(r.a.x + r.b.x), Math.round(r.a.y + r.b.y), f.seed) - 0.5) * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.quadraticCurveTo((ax + bx) / 2 - (by - ay) * bend, (ay + by) / 2 + (bx - ax) * bend, bx, by);
+    ctx.stroke();
+  }
+}
 
 /** Ground texture: grass shades, meadows, forest floor, rocky hilltops, worn ground, roads and fields. */
-function paintGround(f: IsleField, size: number): HTMLCanvasElement {
+function paintGround(f: IsleField, size: number, look = FLAT_LOOK): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -535,23 +658,25 @@ function paintGround(f: IsleField, size: number): HTMLCanvasElement {
   const G = MACRO_GRID;
   const macro = new Float32Array(G * G * 3);
   const c = new Color();
+  const at = f.samples();
   for (let gy = 0; gy < G; gy++) {
     for (let gx = 0; gx < G; gx++) {
       const x = x0 + ((gx + 0.5) / G) * span;
       const z = z0 + ((gy + 0.5) / G) * span;
-      c.copy(GRASS_A).lerp(GRASS_B, fbm(x / 45, z / 45, f.seed + 8));
+      const i = gy * G + gx;
+      c.copy(look.grassA).lerp(look.grassB, fbm(x / 45, z / 45, f.seed + 8));
       const prairie = smoothstep(0.6, 0.72, fbm(x / 70 - 13, z / 70 + 7, f.seed + 9));
-      c.lerp(DRY_PRAIRIE, prairie * 0.8);
-      c.lerp(FOREST_FLOOR, smoothstep(0.48, 0.66, f.forest(x, z)) * 0.8);
-      const h = f.height(x, z);
-      c.lerp(HILL_ROCK, smoothstep(5, 10, h) * 0.9);
-      c.lerp(SNOW, smoothstep(19, 22, h));
-      if (f.lake(x, z) > 0.02) {
-        c.lerp(SAND, smoothstep(0.5, -0.2, h));
-        c.lerp(WATER, smoothstep(WATER_LEVEL + 0.2, WATER_LEVEL - 0.5, h));
+      c.lerp(look.dry, prairie * 0.8);
+      c.lerp(look.forest, smoothstep(0.48, 0.66, at.forest[i] ?? 0) * 0.8);
+      const h = at.height[i] ?? 0;
+      c.lerp(look.rock, smoothstep(5, 10, h) * 0.9);
+      c.lerp(look.snow, smoothstep(19, 22, h));
+      if ((at.lake[i] ?? 0) > 0.02) {
+        c.lerp(look.sand, smoothstep(0.5, -0.2, h));
+        c.lerp(look.bed, smoothstep(WATER_LEVEL + 0.2, WATER_LEVEL - 0.5, h));
       }
-      c.lerp(EDGE_DIRT, smoothstep(0.93, 1, f.edge(x, z))).convertLinearToSRGB();
-      macro.set([c.r * 255, c.g * 255, c.b * 255], (gy * G + gx) * 3);
+      c.lerp(look.edge, smoothstep(0.93, 1, at.edge[i] ?? 0)).convertLinearToSRGB();
+      macro.set([c.r * 255, c.g * 255, c.b * 255], i * 3);
     }
   }
   const image = ctx.createImageData(size, size);
@@ -588,9 +713,9 @@ function paintGround(f: IsleField, size: number): HTMLCanvasElement {
     ctx.rotate(p.turn);
     const w = px(p.w);
     const d = px(p.d);
-    ctx.fillStyle = ['#b39a5c', '#8c6b47', '#9aa64e'][p.kind] ?? '#b39a5c';
+    ctx.fillStyle = look.fields[0][p.kind] ?? '#b39a5c';
     ctx.fillRect(-w / 2, -d / 2, w, d);
-    ctx.fillStyle = ['#d6c274', '#6a4f33', '#b8c262'][p.kind] ?? '#d6c274';
+    ctx.fillStyle = look.fields[1][p.kind] ?? '#d6c274';
     const rows = Math.max(3, Math.round(p.w / 1.2));
     for (let i = 0; i < rows; i += 2) ctx.fillRect(-w / 2 + (w / rows) * i, -d / 2, w / rows, d);
     ctx.strokeStyle = 'rgba(70, 52, 30, 0.55)';
@@ -600,29 +725,20 @@ function paintGround(f: IsleField, size: number): HTMLCanvasElement {
   }
   for (const t of f.towns) {
     const [x, y] = to(t);
-    paintDisc(ctx, x, y, px(TOWN_CLEAR), 'rgba(140, 112, 72, 0.3)');
+    paintDisc(ctx, x, y, px(TOWN_CLEAR), look.yard);
   }
   const roadPass = (width: number, color: string): void => {
     ctx.strokeStyle = color;
     ctx.lineWidth = px(width);
-    for (const r of f.roads) {
-      const [ax, ay] = to(r.a);
-      const [bx, by] = to(r.b);
-      // A gentle bend, the same on both passes.
-      const bend = (hash(Math.round(r.a.x + r.b.x), Math.round(r.a.y + r.b.y), f.seed) - 0.5) * 0.25;
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.quadraticCurveTo((ax + bx) / 2 - (by - ay) * bend, (ay + by) / 2 + (bx - ax) * bend, bx, by);
-      ctx.stroke();
-    }
+    roadCurve(ctx, f, to);
   };
-  roadPass(ROAD_HALF_WIDTH * 2 + 1, 'rgba(96, 78, 50, 0.6)');
-  roadPass(ROAD_HALF_WIDTH * 2, '#a48a62');
-  roadPass(ROAD_HALF_WIDTH * 0.7, 'rgba(190, 168, 125, 0.6)');
+  roadPass(ROAD_HALF_WIDTH * 2 + 1, look.road[0]);
+  roadPass(ROAD_HALF_WIDTH * 2, look.road[1]);
+  roadPass(ROAD_HALF_WIDTH * 0.7, look.road[2]);
   for (const [width, color] of [
-    [STREAM_HALF_WIDTH * 2 + 1.6, 'rgba(110, 92, 60, 0.8)'],
-    [STREAM_HALF_WIDTH * 2, '#3f8fd0'],
-    [STREAM_HALF_WIDTH * 0.6, 'rgba(190, 228, 255, 0.55)'],
+    [STREAM_HALF_WIDTH * 2 + 1.6, look.stream[0]],
+    [STREAM_HALF_WIDTH * 2, look.stream[1]],
+    [STREAM_HALF_WIDTH * 0.6, look.stream[2]],
   ] as const) {
     ctx.strokeStyle = color;
     ctx.lineWidth = px(width);
@@ -636,6 +752,60 @@ function paintGround(f: IsleField, size: number): HTMLCanvasElement {
     }
   }
   return canvas;
+}
+
+/** Where roads, town yards and fields have worn the ground to earth (white on black). */
+function paintPaths(f: IsleField, size: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const { span, x0, z0 } = groundArea(f.isle);
+  const px = (v: number): number => (v / span) * size;
+  const to = (p: Vec): [number, number] => [px(p.x - x0), px(p.y - z0)];
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, size, size);
+  for (const t of f.towns) {
+    const [x, y] = to(t);
+    paintDisc(ctx, x, y, px(TOWN_CLEAR), 'rgba(255, 255, 255, 0.9)');
+  }
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+  ctx.lineWidth = px(ROAD_HALF_WIDTH * 2 + 1.4);
+  roadCurve(ctx, f, to);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = px(ROAD_HALF_WIDTH * 2);
+  roadCurve(ctx, f, to);
+  return canvas;
+}
+
+function dataTexture(data: Uint8Array, size: number): DataTexture {
+  const t = new DataTexture(data, size, size);
+  t.magFilter = LinearFilter;
+  t.minFilter = LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+
+/** Which photo covers each place (see `ground` in surface.ts) and how deep the lakes are. */
+function groundMasks(f: IsleField): { splat: DataTexture; depth: DataTexture } {
+  const G = MACRO_GRID;
+  const at = f.samples();
+  const splat = new Uint8Array(G * G * 4);
+  const depth = new Uint8Array(G * G * 4);
+  for (let i = 0; i < G * G; i++) {
+    const h = at.height[i] ?? 0;
+    const lake = (at.lake[i] ?? 0) > 0.02;
+    splat[i * 4] = smoothstep(0.48, 0.66, at.forest[i] ?? 0) * 0.85 * 255;
+    splat[i * 4 + 1] =
+      Math.max(smoothstep(4.5, 9, h) * 0.95, smoothstep(0.95, 1, at.edge[i] ?? 0) * 0.7) * 255;
+    splat[i * 4 + 2] = lake ? smoothstep(0.6, -0.3, h) * 255 : 0;
+    splat[i * 4 + 3] = smoothstep(18.5, 21.5, h) * 255;
+    depth[i * 4] = Math.min(1, Math.max(0, (WATER_LEVEL - h) / (LAKE_DEPTH - 1.2))) * 255;
+    depth[i * 4 + 3] = 255;
+  }
+  return { splat: dataTexture(splat, G), depth: dataTexture(depth, G) };
 }
 
 interface Spot {
@@ -853,6 +1023,35 @@ function runeglow(): BufferGeometry {
   ]);
 }
 
+/** How many leaf cards or bough tiers a tree gets at each size of surface photo. */
+const CARDS: Record<number, number> = { 512: 22, 256: 14 };
+
+/** The same kinds built for the detailed levels: photographed bark and rock, crowns of cut-out leaves. */
+function realScenery(kind: SceneryKind, detail: number): BufferGeometry {
+  const cards = CARDS[detail] ?? 14;
+  switch (kind) {
+    case 'pine':
+      return realPine(cards > 14 ? 6 : 5);
+    case 'oak':
+      return realOak(cards);
+    case 'birch':
+      return realBirch(cards);
+    case 'bush':
+      return realBush(cards);
+    case 'rock':
+      return boulder(cards > 14 ? 2 : 1);
+    case 'grass':
+      return grassTuft();
+    case 'runestone': {
+      const g = runestone();
+      projectUv(g, 1 / 3);
+      return setSurf(g, layerOf('stone'));
+    }
+    default:
+      return plain(SCENERY_MODELS[kind](0));
+  }
+}
+
 const SCENERY_MODELS: Record<SceneryKind, (detail: number) => BufferGeometry> = {
   pine,
   oak,
@@ -871,10 +1070,11 @@ export interface IsleMaterials {
   /** Unlit, for crystals and runes. */
   glow: Material;
   rock: Material;
-  water: Material;
   /** Flowing water of streams and waterfalls (their textures scroll). */
   stream: Material;
   fall: Material;
+  /** Only on the detailed levels: the photographed ground, the ripples of lakes and leaf-shaped shadows. */
+  real: { ground: LayerSet; ripples: Texture; cutout: Material } | null;
 }
 
 /** How far a waterfall drops below the cliff top. */
@@ -979,14 +1179,46 @@ export function buildIsle(
   f.placePatches(Math.round(14 * q.scenery));
   const group = new Group();
   const { geo, rim } = topGeometry(f, q.terrainStep);
-  const texture = new CanvasTexture(paintGround(f, q.groundTexture));
+  const real = materials.real;
+  const texture = new CanvasTexture(paintGround(f, q.groundTexture, real ? REAL_LOOK : FLAT_LOOK));
   texture.colorSpace = SRGBColorSpace;
   texture.anisotropy = anisotropy;
-  const top = withTerritory(new MeshLambertMaterial({ map: texture, flatShading: true }), territory);
+  const disposable: (Material | Texture)[] = [texture];
+  const area = groundArea(isle);
+  let top: Material;
+  let lake: Material;
+  if (real) {
+    const masks = groundMasks(f);
+    const paths = new CanvasTexture(paintPaths(f, 512));
+    top = patched(
+      new MeshStandardMaterial({ map: texture, roughness: 1, metalness: 0 }),
+      worldPos,
+      ground({ layers: real.ground, territory, splat: masks.splat, paths }),
+      cloudShadow,
+    );
+    lake = patched(
+      new MeshStandardMaterial({ roughness: 0.14, metalness: 0, transparent: true, depthWrite: false }),
+      worldPos,
+      waterPatch({ depth: masks.depth, ripples: real.ripples, x0: area.x0, z0: area.z0, span: area.span }),
+      cloudShadow,
+    );
+    disposable.push(masks.splat, masks.depth, paths);
+  } else {
+    top = withTerritory(new MeshLambertMaterial({ map: texture, flatShading: true }), territory);
+    lake = new MeshPhongMaterial({
+      color: '#3a8fd6',
+      specular: '#d8ecff',
+      shininess: 90,
+      transparent: true,
+      opacity: 0.88,
+    });
+  }
+  disposable.push(top, lake);
   const land = new Mesh(geo, top);
   land.receiveShadow = true;
-  const rocks = new Mesh(rockGeometry(f, rim), materials.rock);
+  const rocks = new Mesh(rockGeometry(f, rim, real ? REAL_ROCK : FLAT_ROCK), materials.rock);
   rocks.receiveShadow = true;
+  rocks.castShadow = !!real;
   // One sheet of water under the whole isle, inside its coast: only lake beds dip below it.
   const sheet = new Shape();
   for (let i = 0; i < 96; i++) {
@@ -998,7 +1230,7 @@ export function buildIsle(
   }
   const water = new Mesh(
     new ShapeGeometry(sheet).rotateX(-Math.PI / 2).translate(isle.pos.x, WATER_LEVEL, isle.pos.y),
-    materials.water,
+    lake,
   );
   water.receiveShadow = true;
   const flowing = waterGeometry(f);
@@ -1007,7 +1239,7 @@ export function buildIsle(
   group.add(land, rocks, water, streams, falls);
   for (const [kind, spots] of scenerySpots(f, q)) {
     const mesh = new InstancedMesh(
-      SCENERY_MODELS[kind](q.roundCrowns ? 1 : 0),
+      real ? realScenery(kind, q.detail) : SCENERY_MODELS[kind](q.scenery >= 0.7 ? 1 : 0),
       GLOWING.has(kind) ? materials.glow : materials.scenery,
       spots.length,
     );
@@ -1021,11 +1253,12 @@ export function buildIsle(
     });
     mesh.castShadow = kind !== 'grass' && kind !== 'flower' && kind !== 'runeglow';
     mesh.receiveShadow = true;
+    if (real && mesh.castShadow) mesh.customDepthMaterial = real.cutout;
     group.add(mesh);
   }
   dummy.rotation.set(0, 0, 0);
   dummy.scale.setScalar(1);
-  return { group, field: f, disposable: [texture, top] };
+  return { group, field: f, disposable };
 }
 
 /** Top-down crown colors and sizes for the 2D map, wider than in 3D so they read from above. */

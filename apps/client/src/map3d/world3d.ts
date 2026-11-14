@@ -1,6 +1,7 @@
 import { WIND_VECTORS, type LordView } from '@si/engine';
+import type { EffectComposer } from 'postprocessing';
 import {
-  BackSide,
+  ACESFilmicToneMapping,
   InstancedBufferAttribute,
   CanvasTexture,
   Color,
@@ -15,9 +16,9 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
-  MeshPhongMaterial,
+  MeshStandardMaterial,
   Object3D,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   PerspectiveCamera,
   RepeatWrapping,
   RingGeometry,
@@ -31,9 +32,11 @@ import {
 } from 'three';
 import type { Camera, Size, Vec } from '../map/camera';
 import { ownerColor, townById } from '../ui/labels';
-import { animClock, animated, STEP_RATE } from './animate';
+import { anim, STEP_RATE } from './animate';
 import { Bridges, type BridgeTop } from './bridges';
 import { placeCamera, TILT } from './camera3d';
+import { daylightNow, type Daylight } from './daylight';
+import { Effects } from './effects';
 import {
   BEACON_CRYSTAL_HEIGHT,
   buildBanner,
@@ -48,9 +51,20 @@ import {
   UNIT_SCALE,
   type Model,
 } from './models';
+import { buildPost } from './post';
 import { QUALITY, type Quality, type QualityPreset } from './quality';
+import { Atmosphere } from './sky';
+import { cloudShadow, cutoutDepth, detail, patched, shared, sway, worldPos } from './surface';
 import { beaconSpot, buildIsle, groundArea, scatter, WATER_LEVEL, type IsleField } from './terrain';
 import { Territory } from './territory';
+import {
+  BUILD_LAYERS,
+  cloudNoise,
+  GROUND_LAYERS,
+  loadLayers,
+  rippleNormals,
+  type LayerSet,
+} from './textures';
 
 export interface Scene3DInput {
   view: LordView;
@@ -65,10 +79,14 @@ export interface Scene3DInput {
   targets: Set<number> | null;
 }
 
-const SKY = '#5b8fc9';
+/** Backgrounds of the simple level, which has no cloud sea. */
+const PLAIN_SKY = { day: '#5b8fc9', night: '#101c3a' };
 const NEUTRAL_ROOF = '#d9cfbf';
-const OUTLINE = '#1c1712';
 const UNLIT_FIRE = '#3a3f47';
+/** With the screen passes on, unlit things this much brighter than white bloom. */
+const GLOW = 2.6;
+/** The light of the hour is read again this often. */
+const DAYLIGHT_EVERY_MS = 20_000;
 /** Marching soldiers float this high on flights between isles. */
 export const FLIGHT_HEIGHT = 9;
 const SOLDIERS = 3;
@@ -76,8 +94,6 @@ const CLOUDS = 28;
 const PUFFS = 3;
 const SMOKE_CAPACITY = 1200;
 const DUST_CAPACITY = 256 * PUFFS;
-/** Toward the sun: from the upper left, a little in front, so shadows fall right and back. */
-const SUN_DIR = new Vector3(-0.7, 1.1, 0.35).normalize();
 const SUN_DISTANCE = 700;
 const FOG_NEAR = 900;
 const FOG_FAR = 2600;
@@ -86,15 +102,10 @@ const dummy = new Object3D();
 const tint = new Color();
 const spot = new Vector3();
 
-function lambert(color = '#ffffff', vertexColors = true): MeshLambertMaterial {
-  return new MeshLambertMaterial({ color, vertexColors, flatShading: true });
-}
-
 /** A fixed part and a part painted per instance, both sharing the instance transforms. */
 class Pair {
   readonly fixed: InstancedMesh;
   readonly team: InstancedMesh;
-  private readonly outline: InstancedMesh | null;
 
   /** Per-instance wing beat strength (dragons only); see animate.ts. */
   private readonly flaps: InstancedBufferAttribute[] = [];
@@ -103,8 +114,8 @@ class Pair {
     model: Model,
     capacity: number,
     parent: Group,
-    team: Material = animated(lambert()),
-    outline: Material | null = null,
+    fixed: Material,
+    team: Material,
     flapping = false,
   ) {
     if (flapping) {
@@ -115,15 +126,8 @@ class Pair {
         this.flaps.push(flap);
       }
     }
-    this.fixed = new InstancedMesh(model.fixed, animated(lambert()), capacity);
+    this.fixed = new InstancedMesh(model.fixed, fixed, capacity);
     this.team = new InstancedMesh(model.team, team, capacity);
-    this.outline = outline ? new InstancedMesh(model.outline, outline, capacity) : null;
-    if (this.outline) {
-      this.outline.instanceMatrix.setUsage(DynamicDrawUsage);
-      this.outline.count = 0;
-      this.outline.frustumCulled = false;
-      parent.add(this.outline);
-    }
     for (const mesh of [this.fixed, this.team]) {
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       mesh.count = 0;
@@ -145,7 +149,6 @@ class Pair {
     this.fixed.setMatrixAt(i, matrix);
     this.team.setMatrixAt(i, matrix);
     this.team.setColorAt(i, tint.set(color));
-    this.outline?.setMatrixAt(i, matrix);
   }
 
   finish(count: number): void {
@@ -155,10 +158,6 @@ class Pair {
     this.team.instanceMatrix.needsUpdate = true;
     if (this.team.instanceColor) this.team.instanceColor.needsUpdate = true;
     for (const f of this.flaps) f.needsUpdate = true;
-    if (this.outline) {
-      this.outline.count = count;
-      this.outline.instanceMatrix.needsUpdate = true;
-    }
   }
 }
 
@@ -266,11 +265,24 @@ export class World3D {
   private readonly camera = new PerspectiveCamera();
   private readonly root = new Group();
   private readonly sun = new DirectionalLight('#fff0d4', 2.8);
+  private readonly ambient = new HemisphereLight('#dde9ff', '#5a4a36', 1.2);
+  private readonly composer: EffectComposer | null;
+  /** Photographed surfaces of models and scenery, and of the ground; null on the simple level. */
+  private readonly layers: LayerSet | null;
+  private readonly groundLayers: LayerSet | null;
+  private readonly noise = cloudNoise();
+  private readonly ripples = rippleNormals();
+  private readonly atmosphere: Atmosphere;
+  private daylight: Daylight = daylightNow();
+  private daylightReadAt = 0;
+  /** How much brighter than white unlit, glowing things are drawn. */
+  private readonly glow: number;
+  private readonly simpleClouds: InstancedMesh | null;
+  private readonly effects: Effects | null;
   private readonly stages = buildStages();
   /** Town models per cosmetic style, built the first time a lord with that style shows up. */
   private readonly townSets = new Map<string, Pair[]>();
   private readonly units = new Group();
-  private readonly outline: Material | null;
   private readonly capacity: number;
   private readonly dragons: Pair;
   private dragonHomes: DragonHome[] = [];
@@ -287,15 +299,9 @@ export class World3D {
   private readonly isles = new Group();
   private readonly bridges: Bridges;
   private readonly owned: (Material | Texture)[] = [];
-  private readonly sceneryMaterial = lambert();
-  private readonly rockMaterial = lambert();
-  private readonly waterMaterial = new MeshPhongMaterial({
-    color: '#3a8fd6',
-    specular: '#d8ecff',
-    shininess: 90,
-    transparent: true,
-    opacity: 0.88,
-  });
+  private readonly sceneryMaterial: Material;
+  private readonly rockMaterial: Material;
+  private readonly cutout: Material | null;
   private territories: { territory: Territory; texture: CanvasTexture }[] = [];
   private readonly glowMaterial = new MeshBasicMaterial({ vertexColors: true });
   private readonly streamFlow = flowTexture();
@@ -323,14 +329,23 @@ export class World3D {
 
   constructor(canvas: HTMLCanvasElement, quality: Quality, capacity = 512) {
     this.q = QUALITY[quality];
-    this.renderer = new WebGLRenderer({ canvas, antialias: this.q.antialias });
-    this.scene.background = new Color(SKY);
-    this.scene.fog = new Fog(SKY, FOG_NEAR, FOG_FAR);
-    this.scene.add(new HemisphereLight('#dde9ff', '#5a4a36', 1.2));
-    this.scene.add(this.sun, this.sun.target, this.root);
+    const post = this.q.post !== 'none';
+    // With screen passes the scene is drawn to off-screen targets, so the canvas needs neither
+    // its own smoothing nor a depth buffer.
+    this.renderer = new WebGLRenderer({
+      canvas,
+      antialias: !post && this.q.antialias,
+      depth: !post,
+      stencil: false,
+      powerPreference: 'high-performance',
+    });
+    if (!post && this.q.detail > 0) this.renderer.toneMapping = ACESFilmicToneMapping;
+    this.glow = post ? GLOW : 1;
+    this.scene.fog = new Fog('#000000', FOG_NEAR, FOG_FAR);
+    this.scene.add(this.ambient, this.sun, this.sun.target, this.root);
     if (this.q.shadowMap > 0) {
       this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = PCFSoftShadowMap;
+      this.renderer.shadowMap.type = PCFShadowMap;
       this.sun.castShadow = true;
       this.sun.shadow.mapSize.set(this.q.shadowMap, this.q.shadowMap);
       this.sun.shadow.bias = -0.0004;
@@ -338,50 +353,86 @@ export class World3D {
       this.sun.shadow.camera.near = 1;
       this.sun.shadow.camera.far = SUN_DISTANCE * 2;
     }
+    shared.uCloudTex.value = this.noise;
+    if (this.q.detail > 0) {
+      const anisotropy = Math.min(this.q.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
+      this.layers = loadLayers(BUILD_LAYERS, this.q.detail, anisotropy);
+      this.groundLayers = loadLayers(GROUND_LAYERS, this.q.detail, anisotropy);
+      this.sceneryMaterial = patched(
+        new MeshStandardMaterial({
+          vertexColors: true,
+          roughness: 1,
+          metalness: 0,
+          side: DoubleSide,
+          alphaTest: 0.4,
+        }),
+        sway,
+        worldPos,
+        detail(this.layers, this.glow),
+        cloudShadow,
+      );
+      this.rockMaterial = patched(
+        new MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
+        worldPos,
+        detail(this.layers, this.glow),
+        cloudShadow,
+      );
+      this.cutout = cutoutDepth(this.layers);
+    } else {
+      this.layers = null;
+      this.groundLayers = null;
+      this.sceneryMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+      this.rockMaterial = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+      this.cutout = null;
+    }
+    this.glowMaterial.color.setScalar(this.glow);
+    this.atmosphere = new Atmosphere(this.renderer, this.noise, this.scene, this.q.cloudSea);
+    this.composer = post
+      ? buildPost(
+          this.renderer,
+          this.scene,
+          this.camera,
+          this.q.post === 'full' ? 'full' : 'lite',
+          this.q.antialias,
+        )
+      : null;
     this.owned.push(
       this.sceneryMaterial,
       this.rockMaterial,
-      this.waterMaterial,
       this.glowMaterial,
       this.streamMaterial,
       this.fallMaterial,
       this.streamFlow,
       this.fallFlow,
+      this.noise,
+      this.ripples,
     );
+    if (this.cutout) this.owned.push(this.cutout);
     this.root.add(this.isles);
     const lanes = new Group();
     this.root.add(lanes);
-    this.bridges = new Bridges(lanes);
+    this.bridges = new Bridges(lanes, this.glow);
 
     const units = this.units;
     this.root.add(units);
     this.capacity = capacity;
-    const outline = this.q.outlines ? new MeshBasicMaterial({ color: OUTLINE, side: BackSide }) : null;
-    this.outline = outline;
-    if (outline) this.owned.push(outline);
     this.townSets.set(
       'classic',
-      this.stages.map((model) => new Pair(model, capacity, units, animated(lambert()), outline)),
+      this.stages.map((model) => this.pair(model, capacity)),
     );
-    this.dragons = new Pair(buildDragon(), DRAGON_CAPACITY, units, animated(lambert()), null, true);
-    this.crystals = new InstancedMesh(
-      buildBeaconCrystal(),
-      new MeshBasicMaterial({ vertexColors: true }),
-      128,
-    );
+    this.dragons = this.pair(buildDragon(), DRAGON_CAPACITY, true);
+    const beaconGlow = new MeshBasicMaterial({ vertexColors: true });
+    beaconGlow.color.setScalar(this.glow);
+    this.crystals = new InstancedMesh(buildBeaconCrystal(), beaconGlow, 128);
     this.crystals.instanceMatrix.setUsage(DynamicDrawUsage);
     this.crystals.frustumCulled = false;
     this.crystals.count = 0;
     units.add(this.crystals);
-    this.beacons = new Pair(
-      buildBeacon(),
-      128,
-      units,
-      animated(new MeshBasicMaterial({ vertexColors: true })),
-      outline,
-    );
-    this.banners = new Pair(buildBanner(), 256, units);
-    this.soldiers = new Pair(buildSoldier(), 256 * SOLDIERS, units);
+    const runes = new MeshBasicMaterial({ vertexColors: true });
+    runes.color.setScalar(this.glow);
+    this.beacons = new Pair(buildBeacon(), 128, units, this.modelMaterial(), patched(runes, anim));
+    this.banners = this.pair(buildBanner(), 256);
+    this.soldiers = this.pair(buildSoldier(), 256 * SOLDIERS);
     this.smoke = puffs('#ebe7df', 0.45, SMOKE_CAPACITY, units);
     this.dust = puffs('#c9b48e', 0.45, DUST_CAPACITY, units);
 
@@ -389,25 +440,73 @@ export class World3D {
       new RingGeometry(inner, outer, 40).rotateX(-Math.PI / 2).translate(0, 0.2, 0);
     this.targets = new InstancedMesh(
       ring(9, 10.5),
-      new MeshBasicMaterial({ color: '#ffd166', transparent: true, opacity: 0.85 }),
+      new MeshBasicMaterial({ color: this.mark('#ffd166'), transparent: true, opacity: 0.85 }),
       capacity,
     );
     this.targets.frustumCulled = false;
     this.targets.count = 0;
-    this.selectedRing = new Mesh(ring(10, 11.8), new MeshBasicMaterial({ color: '#ffffff' }));
-    this.highlightRing = new Mesh(ring(12, 14), new MeshBasicMaterial({ color: '#ffd166' }));
+    this.selectedRing = new Mesh(ring(10, 11.8), new MeshBasicMaterial({ color: this.mark('#ffffff') }));
+    this.highlightRing = new Mesh(ring(12, 14), new MeshBasicMaterial({ color: this.mark('#ffd166') }));
     // Marks drawn over hills and yards, which a coarse terrain mesh can lift above y = 0.
     for (const mark of [this.targets, this.selectedRing, this.highlightRing]) {
       (mark.material as Material).depthTest = false;
       mark.renderOrder = 10;
     }
     units.add(this.targets, this.selectedRing, this.highlightRing);
-    this.addClouds();
+    this.effects = this.q.particles ? new Effects(units, this.glow) : null;
+    this.simpleClouds = this.q.cloudSea ? null : this.addClouds();
+    this.applyDaylight();
+  }
+
+  /** The material of towns, units and dragons: photographed surfaces, or flat colors on the simple level. */
+  private modelMaterial(): Material {
+    if (!this.layers)
+      return patched(new MeshLambertMaterial({ vertexColors: true, flatShading: true }), anim);
+    return patched(
+      new MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
+      anim,
+      worldPos,
+      detail(this.layers, this.glow),
+      cloudShadow,
+    );
+  }
+
+  private pair(model: Model, capacity: number, flapping = false): Pair {
+    return new Pair(model, capacity, this.units, this.modelMaterial(), this.modelMaterial(), flapping);
+  }
+
+  /** Selection marks keep their brightness after the film-like tones of the screen passes. */
+  private mark(color: string): Color {
+    return new Color(color).multiplyScalar(this.composer ? 1.5 : 1);
   }
 
   setSize(size: Size): void {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.q.maxPixelRatio));
-    this.renderer.setSize(size.width, size.height, false);
+    if (this.composer) this.composer.setSize(size.width, size.height, false);
+    else this.renderer.setSize(size.width, size.height, false);
+  }
+
+  /** Sun or moon, sky light, haze and clouds for the local hour. */
+  private applyDaylight(): void {
+    const light = this.daylight;
+    this.sun.color.copy(light.light);
+    this.sun.intensity = light.lightPower;
+    // Without shadows nothing else aims the light (fitShadow does it every frame otherwise).
+    this.sun.target.position.set(0, 0, 0);
+    this.sun.position.copy(light.toLight).multiplyScalar(SUN_DISTANCE);
+    this.ambient.color.copy(light.sky);
+    this.ambient.groundColor.copy(light.bounce);
+    // The reflected sky already lights the detailed materials from every side.
+    this.ambient.intensity = light.ambientPower * (this.q.detail > 0 ? 0.45 : 1.7);
+    const haze = this.q.cloudSea ? light.haze : tint.set(light.night ? PLAIN_SKY.night : PLAIN_SKY.day);
+    this.scene.background = haze.clone();
+    if (this.scene.fog) this.scene.fog.color.copy(haze);
+    shared.uNight.value = light.night ? 1 : 0;
+    shared.uCloudShade.value = light.cloudShadow;
+    this.atmosphere.apply(this.scene, light, this.q.detail > 0);
+    if (this.simpleClouds) {
+      (this.simpleClouds.material as MeshLambertMaterial).color.set(light.night ? '#8a97b8' : '#f4f8ff');
+    }
   }
 
   /** Height of the drawn model for a town level, for labels and taps. */
@@ -436,7 +535,16 @@ export class World3D {
 
   render(input: Scene3DInput): void {
     const { view, time } = input;
-    animClock.value = time / 1000;
+    shared.uTime.value = time / 1000;
+    shared.uCloudDrift.value.set(time * 0.0000042, time * 0.0000026);
+    if (time - this.daylightReadAt > DAYLIGHT_EVERY_MS) {
+      this.daylightReadAt = time;
+      const next = daylightNow();
+      if (next.key !== this.daylight.key) {
+        this.daylight = next;
+        this.applyDaylight();
+      }
+    }
     // Water runs toward the coast along the streams and down the falls (texture v grows that way).
     this.streamFlow.offset.y = -time / 2400;
     this.fallFlow.offset.y = -time / 900;
@@ -445,6 +553,7 @@ export class World3D {
       for (const t of this.territories) if (t.territory.update(view)) t.texture.needsUpdate = true;
       this.placeTowns(view);
       this.placeBeacons(view);
+      if (this.lastView) this.effects?.watch(this.lastView, view, time);
       this.lastView = view;
     }
     this.placeMarches(input);
@@ -452,12 +561,15 @@ export class World3D {
     this.placeCrystals(time);
     this.placeSmoke(view, time);
     this.placeRings(input);
+    this.effects?.update(time);
     this.bridges.update(view, input.sendFrom, time);
     placeCamera(input.cam, input.size, this.camera);
     this.fitFog();
     if (this.q.shadowMap > 0) this.fitShadow(input.cam, input.size);
     this.root.position.y = Math.sin(time / 2600) * 0.4;
-    this.renderer.render(this.scene, this.camera);
+    this.atmosphere.update(input.cam.x, input.cam.y, shared.uCloudDrift.value);
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 
   dispose(): void {
@@ -471,6 +583,10 @@ export class World3D {
     });
     for (const m of this.owned) m.dispose();
     for (const t of this.territories) t.texture.dispose();
+    this.layers?.dispose();
+    this.groundLayers?.dispose();
+    this.atmosphere.dispose();
+    this.composer?.dispose();
     this.renderer.dispose();
   }
 
@@ -491,7 +607,7 @@ export class World3D {
     const x = Math.round(cam.x / texel) * texel;
     const z = Math.round((cam.y - r * 0.15) / texel) * texel;
     this.sun.target.position.set(x, 0, z);
-    this.sun.position.set(x, 0, z).addScaledVector(SUN_DIR, SUN_DISTANCE);
+    this.sun.position.set(x, 0, z).addScaledVector(this.daylight.toLight, SUN_DISTANCE);
     const shadowCam = this.sun.shadow.camera;
     if (shadowCam.right !== r) {
       shadowCam.left = -r;
@@ -502,7 +618,8 @@ export class World3D {
     }
   }
 
-  private addClouds(): void {
+  /** The faceted clouds of the simple level, which has no cloud sea. */
+  private addClouds(): InstancedMesh {
     const rand = scatter(7);
     const clouds = new InstancedMesh(
       new IcosahedronGeometry(1, 0),
@@ -523,6 +640,7 @@ export class World3D {
     }
     dummy.scale.setScalar(1);
     this.scene.add(clouds);
+    return clouds;
   }
 
   /**
@@ -545,9 +663,12 @@ export class World3D {
       scenery: this.sceneryMaterial,
       glow: this.glowMaterial,
       rock: this.rockMaterial,
-      water: this.waterMaterial,
       stream: this.streamMaterial,
       fall: this.fallMaterial,
+      real:
+        this.groundLayers && this.cutout
+          ? { ground: this.groundLayers, ripples: this.ripples, cutout: this.cutout }
+          : null,
     };
     for (const t of this.territories) t.texture.dispose();
     this.territories = [];
@@ -568,9 +689,7 @@ export class World3D {
   private townsFor(style: string): Pair[] {
     let set = this.townSets.get(style);
     if (!set) {
-      set = buildStages(style).map(
-        (model) => new Pair(model, this.capacity, this.units, animated(lambert()), this.outline),
-      );
+      set = buildStages(style).map((model) => this.pair(model, this.capacity));
       this.townSets.set(style, set);
     }
     return set;

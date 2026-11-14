@@ -11,7 +11,7 @@ export function themeAt(date: Date): Theme {
 }
 
 /** A stored theme wins over the clock; only tests and screenshots set it. */
-function override(): Theme | null {
+export function themeOverride(): Theme | null {
   try {
     const value = localStorage.getItem(OVERRIDE_KEY);
     return value === 'pergamino' || value === 'noche' ? value : null;
@@ -23,7 +23,7 @@ function override(): Theme | null {
 /** Applies the theme of the hour now and again every minute; returns the stop function. */
 export function followDaylight(): () => void {
   const apply = (): void => {
-    document.documentElement.dataset.theme = override() ?? themeAt(new Date());
+    document.documentElement.dataset.theme = themeOverride() ?? themeAt(new Date());
   };
   apply();
   const timer = setInterval(apply, 60_000);

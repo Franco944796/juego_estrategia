@@ -57,9 +57,80 @@
 - `prueba_ML` agregado a `proyectos_vscode.code-workspace`.
 - Prompt original de la raíz enviado a la papelera (recuperable desde la papelera del sistema).
 
-## En curso
+## En curso: reajuste del mundo en línea (empezado 2026-11-14)
 
-- Nada. Próxima etapa: la que elija Franco de «Pendiente» (preguntar antes de empezar).
+Decisiones de Franco (2026-11-14):
+
+- Primera ciudad en nivel 100 alrededor de 1 semana (hoy ~1 día; el objetivo viejo era 2–3 días).
+- Palanca: solo subir los costos de mejora (`COST_FACTOR` en `packages/config/src/presets.ts`, hoy
+  40); la producción ×5 queda.
+- No tocar la recuperación del 90 % ni las conquistas; no limitar la expansión (66 ciudades por
+  señor a mitad de temporada queda así).
+
+Paso actual: probando factores 120, 200, 280, 400 y 600 con `tools/sim/src/_probe.ts` (temporal,
+borrarlo al terminar). Sigue: elegir el factor que dé 6–8 días (8 640–11 520 min), actualizar el
+objetivo en `tools/sim/src/simulate.ts`, el test de `packages/config/test/config.test.ts`,
+`pnpm sim --preset live --write` y `docs/BALANCE.md` (bitácora y desvíos abiertos).
+
+## Hecho: gráficos realistas del mapa 3D (2026-11-09 a 2026-11-12; sin commitear)
+
+Decisiones de Franco (reemplazan «estilizado detallado», «fondo sin cambios», «un solo HTML» y los
+contornos oscuros de etapas anteriores):
+
+- Alcance: solo el mapa 3D (2D e interfaz no se tocaron). Áreas: luz y postproceso, cielo y mar de
+  nubes, terreno y agua, modelos y efectos.
+- Aspecto realista: materiales PBR, texturas fotográficas CC0 en archivos aparte dentro del repo.
+- Luz según la hora local, como el tema (7:00–18:59 día; resto noche clara).
+- Rendimiento: Alta todo, Media versión liviana, Baja casi como antes; Auto sigue.
+- Tras la investigación («continuá» = aprobó lo recomendado): modelos por código con materiales
+  fotográficos (no existe un conjunto glTF CC0 realista y coherente), `postprocessing` + `n8ao`.
+
+Mías (avisadas):
+
+- Texturas a 512 px (Alta) y 256 (Media), no 1024: la cámara no pasa de 16 px por unidad y 1024 no
+  se llega a ver. Pesan 2,9 MB en total.
+- La foto no reemplaza el color: se divide por su promedio y multiplica el color del modelo, así
+  siguen valiendo los 6 estilos y el color del dueño (tejas teñidas, escamas del dragón).
+- Sin contornos oscuros (eran del estilo dibujado). Baja conserva colores planos y árboles simples.
+- De día el sol recorre de izquierda a derecha; con el tema forzado (`shattered-isles:theme`) la
+  hora queda fija en 10:30 para que las capturas no cambien.
+- El cielo nunca se ve (la cámara mira hacia abajo): se usa solo como reflejo y luz ambiente; el
+  fondo es el mar de nubes. Se descartó `Sky.js` por eso.
+- Efectos: onda y chispas al cambiar de dueño una ciudad, al pasar de etapa y al llegar un ataque.
+- Baja: se corrigió que el sol alumbraba desde arriba (sin sombras nadie lo orientaba).
+
+Hecho:
+
+- `apps/client/public/assets/tex/{512,256}`: 14 superficies de Poly Haven (color con oclusión +
+  normal y rugosidad), `CREDITS.md`. `scripts/fetch-textures.mjs` las baja y empaqueta (ImageMagick).
+- `src/map3d/`: `daylight.ts`, `sky.ts` (sonda PMREM + mar de nubes), `textures.ts` (texturas en
+  capas, follaje y ruido por código), `surface.ts` (parches de shader: superficies por vértice con
+  el atributo `surf`, suelo por mezcla, agua, viento, sombras de nubes), `scenery.ts` (árboles de
+  tarjetas recortadas, rocas), `effects.ts`, `post.ts` (bloom, ACES, color, viñeta; Alta suma
+  oclusión ambiental y SMAA). Cambiados: `world3d.ts`, `terrain.ts`, `models.ts`, `animate.ts`,
+  `bridges.ts`, `quality.ts` (`detail`, `post`, `cloudSea`), `theme.ts` (`themeOverride`).
+- `scripts/shots.ts`: capturas con la GPU real (calidad, tema, tamaño, efecto de captura).
+- Docs: `README.md`, `docs/DESIGN.md`, `docs/ARCHITECTURE.md`.
+- Abierto desde disco (`file://`, como en Playwright) las fotos no cargan y queda con colores planos.
+
+Verificado (2026-11-12): formato de lo tocado, lint, tipos, 241 tests, 29 de Playwright (corridos
+solos: en paralelo con otras capturas fallan por tiempo), revisión visual con la Radeon 680M de
+Alta, Media y Baja, de día y de noche, en 1280×800 y 390×844, y del efecto de captura. 60 cuadros/s
+en las tres calidades en esa PC. Build: `index.html` 1,6 MB (571 KB gzip) + 2,9 MB de texturas.
+
+Sin verificar: rendimiento y memoria en un celular real (probar con `pnpm serve`; si falta memoria
+de video, pasar a KTX2); chispas de batalla y de subida de etapa (se vio solo la onda de captura).
+
+Investigación (2026-11-09), lo que sirve a futuro:
+
+- Seguir con `WebGLRenderer`: WebGPU/TSL cambia de API en cada versión (r183–r188).
+- `PCFSoftShadowMap` ya no existe en r187; se usa `PCFShadowMap` (ahora suave).
+- `postprocessing` 6.39.6 exige three < 0.188: al subir three hay que subirla también.
+- `n8ao` 2.0.1 a media resolución falla con three r187 (se usa completa).
+- Modelos CC0 vistos y descartados: Poly Haven (sin edificios; árboles de 0,3–17 M de polígonos),
+  Quaternius Medieval Village MegaKit (pintado a mano, 304 piezas sueltas, baja por itch.io),
+  KayKit Medieval Hexagon (caricatura), Lichtbaer MedievalKit (licencia contradictoria).
+- KTX2 daría 4–8× menos memoria de video; no se hizo (falta la herramienta `ktx`).
 
 ## Hecho: islas nuevas, bots que cruzan y puentes de luz (2026-11-06; sin commitear)
 
@@ -577,6 +648,10 @@ GitHub (`Franco944796/juego_estrategia`, licencia PolyForm Noncommercial 1.0.0).
 - `pnpm build` → `apps/client/dist/index.html` · `pnpm e2e` · `pnpm dev`
 - `pnpm serve` → mundo en línea en `http://localhost:8787` (datos en
   `apps/server/data/shattered-isles.db`; borrarlo reinicia el mundo)
+- `pnpm --filter @si/client textures` → vuelve a bajar y empaquetar las texturas
+- Capturas con GPU: `python3 -m http.server 4179 --directory apps/client/dist` y, en
+  `apps/client`, `pnpm exec tsx scripts/shots.ts --quality high --theme noche [--size 390x844]
+  [--capture 1]` (quedan en `apps/client/shots/`, ignorada por git)
 
 ## Problemas conocidos
 

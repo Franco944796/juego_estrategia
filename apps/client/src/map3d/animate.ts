@@ -1,7 +1,4 @@
-import type { Material } from 'three';
-
-/** Seconds of animation, shared by every animated material. */
-export const animClock = { value: 0 };
+import { shared, type Patch } from './surface';
 
 /** Leg swing of marching soldiers in radians per second; world3d bobs the bodies at the same rate. */
 export const STEP_RATE = 1000 / 140;
@@ -13,9 +10,10 @@ const WING_RATE = 6;
  * (phase from the instance position), y = leg and arm swing along z (all in step), z = wing beat along
  * y, scaled by the per-instance `flap` (dragons only; it reads 0 on every other mesh).
  */
-export function animated<T extends Material>(material: T): T {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = animClock;
+export const anim: Patch = {
+  key: 'anim',
+  apply(shader) {
+    shader.uniforms.uTime = shared.uTime;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -33,7 +31,5 @@ export function animated<T extends Material>(material: T): T {
         transformed.z += sin(uTime * ${STEP_RATE.toFixed(3)}) * anim.y;
         transformed.y += sin(uTime * ${WING_RATE.toFixed(3)}) * anim.z * flap;`,
       );
-  };
-  material.customProgramCacheKey = () => 'anim';
-  return material;
-}
+  },
+};

@@ -86,7 +86,17 @@ bots) is a pure function of the seed and the human commands. A bot reads only wh
   demo HTML went from 167 to ~315 KB gzip). `World3D` builds isles once and refills instanced meshes
   when the view changes (one fixed and one owner-colored mesh per town stage, beacons, soldiers,
   banners); `models.ts` builds every model in code from flat-shaded primitives with vertex colors;
-  `overlay3d.ts` draws the labels on a 2D canvas on top. The scratch camera used for projections is
+  `overlay3d.ts` draws the labels on a 2D canvas on top. The realistic look (2026-11) is layered on
+  that: `daylight.ts` (light of the local hour), `sky.ts` (the sky surfaces reflect, as a PMREM
+  probe, and the cloud sea), `textures.ts` (CC0 surface photos from `public/assets/tex`, loaded
+  into array textures, plus foliage cards and noise drawn in code), `surface.ts` (shader patches
+  stacked on three's standard material with `onBeforeCompile`: photographed surfaces picked per
+  vertex by the `surf` attribute, ground splatting, water, wind sway, cloud shadows), `scenery.ts`
+  (trees and boulders), `effects.ts` (bursts read from the difference between two views) and
+  `post.ts` (`postprocessing` 6.39 with `n8ao` 2.0: bloom, ACES tones, ambient occlusion, SMAA).
+  The photos are files beside `index.html`, so they only load over http; opened from disk the map
+  keeps flat colors. `pnpm --filter @si/client textures` downloads and repacks them;
+  `pnpm --filter @si/client shots` takes review screenshots on the real GPU. The scratch camera used for projections is
   only recomputed when the camera moves. `window.__shatteredIsles.centerOn` lets the end-to-end tests
   pan to a town (dragging toward a town behind the 3D camera would go the wrong way).
 - State: Zustand store (`src/store.ts`); text: typed es/en dictionary (`src/i18n.ts`), defaulting to

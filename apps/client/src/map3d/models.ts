@@ -14,7 +14,9 @@ import {
   Shape,
   Vector3,
 } from 'three';
-import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { projectUv } from './surface';
+import { layerOf, type BuildLayer } from './textures';
 
 /** «team» parts are white (or grey for shading) so the instance color paints them in the owner's color. */
 const BASE = {
@@ -58,7 +60,42 @@ const C: Palette = { ...BASE };
 type V3 = [number, number, number];
 const UP = new Vector3(0, 1, 0);
 
-/** One piece: colored, with a still `anim` attribute, moved into place. */
+/** The photographed surface each palette color is made of (the color tints it); the rest are plain. */
+const SURFACE: Partial<Record<keyof Palette, BuildLayer>> = {
+  mud: 'plaster',
+  plaster: 'plaster',
+  wood: 'planks',
+  darkWood: 'planks',
+  timber: 'planks',
+  stone: 'stone',
+  darkStone: 'stone',
+  slate: 'stone',
+  dirt: 'cobble',
+  yard: 'cobble',
+  paving: 'cobble',
+  hay: 'thatch',
+};
+/** Glow of a palette color (see `detail` in surface.ts): windows light up at night, fire always. */
+const GLOW: Partial<Record<keyof Palette, number>> = { window: 1, flame: 2, eye: 2 };
+/** Texture repeats per unit of model: one photo covers about three units of wall. */
+const UV_SCALE = 1 / 3;
+
+/** What team-colored parts are made of in the model being built: roofs on towns, cloth on units. */
+let teamSurface: BuildLayer = 'roof';
+/** Set while a piece must ignore its color's usual surface or glow. */
+let forced: { layer?: BuildLayer; glow?: number } | null = null;
+
+function forcing<T>(look: { layer?: BuildLayer; glow?: number }, make: () => T): T {
+  const before = forced;
+  forced = look;
+  try {
+    return make();
+  } finally {
+    forced = before;
+  }
+}
+
+/** One piece: colored, with its surface and a still `anim` attribute, moved into place. */
 function part(geo: BufferGeometry, color: string, x = 0, y = 0, z = 0, turn = 0): BufferGeometry {
   const g = geo.index ? geo.toNonIndexed() : geo;
   g.deleteAttribute('uv');
@@ -67,8 +104,17 @@ function part(geo: BufferGeometry, color: string, x = 0, y = 0, z = 0, turn = 0)
   const c = new Color(color);
   const n = g.getAttribute('position').count;
   const colors = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) colors.set([c.r, c.g, c.b], i * 3);
+  const key = (Object.keys(C) as (keyof Palette)[]).find((k) => C[k] === color);
+  const team = key === 'team' || key === 'teamShade';
+  const layer = layerOf(forced?.layer ?? (team ? teamSurface : (key && SURFACE[key]) || 'plain'));
+  const glow = forced?.glow ?? ((key && GLOW[key]) || 0);
+  const surf = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    colors.set([c.r, c.g, c.b], i * 3);
+    surf.set([layer, glow], i * 2);
+  }
   g.setAttribute('color', new BufferAttribute(colors, 3));
+  g.setAttribute('surf', new BufferAttribute(surf, 2));
   g.setAttribute('anim', new BufferAttribute(new Float32Array(n * 3), 3));
   return g;
 }
@@ -141,7 +187,9 @@ function flag(
   h: number,
   w = 1.3,
 ): { pole: BufferGeometry[]; cloth: BufferGeometry } {
-  const cloth = box(w, w * 0.6, 0.06, C.team, x + w / 2, z, y + h - w * 0.65);
+  const cloth = forcing({ layer: 'plain' }, () =>
+    box(w, w * 0.6, 0.06, C.team, x + w / 2, z, y + h - w * 0.65),
+  );
   return {
     pole: [
       cyl(0.09, h, C.darkWood, x, z, y, 5),
@@ -367,42 +415,6 @@ export interface Model {
   radius: number;
   /** Where chimney smoke starts, in model space. */
   smoke: Vector3[];
-  /** Still parts pushed out along smooth normals, drawn inside out for a dark outline. */
-  outline: BufferGeometry;
-}
-
-const OUTLINE_THICKNESS = 0.07;
-
-/** Moving parts (flags, flames, legs) are left out: a still outline would not follow them. */
-function outlineOf(parts: BufferGeometry[]): BufferGeometry {
-  const positions: number[] = [];
-  for (const g of parts) {
-    const pos = g.getAttribute('position');
-    const anim = g.getAttribute('anim');
-    for (let i = 0; i + 2 < pos.count; i += 3) {
-      let still = true;
-      for (let k = i; k < i + 3; k++) {
-        if (anim && (anim.getX(k) !== 0 || anim.getY(k) !== 0 || anim.getZ(k) !== 0)) still = false;
-      }
-      if (!still) continue;
-      for (let k = i; k < i + 3; k++) positions.push(pos.getX(k), pos.getY(k), pos.getZ(k));
-    }
-  }
-  const raw = new BufferGeometry();
-  raw.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
-  const g = mergeVertices(raw, 1e-3);
-  g.computeVertexNormals();
-  const pos = g.getAttribute('position');
-  const normal = g.getAttribute('normal');
-  for (let i = 0; i < pos.count; i++) {
-    pos.setXYZ(
-      i,
-      pos.getX(i) + normal.getX(i) * OUTLINE_THICKNESS,
-      pos.getY(i) + normal.getY(i) * OUTLINE_THICKNESS,
-      pos.getZ(i) + normal.getZ(i) * OUTLINE_THICKNESS,
-    );
-  }
-  return g;
 }
 
 /** `ground` is the trodden yard under the model; it does not count for the radius. */
@@ -414,7 +426,9 @@ function model(k: Kit, height: number, ground?: { r: number; color: string }): M
   const radius = b ? Math.max(b.max.x, -b.min.x, b.max.z, -b.min.z) : 5;
   const team = merge(k.team);
   const fixed = ground ? merge([g, cyl(ground.r, 0.08, ground.color, 0, 0, 0, 16)]) : g;
-  return { fixed, team, height, radius, smoke: k.smoke, outline: outlineOf([g, team]) };
+  projectUv(fixed, UV_SCALE);
+  projectUv(team, UV_SCALE);
+  return { fixed, team, height, radius, smoke: k.smoke };
 }
 
 /** Level 1–9: a round hut with a cone roof, a campfire, firewood and a barrel. */
@@ -422,8 +436,10 @@ function stageHut(): Model {
   const k = new Kit();
   k.add(cyl(2.35, 0.35, C.darkStone, 0, 0, 0, 10), cyl(2.2, 2.1, C.mud, 0, 0, 0.3, 10));
   k.add(box(0.9, 1.5, 0.3, C.darkWood, 0, 2.12, 0.3), box(1.2, 0.18, 0.35, C.timber, 0, 2.15, 1.8));
-  k.paint(cone(3, 2.5, C.team, 0, 0, 2.2, 10), cone(0.55, 0.75, C.teamShade, 0, 0, 4.35, 6));
-  k.paint(cyl(3.02, 0.2, C.teamShade, 0, 0, 2.2, 10));
+  forcing({ layer: 'thatch' }, () => {
+    k.paint(cone(3, 2.5, C.team, 0, 0, 2.2, 10), cone(0.55, 0.75, C.teamShade, 0, 0, 4.35, 6));
+    k.paint(cyl(3.02, 0.2, C.teamShade, 0, 0, 2.2, 10));
+  });
   woodpile(k, 2.6, -1.3, 0.9);
   campfire(k, -2.5, 1.7);
   barrel(k, 1.95, 1.9);
@@ -614,7 +630,9 @@ function backCorners(r: number, make: (x: number, z: number) => BufferGeometry[]
 }
 
 const crystal = (r: number, h: number, color: string, x: number, z: number, lean = 0): BufferGeometry =>
-  part(new OctahedronGeometry(1, 0).scale(r, h / 2, r).rotateZ(lean), color, x, h / 2, z);
+  forcing({ layer: 'plain', glow: 2 }, () =>
+    part(new OctahedronGeometry(1, 0).scale(r, h / 2, r).rotateZ(lean), color, x, h / 2, z),
+  );
 
 interface Skin {
   colors: Partial<Palette>;
@@ -738,6 +756,7 @@ export function buildStages(style = 'classic'): Model[] {
   const skin = SKINS[style] ?? SKINS.classic ?? { colors: {} };
   Object.assign(C, BASE, skin.colors);
   ornament = skin.ornament ?? null;
+  teamSurface = 'roof';
   try {
     return [stageHut(), stageHouse(), stageVillage(), stageFort(), stageCitadel(), stageCastle()];
   } finally {
@@ -753,6 +772,7 @@ const limb =
 
 /** A marching soldier facing +z, about 2.5 units tall; tunic and shield in the owner's color. */
 export function buildSoldier(): Model {
+  teamSurface = 'plain';
   const k = new Kit();
   for (const s of [-1, 1]) {
     const leg = merge([
@@ -776,6 +796,7 @@ export function buildSoldier(): Model {
 
 /** The march banner: a pole with a cross bar (fixed) and a hanging cloth for the owner's color. */
 export function buildBanner(): Model {
+  teamSurface = 'plain';
   const k = new Kit();
   k.add(cyl(0.1, 4.4, C.darkWood, 0, 0, 0, 5), log(1.5, 0.06, C.darkWood, 0, 0, 4.05));
   k.add(part(new IcosahedronGeometry(0.18, 0), C.crop, 0, 4.55, 0));
@@ -790,6 +811,7 @@ export function buildBanner(): Model {
  * can turn.
  */
 export function buildBeacon(): Model {
+  teamSurface = 'plain';
   const k = new Kit();
   k.add(cyl(1.7, 0.35, C.darkStone, 0, 0, 0, 8), cyl(1.35, 0.35, C.stone, 0, 0, 0.35, 8));
   k.add(...ring(4, 1.55, (x, z, _i, a) => box(0.35, 0.7, 0.25, C.darkStone, x, z, 0.35, facing(a))));
@@ -812,6 +834,7 @@ export function buildBeacon(): Model {
 export const BEACON_CRYSTAL_HEIGHT = 6.4;
 
 export function buildBeaconCrystal(): BufferGeometry {
+  teamSurface = 'plain';
   return merge([crystal(0.6, 2.2, C.team, 0, 0), crystal(0.25, 0.9, C.teamShade, 0.55, 0.1, 0.5)]);
 }
 
@@ -847,6 +870,8 @@ function wing(k: Kit, side: number): void {
  * ivory horns and spikes, wings that beat by shader (anim.z, scaled per dragon by `flap`).
  */
 export function buildDragon(): Model {
+  // Rows of roof tiles, tinted by the owner's color, read as scales.
+  teamSurface = 'roof';
   const k = new Kit();
   k.paint(part(new IcosahedronGeometry(1, 1).scale(1.05, 0.95, 2.1), C.team, 0, 1.75, 0));
   k.add(part(new IcosahedronGeometry(1, 1).scale(0.8, 0.6, 1.7), C.belly, 0, 1.35, 0.15));

@@ -4,6 +4,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
+  Color,
   DoubleSide,
   Mesh,
   MeshBasicMaterial,
@@ -118,7 +119,11 @@ export class Bridges {
   private readonly texture = runeTexture();
   private bridges: Bridge[] = [];
 
-  constructor(private readonly group: Group) {}
+  /** `glow` brightens the light of the bridge so it blooms when the screen passes are on. */
+  constructor(
+    private readonly group: Group,
+    private readonly glow = 1,
+  ) {}
 
   build(view: LordView, fields: Map<number, IsleField>): void {
     this.clear();
@@ -136,7 +141,7 @@ export class Bridges {
       const b = { x: ib.pos.x + Math.cos(back) * rb, y: ib.pos.y + Math.sin(back) * rb };
       const material = new MeshBasicMaterial({
         map: this.texture,
-        color: IDLE,
+        color: new Color(IDLE).multiplyScalar(this.glow),
         transparent: true,
         opacity: IDLE_OPACITY,
         depthWrite: false,
@@ -155,7 +160,7 @@ export class Bridges {
     for (const bridge of this.bridges) {
       const active = source !== null && (bridge.a === source || bridge.b === source);
       if (!active) {
-        bridge.material.color.set(IDLE);
+        bridge.material.color.set(IDLE).multiplyScalar(this.glow);
         bridge.material.opacity = IDLE_OPACITY;
         continue;
       }
@@ -163,9 +168,9 @@ export class Bridges {
       const dst = view.isles[bridge.a === source ? bridge.b : bridge.a];
       if (!src || !dst) continue;
       const { tailwindMax, headwindMin } = defaultConfig.wind;
-      bridge.material.color.set(
-        windColor(windFactor(src.pos, dst.pos, view.wind.dir, tailwindMax, headwindMin)),
-      );
+      bridge.material.color
+        .set(windColor(windFactor(src.pos, dst.pos, view.wind.dir, tailwindMax, headwindMin)))
+        .multiplyScalar(this.glow);
       bridge.material.opacity = 1;
     }
   }

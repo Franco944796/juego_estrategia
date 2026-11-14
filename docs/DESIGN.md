@@ -301,10 +301,16 @@ more than `bots.hoardMin` (30) minutes of production to the most exposed of thei
 - Isle coasts (drawn only): the engine's gentle shape plus bays, headlands, coves and a ragged edge;
   towns keep firm ground between them and the sea of clouds.
 - **3D map** (default; the menu switches to the lighter 2D map, also used when WebGL is missing):
-  detailed low poly floating isles seen from a tilted tabletop camera (drag to move, pinch or wheel to
-  zoom, no rotation): sun shadows, low hills away from towns and roads, a ground texture painted in
-  code (grass shades, meadows, forest floor, roads between neighboring towns, farm fields), layered
-  cliffs and a rocky underside, forests of pines, oaks and birches, bushes, rocks, grass and flowers.
+  floating isles with a realistic look, seen from a tilted tabletop camera (drag to move, pinch or
+  wheel to zoom, no rotation): the light follows the local hour like the interface theme (the sun
+  crosses the sky from 7:00 to 18:59; the rest is a clear moonlit night with lit windows, fires and
+  runes), shadows of the sun and of drifting clouds, a sea of clouds under the isles, low hills away
+  from towns and roads, ground painted in code (grass shades, meadows, forest floor, roads between
+  neighboring towns, farm fields) and grained with photographed grass, earth, rock, sand and snow,
+  layered cliffs and a rocky underside, forests of pines, oaks and birches with cut-out foliage that
+  sways, bushes, boulders, grass and flowers, lakes that reflect the sky. Walls, timber, roofs and
+  thatch use photographed stone, planks, tiles and straw (CC0, see `apps/client/public/assets/CREDITS.md`)
+  tinted by the model's colors.
   In the wild ground near the shore rise rocky mountains with snowy tops and lie small lakes. Each
   lord's territory (the ground nearer one of their towns than to any other town, up to 24 units)
   is tinted in their color, with a line where it meets another lord's.
@@ -313,10 +319,14 @@ more than `bots.hoardMin` (30) minutes of production to the most exposed of thei
   watchtower inside a palisade (30–59), log fort with corner towers and a stone keep (60–89), stone
   citadel with round towers and a gatehouse (90–99) and a full castle at level 100. Flags and fires
   flutter, chimneys smoke with the wind. Marches are soldiers (helmet, shield, spear, tunic in the
-  owner's color) walking in step behind a banner, raising dust (red when they come for you). Levels,
-  garrisons and march sizes are drawn as labels over the scene. Graphics quality (menu: Auto, High,
-  Medium, Low) sets shadows, resolution, scenery density, smoke and dust; Auto guesses from the
-  device and steps down once if the map runs under ~24 frames per second.
+  owner's color) walking in step behind a banner, raising dust (red when they come for you). A town
+  changing hands, a town growing into its next stage and an attack reaching its target set off a
+  burst of light. Levels, garrisons and march sizes are drawn as labels over the scene. Graphics
+  quality (menu: Auto, High, Medium, Low) sets shadows, resolution, scenery density, smoke and dust,
+  the size of the surface photos (512, 256 or none) and the screen passes (High: glow, film-like
+  tones, ambient occlusion and smoothed edges; Medium: glow and tones; Low: none, with the flat
+  colors and simple trees of the first 3D map); Auto guesses from the device and steps down once if
+  the map runs under ~24 frames per second.
 - **Item levels**: a duplicate (same slot and rarity) joins the owned item as a copy; 2 × level copies
   raise it a level. Destroying an unequipped item gives scrap (common 10, rare 25, epic 60,
   legendary 150, plus half the scrap put into it); a level costs 20 × level scrap. Each level adds
