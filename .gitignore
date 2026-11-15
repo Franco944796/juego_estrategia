@@ -7,3 +7,9 @@ test-results/
 .DS_Store
 apps/server/data/
 shots/
+
+# Archivos de trabajo con IA: quedan solo en la PC, no se suben
+ESTADO.md
+CLAUDE.md
+AGENTS.md
+.claude/
